@@ -140,7 +140,7 @@ An amendment changes only the remaining milestones:
 1. Read the latest version (`runs.mjs plan`) and the completed milestones: the `milestones` entries of `<run-dir>/state.json` with `status: done` (written by `esp-ship`), plus any IDs the caller passes
 2. Write `plan.v<N+1>.md` with `version: N+1`. Copy every completed milestone block unchanged. Change, add or remove only remaining milestones, and give new milestones new IDs
 3. Run `plan.mjs diff <previous> <next> --run-dir <run-dir>`. It fails when a completed milestone changed or disappeared, when the version is not the next one, or when the new plan does not lint. Its `affects` list holds the changed, added and removed IDs
-4. Log it with `runs.mjs amend --run-dir <run-dir> --text <amendment> --affects <affects>`, which appends to `amendments.jsonl`, emits `amendment.applied` and logs an operator decision
+4. Log it with `runs.mjs amend --run-dir <run-dir> --text <amendment> --affects <affects> --from user`, which appends to `amendments.jsonl`, emits `amendment.applied` and logs an operator decision
 
 ## Plans Without a Planning Model
 
