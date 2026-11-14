@@ -30,7 +30,8 @@ variables:
 
 steps:
   # esp-ship ends with status escalate when the task outgrows the inline track: the run
-  # stops blocked, and `af resume` (or esp-go) continues it.
+  # stops blocked. Rerunning this step escalates again; continue with esp-go on the task,
+  # or by hand with `/esp-skills:esp-ship --resume --run-dir <run-dir>`.
   - name: ship
     type: skill
     skill: esp-skills:esp-ship

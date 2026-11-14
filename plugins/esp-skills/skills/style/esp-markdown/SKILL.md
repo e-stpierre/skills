@@ -45,6 +45,7 @@ A numbered heading uses a number and a period, or no number at all.
 - Check and cross marks for pros/cons or allowed/disallowed in tables or short lists
 - Warning symbols for important warnings or notices
 - Color circles or squares to indicate criticality levels (green/yellow/orange/red)
+- Other emojis with a clear functional purpose: the list above is not exhaustive
 
 **Invalid uses:**
 

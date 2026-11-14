@@ -44,7 +44,7 @@ variables:
     type: number
     required: false
     default: 12
-    description: Maximum build iterations, one milestone each
+    description: Maximum build attempts (one per iteration), milestones plus verification retries
   - name: use_worktree
     type: boolean
     required: false
@@ -52,9 +52,11 @@ variables:
     description: Run in an isolated worktree (needed to run beside another run of the same repository)
 
 steps:
-  # A pending `af amend` reruns this step at the next boundary: plan_version is then
-  # at least 1, so the step amends the latest plan with the amendment in its
-  # Operator Messages section instead of planning again.
+  # A pending `af amend` reruns this step at the next top-level step boundary:
+  # plan_version is then at least 1, so the step amends the latest plan with the
+  # amendment in its Operator Messages section instead of planning again. The build
+  # loop takes no amendment between its iterations: an amend sent during `build` is
+  # applied before `build-check`, which stops the run when milestones remain.
   - name: plan
     type: skill
     skill: esp-skills:esp-plan
@@ -83,7 +85,7 @@ steps:
     type: skill
     skill: esp-skills:esp-branch
     args: >-
-      --type {{ outputs.plan.plan_type or 'feature' }}{% if variables.slug %} --slug {{ variables.slug }}{% endif %}
+      --type {{ 'fix' if outputs.plan.plan_type == 'bug' else (outputs.plan.plan_type or 'feature') }}{% if variables.slug %} --slug {{ variables.slug }}{% endif %} {{ variables.task }}
     model: haiku
 
   # One iteration = one milestone = one verified commit. A ralph-loop prompt cannot
@@ -104,11 +106,33 @@ steps:
          In that file and its references, `${CLAUDE_PLUGIN_ROOT}` means the plugin root.
       3. An `## Operator Messages` section above, if any, overrides the plan for this milestone.
 
-      End with the result line printed by `runs.mjs result`. Then, when its `outputs.milestones_remaining` is empty
-      and its status is `done`, output on its own line:
-      {"ralph_complete": true, "promise": "ALL_MILESTONES_DONE"}
-      When its status is `halted` or `awaiting-human`, output {"ralph_complete": false} instead, so the run stops.
+      End with the result line printed by `runs.mjs result`. Then output one more line, on its own:
+      - When its status is `done` and its `outputs.milestones_remaining` is empty:
+        {"ralph_complete": true, "promise": "ALL_MILESTONES_DONE"}
+      - When its status is `halted` or `awaiting-human`, so the run stops:
+        {"ralph_failed": true, "reason": "<status>: <summary of the result line>"}
+      {%- if iteration == max_iterations %}
+      - This is the last iteration: when `outputs.milestones_remaining` is still not empty, instead:
+        {"ralph_failed": true, "reason": "max_milestones reached with milestones remaining"}
+      {%- endif %}
 
+  # Guard before review: stops the run when a milestone is left, for example after an
+  # amendment applied at this boundary. `af retry-step build` builds the rest.
+  - name: build-check
+    type: prompt
+    model: haiku
+    timeout-minutes: 10
+    prompt: |
+      Check that every milestone of the plan in {{ output_dir }} is built. Change nothing in the repository.
+
+      1. Find the esp-skills plugin root: the `installPath` of the `esp-skills@<marketplace>` entry in
+         `installed_plugins.json` under the Claude config directory (`$CLAUDE_CONFIG_DIR`, else `~/.claude`), in `plugins/`.
+      2. Run `node "<plugin root>/scripts/ship.mjs" milestone init --run-dir "{{ output_dir }}" --config-snapshot "{{ output_dir }}/skill-config/esp-skills.json"`,
+         which syncs the milestone state with the latest plan, then `node "<plugin root>/scripts/ship.mjs" milestone next --run-dir "{{ output_dir }}"`.
+      3. End with one result line: `{"contract_version":1,"status":"done","summary":"All milestones are built."}` when its
+         `action` is `done`, else `{"contract_version":1,"status":"halted","summary":"Milestone <milestone> is not built: run af retry-step build."}`.
+
+  # esp-review defaults --plan to the latest plan of --run-dir.
   - name: review
     type: conditional
     condition: "{{ variables.review_runtime == 'codex' }}"
@@ -116,14 +140,12 @@ steps:
       - name: review-codex
         type: skill
         skill: esp-skills:esp-review
-        args: "--plan {{ plan_path }}"
         runtime: codex
         timeout-minutes: 45
     else:
       - name: review-claude
         type: skill
         skill: esp-skills:esp-review
-        args: "--plan {{ plan_path }}"
         runtime: claude
         timeout-minutes: 45
 

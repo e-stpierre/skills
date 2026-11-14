@@ -26,7 +26,7 @@ Arguments: $ARGUMENTS
 ## Core Principles
 
 - Run without prompting: every missing value comes from the conversation or the defaults
-- The slug is a concise kebab-case summary of the work, three to five words
+- A derived slug is a concise kebab-case summary of the work, three to five words; a given `--slug` is used as is, lowercased and hyphenated
 
 ## Skill-Specific Guidelines
 
