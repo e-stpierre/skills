@@ -349,7 +349,7 @@ The plugin ships an agentic-forge workflow pack in `af-workflows/` (not `workflo
 
 - Every step is a steering boundary: `af send` reaches the next step (or the next build iteration) as an `## Operator Messages` section, and the skills log what they applied in `decisions.jsonl`
 - `af amend` on `esp-go` reruns the `plan` step at the next step boundary, which amends the plan (`plan.v<N>.md`) and keeps the done milestones. The build loop takes no amendment between iterations: an amend sent during `build` applies after it, and `build-check` then stops the run until `af retry-step build` builds the remaining milestones
-- `build` stops the run when a milestone halts or needs an answer, and when `max_milestones` attempts (milestones plus verification retries) run out with milestones left
+- `build` stops the run when a milestone halts or needs an answer, and when `max_milestones` attempts (milestones plus verification retries) run out with milestones left. `build-check` then runs the full gates once (each iteration runs only its milestone's checks) and stops the run when one fails
 - Each `build` iteration runs `esp-ship --milestone next` in a fresh session: one milestone, one verified commit. The iteration reads the esp-ship skill file from the installed plugin, because a loop prompt cannot start with a slash command
 - `review_runtime=codex` runs the internal review on Codex (the skill is inlined); every other step runs on Claude
 - Waiting for the bot reviews and the checks runs in the harness, with no agent session; `merge` runs `esp-merge` under the harness merge lock (`AF_MERGE_LOCK`)

@@ -116,21 +116,26 @@ steps:
         {"ralph_failed": true, "reason": "max_milestones reached with milestones remaining"}
       {%- endif %}
 
-  # Guard before review: stops the run when a milestone is left, for example after an
-  # amendment applied at this boundary. `af retry-step build` builds the rest.
+  # Guard before review, in place of the esp-ship final-gates phase that Single Milestone
+  # Mode skips: stops the run when a milestone is left (for example after an amendment
+  # applied at this boundary; `af retry-step build` builds the rest) or when a full gate fails.
   - name: build-check
     type: prompt
     model: haiku
-    timeout-minutes: 10
+    timeout-minutes: 30
     prompt: |
-      Check that every milestone of the plan in {{ output_dir }} is built. Change nothing in the repository.
+      Check that every milestone of the plan in {{ output_dir }} is built and that the full gates pass. Change nothing in the repository.
 
       1. Find the esp-skills plugin root: the `installPath` of the `esp-skills@<marketplace>` entry in
          `installed_plugins.json` under the Claude config directory (`$CLAUDE_CONFIG_DIR`, else `~/.claude`), in `plugins/`.
       2. Run `node "<plugin root>/scripts/ship.mjs" milestone init --run-dir "{{ output_dir }}" --config-snapshot "{{ output_dir }}/skill-config/esp-skills.json"`,
          which syncs the milestone state with the latest plan, then `node "<plugin root>/scripts/ship.mjs" milestone next --run-dir "{{ output_dir }}"`.
-      3. End with one result line: `{"contract_version":1,"status":"done","summary":"All milestones are built."}` when its
-         `action` is `done`, else `{"contract_version":1,"status":"halted","summary":"Milestone <milestone> is not built: run af retry-step build."}`.
+         When its `action` is not `done`, end with
+         `{"contract_version":1,"status":"halted","summary":"Milestone <milestone> is not built: run af retry-step build."}`.
+      3. Run `node "<plugin root>/scripts/ship.mjs" milestone gates --scope full --run-dir "{{ output_dir }}" --project-dir .`
+         and run each of its `commands` from the repository root. When one fails, end with
+         `{"contract_version":1,"status":"halted","summary":"Full gate <gate> fails: <first error>."}`.
+      4. Otherwise end with `{"contract_version":1,"status":"done","summary":"All milestones are built and the full gates pass."}`.
 
   # esp-review defaults --plan to the latest plan of --run-dir.
   - name: review
