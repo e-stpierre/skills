@@ -366,7 +366,7 @@ Workflow skills and agents share these references at the plugin root, reached th
 
 ## Complete Examples
 
-Arguments follow CLI conventions: every discrete value is a named option with a short and a long name (`-t|--type <type>`, also `--type=<value>`), flags are switches (`-w|--draft`), and only trailing free text (`[context]`, `<question>`) is positional. Repeatable options (`-r|--reviewers <name>...`) take the option several times (`-r claude -r codex`) or a comma-separated value (`-r claude,codex`). Quote a value that contains spaces.
+Arguments follow CLI conventions: every discrete value is a named option with a short and a long name (`-t|--type <type>`, also `--type=<value>`), flags are switches (`-D|--draft`), and only trailing free text (`[context]`, `<question>`) is positional. Repeatable options (`-r|--reviewers <name>...`) take the option several times (`-r claude -r codex`) or a comma-separated value (`-r claude,codex`). Quote a value that contains spaces.
 
 ### /esp-skills:esp-branch
 
@@ -414,7 +414,7 @@ Arguments follow CLI conventions: every discrete value is a named option with a 
 
 **Arguments:**
 
-- `[-w|--draft]` - Create the PR as a draft
+- `[-D|--draft]` - Create the PR as a draft
 - `[-b|--base <branch>]` - Target branch for the PR (defaults to `pr.base`, or the repository default branch)
 - `[-d|--run-dir <path>]` - Run directory: the body is built from its artifacts (`pr.body_from_run`) and the PR URL is recorded
 
@@ -428,7 +428,7 @@ Arguments follow CLI conventions: every discrete value is a named option with a 
 /esp-skills:esp-pr --base develop
 
 # Create draft PR to a specific branch, with short names
-/esp-skills:esp-pr -w -b develop
+/esp-skills:esp-pr -D -b develop
 
 # Build the body from a run's plan, decisions and review resolution
 /esp-skills:esp-pr --run-dir ~/.esp-skills/runs/2026-11-10-add-oauth-login
@@ -678,7 +678,7 @@ Arguments follow CLI conventions: every discrete value is a named option with a 
 - `[-l|--last <span>]` - Shortcut for `--since`: `<N>d`, `<N>w` or `<N>h`
 - `[-g|--repo <name>]` - Only runs of this repository
 - `[-t|--status <status>...]` - Only runs with these statuses
-- `[-x|--risk <level>]` - Only runs whose `max_risk` is at least `low`, `medium` or `high`
+- `[-x|--run-risk <level>]` - Only runs whose `max_risk` is at least `low`, `medium` or `high`
 - `[-c|--config-snapshot <path>]` - Config snapshot from a harness
 - `[context]` - Empty for a recap, a run ID or path for one run, or a question for Q&A
 

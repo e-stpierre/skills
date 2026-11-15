@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Added `scripts/validate-prompts.mjs` (`pnpm validate`, part of `pnpm check` and CI): checks skills, agents and plugin READMEs against the templates, the argument conventions, links, ASCII, skill registration, workflow skill namespaces and marketplace order
+- `/normalize` runs the script, then adds the judgment checks; it takes `-a|--autofix` and `-t|--target <path>...`
+- Refreshed the agent template: current frontmatter fields, model and color values, and the fields plugin agents ignore
+
 ## 0.6.0
 
 - **Breaking**: consolidated all 9 plugins into a single `esp-skills` plugin; skills are now invoked as `/esp-skills:esp-<skill>`; every skill is prefixed with `esp-` and the git skills drop their `git-` prefix (`esp-branch`, `esp-commit`, `esp-pr`)

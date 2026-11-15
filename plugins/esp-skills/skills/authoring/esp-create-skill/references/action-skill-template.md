@@ -118,7 +118,7 @@ Instructions:
 - Replace {{argument_definitions}} with a bullet-point list defining each argument
 - Format: **`-t|--type <type>`** (required): Description, with the valid values
 - Format: **`[-b|--base <branch>]`** (optional): Description. Defaults to `value`.
-- Format: **`[-w|--draft]`** (optional): What the flag turns on
+- Format: **`[-D|--draft]`** (optional): What the flag turns on
 - Format: **`[context]`** (optional): The free text, always last
 - List them in argument-hint order
 - Omit this section entirely if the skill takes no arguments

@@ -9,10 +9,11 @@
   },
   "license": "MIT",
   "scripts": {
-    "test": "node --test \"plugins/**/*.test.mjs\"",
+    "test": "node --test \"plugins/**/*.test.mjs\" \"scripts/**/*.test.mjs\"",
     "lint": "markdownlint-cli2 \"**/*.md\"",
     "format": "prettier --check .",
-    "check": "pnpm lint && pnpm format",
+    "validate": "node scripts/validate-prompts.mjs",
+    "check": "pnpm lint && pnpm format && pnpm validate",
     "fix": "prettier --write ."
   },
   "devDependencies": {

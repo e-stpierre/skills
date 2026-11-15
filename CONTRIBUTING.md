@@ -34,7 +34,7 @@ Write clear, concise commit messages that describe the change. For example: `Add
 Run format, lint, and test checks locally before submitting a PR:
 
 ```bash
-pnpm check  # Format and lint
+pnpm check  # Format, lint and prompt validation
 ```
 
 ## Internal Tools
@@ -68,7 +68,7 @@ plugins/<plugin-name>/
 
 ### Prompt Templates
 
-All prompts must follow the templates in [`docs/templates/`](docs/templates/). Use the `/normalize` command inside Claude Code to validate.
+All prompts must follow the templates in [`docs/templates/`](docs/templates/). `pnpm validate` (part of `pnpm check`) checks them mechanically; the `/normalize` command inside Claude Code adds the judgment checks.
 
 ```bash
 # Validate all prompts

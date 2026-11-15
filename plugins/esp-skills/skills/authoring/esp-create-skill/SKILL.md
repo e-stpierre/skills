@@ -63,7 +63,7 @@ Rules:
 
 - **Options**: every discrete value (a name, a type, a number, a path, a PR, a ref) is an option with a short and a long name: `-t|--type <type>`. `--type=<value>` works too. Long names are kebab-case; short names are one letter, lowercase first, uppercase only when the lowercase letter is taken
 - **Required or optional**: a required option is bare (`-t|--type <type>`), an optional one is bracketed (`[-b|--base <branch>]`) and documents its default
-- **Flags**: boolean switches are optional and take a short name too (`[-w|--draft]`). Presence turns the behavior on
+- **Flags**: boolean switches are optional and take a short name too (`[-D|--draft]`). Presence turns the behavior on
 - **Repeatable values**: `...` marks an option given several times (`-r claude -r codex`); a comma-separated value (`-r claude,codex`) is accepted too
 - **Free text**: one trailing positional, for prose the user types (`<question>`, `[context]`). Nothing else is positional
 - **Subcommands**: a skill that is a set of actions (`esp-config`) takes the action as a leading positional (`<action>`); its values are still options
@@ -85,7 +85,7 @@ Examples:
 
 - `<question>` - free text only
 - `-t|--type <type> [context]` - required option, free text
-- `[-w|--draft] [-b|--base <branch>]` - flag, optional option
+- `[-D|--draft] [-b|--base <branch>]` - flag, optional option
 - `[-a|--amend] [-t|--type <type>] [-d|--run-dir <path>] [context]` - flag, options, free text
 - `<action> [-P|--project] [-k|--key <key>] [value]` - subcommand, flag, option, free text
 

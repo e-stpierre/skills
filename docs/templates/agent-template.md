@@ -3,14 +3,34 @@ AGENT PROMPT TEMPLATE
 
 This template defines the exact structure for Claude Code agent prompts.
 
-REQUIRED FRONTMATTER FIELDS:
-- name: Kebab-case identifier for the agent
-- description: One-line description of agent's domain expertise (recommended: under 100 characters)
-- tools: Array of tool names the agent can access (e.g., [Read, Write, Bash, Glob, Grep])
-- model: Model to use (must be one of: sonnet, opus, haiku)
-- color: Display color for the agent in UI
+FRONTMATTER:
+Starts on line 1 of the agent file, with no blank line inside (the blank lines below come from
+this template being markdown). Field names are camelCase; Claude Code ignores unknown fields.
 
-REQUIRED SECTIONS:
+Required:
+- name: kebab-case identifier, matching the file name (`esp-builder.md` -> `esp-builder`). No `:`
+- description: one line saying what the agent does, so the caller knows when to delegate to it.
+  Front-load the task; a caller reads it in the agent listing
+
+Used by every agent in this repository (keep them):
+- tools: allowlist, a YAML list (e.g., [Read, Write, Bash, Glob, Grep]). Grant the fewest tools the
+  methodology needs; a read-only agent gets no Write, Edit or Bash
+- model: `sonnet`, `opus`, `haiku`, `fable`, `inherit`, or a full model ID. Prefer an alias
+- color: `red`, `blue`, `green`, `yellow`, `purple`, `orange`, `pink` or `cyan`
+
+Optional:
+- disallowedTools: denylist, applied before `tools`
+- effort: `low`, `medium`, `high`, `xhigh` or `max` (levels depend on the model)
+- maxTurns: maximum agentic turns
+- skills: YAML list of skills to preload (not skills with `disable-model-invocation: true`)
+- memory: `user`, `project` or `local`
+- background: `true` to always run in the background
+- isolation: `worktree` to run in a temporary git worktree
+
+Plugin agents ignore `hooks`, `mcpServers`, `permissionMode` and `initialPrompt`: put hooks in
+the plugin's `hooks/hooks.json` and MCP servers in its `.mcp.json`.
+
+REQUIRED SECTIONS (in order):
 - Purpose
 - Methodology
 - Tools Available

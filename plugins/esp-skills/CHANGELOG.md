@@ -2,11 +2,12 @@
 
 ## Unreleased
 
-- **Renamed options**: `esp-ship` `-p|--plan <mode>` is now `-L|--plan-mode <mode>` (`-p` is reserved for a PR or a plan path), and `esp-fix-review` `-m|--rounds` is now `-m|--max-rounds`, matching `esp-ship` and `fix-review.max_rounds`
+- **Renamed options**: `esp-ship` `-p|--plan <mode>` is now `-L|--plan-mode <mode>` (`-p` is reserved for a PR or a plan path), and `esp-fix-review` `-m|--rounds` is now `-m|--max-rounds`, matching `esp-ship` and `fix-review.max_rounds`. `esp-pr` `-w|--draft` is now `-D|--draft`, and `esp-recap` `-x|--risk` is now `-x|--run-risk`, apart from the risk report's `--min-risk`
 - `esp-commit` stages only tracked changes (`git add -u`) when nothing is staged, instead of `git add .`
 - `esp-fix-review` reports `--internal` without `--findings` or `--run-dir` as a usage error and runs the full gates in the commit step; its result summary says "1 CI fix"
 - `esp-merge` exits the rebase loop for a fork PR, and documents that `merge.delete_branch` also deletes the checked-out local branch
 - `esp-rubberduck` takes optional `[context]`, falling back to the conversation
+- `esp-analyze` creates the report directory when it is missing
 - Tightened the skill prompts: every reference link says when to read it, more steps end on a done-condition, `esp-config` and `esp-recap` clarify their options, and `esp-create-skill` and its template check the `esp-` prefix, the `(optional)` heading markers and the link conditions
 
 ## 0.9.0

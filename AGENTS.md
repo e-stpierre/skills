@@ -7,6 +7,7 @@ The `skills` repository is a collection of modular extensions for AI coding agen
 ## Repository Structure
 
 - `docs/templates/`: the agent and plugin README templates
+- `scripts/validate-prompts.mjs`: the repository check of prompt files against the templates (`pnpm validate`), with its tests in `scripts/tests/`
 - `plugins/<plugin-name>/`: one self-contained plugin
   - `.claude-plugin/plugin.json`: the plugin manifest. Its `skills` array lists every skill that ships
   - `agents/`: subagent prompts, each focused on one task
@@ -57,7 +58,7 @@ Instructions:
 -->
 ```
 
-Validate prompt files against the templates with `/normalize [-t|--target <path>]` (`-a|--autofix` to fix them).
+`pnpm validate` checks the mechanical rules (sections, frontmatter, arguments, links, registration) and runs in `pnpm check`. `/normalize [-t|--target <path>]` runs it and adds the judgment checks (`-a|--autofix` to fix the mechanical issues).
 
 ### Workflow Skill Namespacing
 
@@ -77,6 +78,6 @@ Plugins in `.claude-plugin/marketplace.json` are listed in alphabetical order by
 CI validates format, lint, and tests on all pull requests. Run locally before opening a pull request:
 
 ```bash
-pnpm check          # Format and lint
+pnpm check          # Format, lint and prompt validation
 pnpm test           # Script tests
 ```
