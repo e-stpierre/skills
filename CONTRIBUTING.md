@@ -75,10 +75,10 @@ All prompts must follow the templates in [`docs/templates/`](docs/templates/). U
 /normalize
 
 # Validate specific files
-/normalize plugins/my-plugin/skills/
+/normalize --target plugins/my-plugin/skills/
 
 # Auto-fix non-compliant files
-/normalize --autofix plugins/my-plugin/
+/normalize --autofix --target plugins/my-plugin/
 ```
 
 ## Pull Request Process

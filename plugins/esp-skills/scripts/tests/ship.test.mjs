@@ -820,7 +820,7 @@ describe("loops", () => {
     );
     assert.equal(pushed.action, "wait");
     assert.deepEqual(pushed.update, { done: 1, commits: 1 });
-    // A fixer spawned with --rounds 1 reports its own limit as exhausted.
+    // A fixer spawned with --max-rounds 1 reports its own limit as exhausted.
     assert.equal(
       prLoopAction(
         s,

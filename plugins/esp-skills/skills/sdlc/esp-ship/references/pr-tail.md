@@ -24,7 +24,7 @@ The phases both tracks share once the work is committed: `pr`, `fix-review` and 
 
 ## Fix Rounds
 
-1. Spawn the `fixer` phase subagent on `skills/github/esp-fix-review/SKILL.md` with `--rounds <round> --pr <pr url>` (`round` from the `fix` action of `pr-loop --after wait`) (add `--reviewers <names>` when given), without `--wait`: this session already waited. One round per spawn, so the subagent never waits for a re-review itself. It fixes the comments and the failing checks of the head in the same round.
+1. Spawn the `fixer` phase subagent on `skills/github/esp-fix-review/SKILL.md` with `--max-rounds <round> --pr <pr url>` (`round` from the `fix` action of `pr-loop --after wait`) (add `--reviewers <names>` when given), without `--wait`: this session already waited. One round per spawn, so the subagent never waits for a re-review itself. It fixes the comments and the failing checks of the head in the same round.
 2. `ship.mjs pr-loop --after fix`:
    - **`wait`**: the round pushed commits and rounds are left. Wait again (Review and Checks Wait, step 2), then run the next fix round
    - **`merge`**: record `phase fix-review --status done`

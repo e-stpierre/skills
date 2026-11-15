@@ -58,7 +58,7 @@ export function prOptions(state, config) {
 
 /**
  * Pull request round loop: wait (reviews and checks of the head, step
- * `fix-review-wait`) -> fix-review (one round per call, with --rounds <n>)
+ * `fix-review-wait`) -> fix-review (one round per call, with --max-rounds <n>)
  * -> wait again while the round pushed commits and rounds are left.
  * `--after wait|fix` reads that step's result.
  */
@@ -114,7 +114,7 @@ export function prLoopAction(
       update,
       reason: `${o.open} review item(s) open`
     };
-  // `o.exhausted` is not read: each fixer spawn runs with --rounds <round>,
+  // `o.exhausted` is not read: each fixer spawn runs with --max-rounds <round>,
   // so it always reports its own limit as reached. `max` is the run limit.
   if (pushed && rounds < max)
     return { action: "wait", round: rounds + 1, max_rounds: max, update };

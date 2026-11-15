@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+- **Renamed options**: `esp-ship` `-p|--plan <mode>` is now `-L|--plan-mode <mode>` (`-p` is reserved for a PR or a plan path), and `esp-fix-review` `-m|--rounds` is now `-m|--max-rounds`, matching `esp-ship` and `fix-review.max_rounds`
+- `esp-commit` stages only tracked changes (`git add -u`) when nothing is staged, instead of `git add .`
+- `esp-fix-review` reports `--internal` without `--findings` or `--run-dir` as a usage error and runs the full gates in the commit step; its result summary says "1 CI fix"
+- `esp-merge` exits the rebase loop for a fork PR, and documents that `merge.delete_branch` also deletes the checked-out local branch
+- `esp-rubberduck` takes optional `[context]`, falling back to the conversation
+- Tightened the skill prompts: every reference link says when to read it, more steps end on a done-condition, `esp-config` and `esp-recap` clarify their options, and `esp-create-skill` and its template check the `esp-` prefix, the `(optional)` heading markers and the link conditions
+
 ## 0.9.0
 
 - Added the agentic-forge workflow pack in `af-workflows/`: `esp-go` (plan, approval, one ralph-loop iteration and one verified commit per milestone, internal review on Claude or Codex, PR, harness review and checks waits, merge), `esp-go-light` (inline `esp-ship` until the PR is open, then the harness waits and merge) and `esp-epic` (an epic file for the overseer backlog). Each declares `requires: { agentic-forge: ">=0.12", contract: 1 }`. `esp-go` stops the run when a milestone halts, when the build attempts run out, or when an amendment leaves milestones unbuilt, and runs the full gates before the review (`build-check`)

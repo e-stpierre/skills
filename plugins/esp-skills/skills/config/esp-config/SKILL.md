@@ -1,6 +1,6 @@
 ---
 name: esp-config
-description: Initialize, show, get, set, and validate esp-skills configuration
+description: Manage the esp-skills configuration: init, show, get, set, unset, validate, and list sources
 argument-hint: "<action> [-P|--project] [-f|--force] [-k|--key <key>] [value]"
 disable-model-invocation: true
 ---
@@ -23,9 +23,9 @@ Manage the esp-skills configuration through the plugin's `config.mjs` script: cr
   - `unset` - Remove a key from the user or project file
   - `validate` - Validate every layer, or one file when `--key` is a file path
   - `sources` - List the config layers and which ones are in use
-- **`[-P|--project]`** (optional): Target the project file (`<repo>/.esp-skills/config.json`) instead of the user file (`~/.esp-skills/config.json`) for `init`, `set`, and `unset`.
-- **`[-f|--force]`** (optional): Overwrite an existing file on `init`.
-- **`[-k|--key <key>]`** (optional): Section or dotted key for `get`, `set`, `unset` (required by those three). A file path for `validate`.
+- **`[-P|--project]`** (optional): Read from `-P` or `--project`. Target the project file (`<repo>/.esp-skills/config.json`) instead of the user file (`~/.esp-skills/config.json`) for `init`, `set`, and `unset`.
+- **`[-f|--force]`** (optional): Read from `-f` or `--force`. Overwrite an existing file on `init`.
+- **`[-k|--key <key>]`** (optional): Read from `-k` or `--key`. Section or dotted key; required for `get`, `set` and `unset`. For `validate`, a file path to validate instead of every layer.
 - **`[value]`** (optional): The trailing free text, the value for `set`. Parsed as JSON when valid (`true`, `3`, `null`, `["a"]`), otherwise used as a plain string.
 
 ### Values
@@ -48,7 +48,7 @@ The script merges these layers, lowest to highest precedence:
 1. Built-in defaults: `${CLAUDE_PLUGIN_ROOT}/references/config-defaults.json`
 2. User config: `~/.esp-skills/config.json` (the `ESP_SKILLS_HOME` environment variable overrides `~/.esp-skills`)
 3. Project config: `<repo>/.esp-skills/config.json`, where `<repo>` is the nearest git root
-4. Config snapshot (`--config-snapshot <path>`): replaces the user and project layers for one run; defaults still fill missing keys
+4. Config snapshot (the script's `--config-snapshot <path>`, passed by the harness or a parent skill, not by this skill): replaces the user and project layers for one run; defaults still fill missing keys
 
 Skill arguments override the resolved values in the skill that receives them. Objects merge key by key; arrays and scalar values replace the lower layer.
 
@@ -58,13 +58,14 @@ Files are validated against `${CLAUDE_PLUGIN_ROOT}/references/config.schema.json
 
 ## Instructions
 
-1. Parse the arguments into the action, the flags, the key and the value. If the action is missing or unknown, list the valid actions and stop.
+1. Parse the arguments into the action, the flags, the key and the value. If the action is missing or unknown, list the valid actions and stop. If `get`, `set` or `unset` has no `-k|--key`, or `set` has no value, report the missing argument and stop. Done when the action and every value it needs are known.
 2. Build the command; the script takes the key and the value as positionals:
 
    ```bash
    node "${CLAUDE_PLUGIN_ROOT}/scripts/config.mjs" <action> [key] [value] [--project] [--force]
    ```
 
+   - Pass `-P|--project` as `--project` and `-f|--force` as `--force`; the script takes long names only
    - Quote the value so the shell passes it as one argument (e.g., `'["squash","merge"]'`)
    - For `validate` with a file path, pass the path in the key position
 
@@ -89,10 +90,20 @@ pr (merged from defaults, user)
 ```
 ````
 
-**On `init`, `set`, or `unset`:**
+**On `init`, `set`, or `unset`** (one line naming the action, the key and the file):
 
 ```text
+Created ~/.esp-skills/config.json
 Set pr.draft = true in ~/.esp-skills/config.json
+Unset pr.draft in ~/.esp-skills/config.json
+```
+
+**On `sources`:**
+
+```text
+defaults: <plugin>/references/config-defaults.json (in use)
+user: ~/.esp-skills/config.json (in use)
+project: <repo>/.esp-skills/config.json (not used)
 ```
 
 **On `validate`:**

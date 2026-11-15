@@ -34,13 +34,13 @@ Arguments: $ARGUMENTS
 
 ## Additional Resources
 
-- For the reviewer's method, finding format and severity scale, see [esp-reviewer.md](../../../agents/esp-reviewer.md)
-- For the finding classes, see [decision-policy.md](../../../references/decision-policy.md)
-- For the reviewer model and effort, see [model-selection.md](../../../references/model-selection.md)
+- For the reviewer's method, finding format and severity scale, see [esp-reviewer.md](../../../agents/esp-reviewer.md): read it in step 7 when the reviewer runs inline
+- For the finding classes, see [decision-policy.md](../../../references/decision-policy.md): read it before classifying findings or for a discovered item
+- For the reviewer model and effort, see [model-selection.md](../../../references/model-selection.md): read it when `defaults.models.reviewer` is not set
 
 ## Core Principles
 
-- Review only the diff. Pre-existing issues outside the changed lines are not findings; a serious one becomes a discovered item
+- Review only the diff. Pre-existing issues outside the changed lines are not findings; a serious one becomes a discovered item (see decision-policy.md)
 - High signal only: the review holds verified findings and rejected candidates, nothing else
 - Read-only and routes nothing: the skill writes only into the run or temporary directory, and the caller decides where the review goes (terminal, PR comment, file, CI log)
 - Run every script with Bash, with the literal `"${CLAUDE_PLUGIN_ROOT}/scripts/..."` path. Counts, result files and the result block always come from `review.mjs` and `runs.mjs`

@@ -21,7 +21,7 @@ Tell the user what happened across their runs, what was risky, or why a decision
 - **`[-l|--last <span>]`** (optional): Shortcut for `--since`: `<N>d`, `<N>w` or `<N>h` (for example `3d`).
 - **`[-g|--repo <name>]`** (optional): Only runs of this repository, matched on the end of the `run.json` `repo` (`api` matches `o/api`).
 - **`[-t|--status <status>...]`** (optional): `run.json` statuses (`merged`, `halted`, `awaiting-human`, ...). Repeat the option or pass a comma-separated list.
-- **`[-x|--risk <level>]`** (optional): Only runs whose `max_risk` is at least `low`, `medium` or `high`.
+- **`[-x|--risk <level>]`** (optional): Only runs whose `max_risk` is at least `low`, `medium` or `high`. A run filter in every mode; the risk report's decision threshold is separate (step 5).
 - **`[-c|--config-snapshot <path>]`** (optional): Config snapshot from a harness. Used to resolve `recap.*` and `runs.root`.
 - **`[context]`** (optional): Empty for a recap of the range; a run ID or run directory path for the recap of one run; a question ("why did we rotate refresh tokens?") for Q&A. With `--risks`, extra words narrow the report.
 
@@ -31,9 +31,9 @@ Arguments: $ARGUMENTS
 
 ## Additional Resources
 
-- For the run directory layout and the artifacts, see [contract-notes.md](../../../references/contract-notes.md)
-- For `summary.md`, see [summary-template.md](../../../references/summary-template.md)
-- For decision classes and risk levels, see [decision-policy.md](../../../references/decision-policy.md)
+- For the run directory layout and the artifacts, see [contract-notes.md](../../../references/contract-notes.md): read it when a Q&A answer needs a file the script output does not cover
+- For `summary.md`, see [summary-template.md](../../../references/summary-template.md): read it when quoting or explaining a run summary
+- For decision classes and risk levels, see [decision-policy.md](../../../references/decision-policy.md): read it when explaining a class or a risk level
 
 ## Core Principles
 
@@ -86,7 +86,7 @@ When `collect` returns `fan_out: true`, spawn one subagent per entry of `batches
    2. With `fan_out: true`, digest the batches in subagents (see Fan-Out). Otherwise use the digests as they are, and run `show` on a run only when its digest leaves out something the user asked for.
    3. Write the recap (see Output Guidance): done when every run in range has its bullet and every statement its source.
 4. **One-run recap**: run `recap.mjs show <run-id|path>`. Use the summary sections first; read the plan or a step result only when the summary does not answer.
-5. **Risk report**: run `recap.mjs risks` with the filters (`--min-risk medium` when the user asks for medium risks too). For each item, open its source only when the line in the output is not enough to explain it. Group by run.
+5. **Risk report**: run `recap.mjs risks` with the filters, plus `--min-risk medium` (or `low`) when the user asks for lower-risk decisions too; `--min-risk` sets the decision threshold, apart from the `--risk` run filter. For each item, open its source only when the line in the output is not enough to explain it. Group by run.
 6. **Q&A**: go through the sources in this order and stop as soon as the question is answered:
    1. Run `recap.mjs sources --question "<question>"` with the filters. When it finds nothing in range, run it again with `--all` before giving up.
    2. Decisions: read the top matches; their `rationale` and `alternatives` often answer "why".

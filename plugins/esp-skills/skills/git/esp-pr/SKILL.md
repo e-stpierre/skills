@@ -41,7 +41,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/config.mjs" get defaults.language
 If a command exits with code 1 (invalid config), report its error and stop. If it cannot run at all (no `node`), continue with the defaults.
 
 - `pr.base` (default `null`): base branch; `null` uses the repository default branch (`gh repo view --json defaultBranchRef`)
-- `pr.draft` (default `false`): open the PR as a draft even without `--draft`
+- `pr.draft` (default `false`): open the PR as a draft even without `-w` or `--draft`
 - `pr.attribution` (default `true`): append the AI attribution line to the body
 - `pr.body_from_run` (default `true`): with `--run-dir`, build the body from the run artifacts
 - `pr.body_sections` (default `summary, milestones, decisions, review-resolution, follow-ups`): sections of a body built from the run, in order
@@ -77,12 +77,12 @@ gh pr create --title "<title>" --body "## Summary
 
 1. Load the `pr` configuration (see Configuration) and resolve the base branch per the `--base` Definition.
 2. Verify the current branch is not the base branch; when it is, report it and stop.
-3. Push the current branch to the remote if it has no upstream or has unpushed commits.
+3. Push the current branch (`git push -u origin HEAD`) when `git status -sb` shows no upstream or commits ahead of it. Done when `git status -sb` shows the branch up to date with its upstream.
 4. Fetch the base and read the scope: `git fetch origin <base>`, `git log origin/<base>..HEAD --oneline`, and `git diff origin/<base>...HEAD --stat`.
 5. Write the title and body in `defaults.language`:
    - **From the run** (with `--run-dir` and `pr.body_from_run`): write a 1-2 sentence summary of why the change exists, then render the body with `node "${CLAUDE_PLUGIN_ROOT}/scripts/runs.mjs" pr-body --run-dir <path> --summary "<summary>" --out <path>/pr-body.md`. It applies `pr.body_sections` and `pr.attribution`.
    - **From the diff** (otherwise): pick the size category from the stat and write the body per Size Categories, ending with the attribution line unless `pr.attribution` is `false`.
-6. Create the PR with `gh pr create --base <base> --title "<title>"`, plus `--body-file <path>/pr-body.md` for a body from the run or `--body "<body>"` otherwise, plus `--draft` when `-w`/`--draft` is present or `pr.draft` is `true`. Done when `gh` prints the PR URL.
+6. Create the PR with `gh pr create --base <base> --title "<title>"`, plus `--body-file <path>/pr-body.md` for a body from the run or `--body "<body>"` otherwise, plus `--draft` when `-w` or `--draft` is present or `pr.draft` is `true`. Done when `gh` prints the PR URL.
 7. With `--run-dir`, record the URL: `node "${CLAUDE_PLUGIN_ROOT}/scripts/runs.mjs" update --run-dir <path> --pr <url>`.
 8. Report the PR URL and title.
 

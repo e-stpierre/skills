@@ -57,7 +57,7 @@ Instructions:
 -->
 ```
 
-Validate prompt files against the templates with `/normalize [path]` (`--autofix` to fix them).
+Validate prompt files against the templates with `/normalize [-t|--target <path>]` (`-a|--autofix` to fix them).
 
 ### Workflow Skill Namespacing
 

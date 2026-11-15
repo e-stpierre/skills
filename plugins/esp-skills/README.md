@@ -48,9 +48,9 @@ Subagents spawned by the workflow skills. Each returns a contract result block a
 
 ### Config
 
-| Skill                    | Description                                                           |
-| ------------------------ | --------------------------------------------------------------------- |
-| `/esp-skills:esp-config` | Initialize, show, get, set, and validate the esp-skills configuration |
+| Skill                    | Description                         |
+| ------------------------ | ----------------------------------- |
+| `/esp-skills:esp-config` | Manage the esp-skills configuration |
 
 ### GitHub
 
@@ -144,7 +144,7 @@ Keys read by the current skills:
 | `fix-review.wait.poll_seconds`               | `60`                                                            | `esp-fix-review`, `esp-ship`              | First poll interval, backing off to 5x                                              |
 | `fix-review.wait.auto_trigger`               | `false`                                                         | `esp-fix-review`, `esp-ship`              | Post the reviewers' trigger comments after a push                                   |
 | `fix-review.wait.checks_grace_seconds`       | `120`                                                           | `esp-fix-review`, `esp-ship`              | An empty check list counts as pending this long after the head commit               |
-| `fix-review.max_rounds`                      | `3`                                                             | `esp-fix-review`, `esp-ship`              | Fix rounds when `--rounds` is not given                                             |
+| `fix-review.max_rounds`                      | `3`                                                             | `esp-fix-review`, `esp-ship`              | Fix rounds when `--max-rounds` is not given                                         |
 | `fix-review.fix_ci`                          | `true`                                                          | `esp-fix-review`                          | Diagnose and fix failing CI checks                                                  |
 | `fix-review.reply_to_rejected`               | `true`                                                          | `esp-fix-review`                          | Reply with the reason to rejected comments                                          |
 | `fix-review.deferred_items`                  | `follow-up`                                                     | `esp-fix-review`                          | `follow-up` (reply, resolve, discovered item) or `block`                            |
@@ -159,7 +159,7 @@ Keys read by the current skills:
 | `merge.checks_timeout_minutes`               | `30`                                                            | `esp-merge`                               | Wait for pending checks and for a busy merge lock                                   |
 | `worktrees.cleanup`                          | `on-merge`                                                      | `esp-merge`                               | Remove the task worktree after the merge (`never` keeps it)                         |
 | `ship.phases`                                | every phase of the track                                        | `esp-ship`                                | Phases to run, filtered per track (`implement` or `build` is required)              |
-| `ship.plan_mode`                             | `auto`                                                          | `esp-ship`                                | `--plan` default: `auto`, `skip` (no planning model) or `always`                    |
+| `ship.plan_mode`                             | `auto`                                                          | `esp-ship`                                | `--plan-mode` default: `auto`, `skip` (no planning model) or `always`               |
 | `ship.review_mode`                           | `auto`                                                          | `esp-ship`                                | `--review` default: `auto`, `internal`, `pr`, `both` or `none`                      |
 | `ship.auto.review_max_files`                 | `3`                                                             | `esp-ship`                                | Review gate: at most this many changed files may skip the internal review           |
 | `ship.auto.review_max_lines`                 | `150`                                                           | `esp-ship`                                | Review gate: at most this many changed lines may skip the internal review           |
@@ -289,7 +289,7 @@ node scripts/wait-for-review.mjs 42 --reviewers codex --once
 
 ### Fixing Reviews
 
-`esp-fix-review` resolves review items in rounds: fetch -> classify (A-Fix, B-Decide, B-Scope, Reject) -> fix and commit -> push -> reply and resolve -> wait for the re-review. `scripts/fix-review.mjs` keeps the state (`<run-dir>/fix-review.json`): handled item IDs, so a later round or a rerun never reprocesses a comment, the round count bounded by `--rounds`, and the GitHub replies still owed. The model classifies and fixes; the script posts the replies, resolves the threads and builds the result block:
+`esp-fix-review` resolves review items in rounds: fetch -> classify (A-Fix, B-Decide, B-Scope, Reject) -> fix and commit -> push -> reply and resolve -> wait for the re-review. `scripts/fix-review.mjs` keeps the state (`<run-dir>/fix-review.json`): handled item IDs, so a later round or a rerun never reprocesses a comment, the round count bounded by `--max-rounds`, and the GitHub replies still owed. The model classifies and fixes; the script posts the replies, resolves the threads and builds the result block:
 
 ```bash
 node scripts/fix-review.mjs round --run-dir <run>
@@ -477,7 +477,7 @@ Arguments follow CLI conventions: every discrete value is a named option with a 
 - `[-l|--internal]` - Fix the findings of an `esp-review` run (`review-<N>.json`) instead of PR comments, without pushing
 - `[-w|--wait]` - Before round 1, wait until every reviewer has reviewed the head commit and no CI check is pending
 - `[-t|--timeout <minutes>]` - Time limit of each wait (default: `fix-review.wait.timeout_minutes`)
-- `[-m|--rounds <n>]` - Maximum fix rounds across invocations (default: `fix-review.max_rounds`)
+- `[-m|--max-rounds <n>]` - Maximum fix rounds across invocations (default: `fix-review.max_rounds`)
 - `[-r|--reviewers <name>...]` - Only handle, and wait for, these reviewers (names from `fix-review.wait.reviewers`, or logins; default: `fix-review.wait.default_reviewers`)
 - `[-i|--interactive <mode>]` - `off`, `plan` or `all` (`all` asks about B-Decide and B-Scope items and shows a recap before pushing)
 - `[-p|--pr <pr>]` - Pull request number, `#<n>` or URL (default: the PR of the current branch)
@@ -492,7 +492,7 @@ Arguments follow CLI conventions: every discrete value is a named option with a 
 /esp-skills:esp-fix-review
 
 # Handle only Codex's comments on PR 42, in one round
-/esp-skills:esp-fix-review --rounds 1 --reviewers codex --pr 42
+/esp-skills:esp-fix-review --max-rounds 1 --reviewers codex --pr 42
 /esp-skills:esp-fix-review -m 1 -r codex -p 42
 
 # Wait for Codex and Claude to review the head commit and for the CI checks, at most 10 minutes, then fix
@@ -620,7 +620,7 @@ Arguments follow CLI conventions: every discrete value is a named option with a 
 - `[-s|--stop-before-wait]` - End once the PR is open; the caller waits, fixes and merges
 - `[-l|--parallel]` - Build milestones with disjoint files in parallel worktrees (default: `ship.parallel`)
 - `[-t|--track <track>]` - `inline` or `orchestrated`, instead of the triage choice
-- `[-p|--plan <mode>]` - `auto`, `skip` (no planning model) or `always` (default: `ship.plan_mode`)
+- `[-L|--plan-mode <mode>]` - `auto`, `skip` (no planning model) or `always` (default: `ship.plan_mode`)
 - `[-R|--review <mode>]` - `auto`, `internal`, `pr`, `both` or `none` (default: `ship.review_mode`)
 - `[-e|--milestone <id>]` - Build one milestone of the plan in `--run-dir` and exit; `next` picks the next runnable one
 - `[-a|--model <alias>]` - Builder model for every milestone (`opus`, `sonnet`, `haiku`, `fable`)
@@ -648,11 +648,11 @@ Arguments follow CLI conventions: every discrete value is a named option with a 
 /esp-skills:esp-ship -P docs/backlog.md
 
 # Ship fast: no planning model, bot review only
-/esp-skills:esp-ship --plan skip --review pr Rename the config loader to settings
-/esp-skills:esp-ship -p skip -R pr Rename the config loader to settings
+/esp-skills:esp-ship --plan-mode skip --review pr Rename the config loader to settings
+/esp-skills:esp-ship -L skip -R pr Rename the config loader to settings
 
 # Force milestones for a small prompt, with both reviews
-/esp-skills:esp-ship --track orchestrated --plan always --review both Add rate limiting to the login route
+/esp-skills:esp-ship --track orchestrated --plan-mode always --review both Add rate limiting to the login route
 
 # Continue on an existing branch, stop with the PR open, waiting for Codex, two fix rounds
 /esp-skills:esp-ship --branch feature/session-store --no-merge --reviewers codex --max-rounds 2 Add a session store
@@ -750,7 +750,7 @@ Arguments follow CLI conventions: every discrete value is a named option with a 
 
 **Arguments:**
 
-- `<context>` - The idea, plan, code snippet, or issue to discuss
+- `[context]` - The idea, plan, code snippet, or issue to discuss (default: the topic of the conversation)
 
 **Examples:**
 

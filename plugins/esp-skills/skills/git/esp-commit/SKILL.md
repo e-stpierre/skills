@@ -8,13 +8,13 @@ argument-hint: "[-m|--message <title>]"
 
 ## Overview
 
-Commit the staged changes with a concise title, an optional bullet-point description, and an AI attribution trailer naming the model.
+Commit the staged changes (or, when nothing is staged, the changes to tracked files) with a concise title, an optional bullet-point description, and an AI attribution trailer naming the model.
 
 ## Arguments
 
 ### Definitions
 
-- **`[-m|--message <title>]`** (optional): Read from `-m` or `--message`. The commit title. The plan step prefix is still added when it can be inferred (see Plan Step Reference). Defaults to a title generated from the changes.
+- **`[-m|--message <title>]`** (optional): Read from `-m` or `--message`. The commit title, used as given: only the plan step prefix is added when it can be inferred (see Plan Step Reference). Defaults to a title generated from the changes.
 
 ### Values
 
@@ -64,9 +64,9 @@ Without a plan, the title has no brackets. With `conventional` style, the prefix
 
 1. Load the `commit` configuration (see Configuration).
 2. Run `git status`. With nothing to commit, report it and stop.
-3. Run `git diff --staged`; when nothing is staged, stage everything with `git add .` and read the staged diff.
+3. Run `git diff --staged`; when nothing is staged, stage the tracked changes with `git add -u`. Stage an untracked file only when it belongs to the change and holds no secret or build output. Done when `git diff --staged` shows the full change.
 4. Write the message in `defaults.language`:
-   - **Title**: the plan step prefix (see Plan Step Reference), then `--message` when given, otherwise per `commit.style`: imperative mood, capitalized first letter, no period (`plain`), or `type(scope): subject` (`conventional`)
+   - **Title**: the plan step prefix (see Plan Step Reference), then `--message` as given, otherwise a title per `commit.style`: imperative mood, capitalized first letter, no period (`plain`), or `type(scope): subject` (`conventional`)
    - **Description**: per Core Principles
    - **Trailer**: the `Co-Authored-By` line with your model name, unless `commit.co_author` is `false`
 5. Commit with a HEREDOC so the formatting survives:
@@ -83,7 +83,7 @@ Without a plan, the title has no brackets. With `conventional` style, the prefix
    )"
    ```
 
-6. Report the commit hash and title, read from `git log -1 --format='%h - %s'`.
+6. Report the commit hash and title, read from `git log -1 --format='%h - %s'`. Done when it shows the new title.
 
 ## Output Guidance
 

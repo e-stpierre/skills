@@ -31,10 +31,10 @@ Arguments: $ARGUMENTS
 
 ## Additional Resources
 
-- For the Halt class and the `ship.halt_on` stop conditions, see [decision-policy.md](../../../references/decision-policy.md)
-- For the background wait pattern, see [esp-fix-review](../esp-fix-review/SKILL.md) (Waiting for Reviews and Checks)
-- For how the script resolves the method and holds the harness merge lock, see [merge-script.md](references/merge-script.md)
-- For the result block and exit codes, see [contract-notes.md](../../../references/contract-notes.md)
+- For the Halt class and the `ship.halt_on` stop conditions, see [decision-policy.md](../../../references/decision-policy.md): read it before halting
+- For the background wait pattern, see [esp-fix-review](../esp-fix-review/SKILL.md) (Waiting for Reviews and Checks): read it when the runtime's launch mode is unclear
+- For how the script resolves the method and holds the harness merge lock, see [merge-script.md](references/merge-script.md): read it to explain a method choice or a lock wait
+- For the result block and exit codes, see [contract-notes.md](../../../references/contract-notes.md): read it before recording the result with `--run-dir`
 
 ## Core Principles
 
@@ -64,7 +64,7 @@ If a command exits with code 1 (invalid config), report its error and stop. If i
 - `merge.enabled` (default `true`): `false` reports and leaves the pull request open
 - `merge.method` (default `repo`): `repo` resolves the method from the repository, else force one method
 - `merge.preference` (default `["squash", "rebase", "merge"]`): order used when the repository allows several methods
-- `merge.delete_branch` (default `true`): delete the remote head branch after the merge (never a fork branch)
+- `merge.delete_branch` (default `true`): delete the remote head branch after the merge (never a fork branch), and the local branch when it is checked out (see Local Cleanup)
 - `merge.require_resolved_threads` (default `true`): unresolved review threads block the merge
 - `merge.require_green_checks` (default `true`): every check must pass. `false`: only the required checks
 - `merge.use_auto_merge` (default `false`): with checks pending, enable GitHub auto-merge instead of waiting
@@ -108,7 +108,7 @@ Rebase at most 3 times per invocation: a base that keeps moving ends with the `b
 
 ### Waiting for Checks
 
-Run `merge-ready.mjs check [<pr>] --wait` like `esp-fix-review` runs its wait: in the background with an exit notification when the runtime has it (end the turn; the next action is reading the exit notification), else in the foreground with the longest shell timeout. It exits when the outcome is no longer `pending`, or with `timed_out: true`. With `merge.use_auto_merge`, skip the wait: `merge` enables auto-merge on pending checks.
+Run `merge-ready.mjs check [<pr>] --wait` in the background with an exit notification when the runtime has it (end the turn; the next action is reading the exit notification), else in the foreground with the longest shell timeout. It exits when the outcome is no longer `pending`, or with `timed_out: true`. With `merge.use_auto_merge`, skip the wait: `merge` enables auto-merge on pending checks.
 
 ### Interactive Merge
 
@@ -128,8 +128,8 @@ After `outputs.merged` is `true`:
 3. **Check prerequisites**: `gh auth status` must succeed, and the pull request must exist. Otherwise report it and stop.
 4. **Read operator messages**: with `--run-dir`, the injected `## Operator Messages` section and `runs.mjs messages`. A message that says not to merge ends the skill with `merge --halt "<message>"`. Deliver applied messages with `runs.mjs deliver`.
 5. **Check**: `merge-ready.mjs check [<pr>] [--method <m>]`. With `--dry-run`, skip to step 8, with no confirmation.
-6. **Act on the outcome** (see Scripts): `pending` -> wait for checks and check again; `behind` or `conflict` -> rebase and re-check (see Rebase and Re-Check). Repeat until the outcome is neither `pending`, `behind` nor `conflict`, or the rebase limit is reached.
-7. **Confirm** (`all` mode only, see Interactive Merge). Only a merge that will happen is confirmed.
+6. **Act on the outcome** (see Scripts): `pending` -> wait for checks and check again; `behind` or `conflict` -> rebase and re-check (see Rebase and Re-Check), except for a fork pull request, which goes to step 7 as is. Done when the outcome is neither `pending`, `behind` nor `conflict`, the pull request is from a fork, or the rebase limit is reached.
+7. **Confirm** (`all` mode only, see Interactive Merge), when the outcome is `ready`. Done when the user has answered.
 8. **Merge**: `merge-ready.mjs merge [<pr>] [--method <m>] [--dry-run]`. With `--run-dir`, pipe it into `runs.mjs result merge --run-dir <path>`, which records the step and prints the result line. The script re-checks under the merge lock, so a base that moved since step 6 ends `behind` without merging.
 9. **Clean up** (see Local Cleanup) when the pull request merged.
 10. **Report** (see Output Guidance), then the result line as the final output line.

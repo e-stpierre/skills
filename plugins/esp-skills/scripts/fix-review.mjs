@@ -849,6 +849,11 @@ export function quoteReply(item, text) {
   return `${quote}${link}${text}`;
 }
 
+function ciFixes(checks) {
+  const n = checks.filter((c) => c.resolution === "fixed").length;
+  return `${n} CI ${n === 1 ? "fix" : "fixes"}`;
+}
+
 function countResolutions(handled) {
   const counts = Object.fromEntries(RESOLUTIONS.map((r) => [r, 0]));
   for (const h of handled) counts[h.resolution]++;
@@ -923,9 +928,7 @@ export function buildResult(
     `${counts.rejected} rejected`,
     `${counts.deferred} deferred`,
     ...(counts.open ? [`${counts.open} open`] : []),
-    ...(checks.length
-      ? [`${checks.filter((c) => c.resolution === "fixed").length} CI fixes`]
-      : [])
+    ...(checks.length ? [ciFixes(checks)] : [])
   ];
   const where = state.mode === "pr" ? `PR ${state.pr}` : "the internal review";
   const text =
