@@ -24,7 +24,6 @@ Arguments work like a standard CLI: discrete values are named options with a sho
 - `/esp-skills:esp-analyze --type security` - Analyze the codebase for security issues
 - `/esp-skills:esp-qna How does OAuth 2.0 work?` - Get a concise answer without code changes
 - `/esp-skills:esp-config set --key pr.draft true` - Change a configuration default
-- `af run esp-go --var "task=Add OAuth login"` - Run the same pipeline under agentic-forge, one steerable step at a time (see [Running Under agentic-forge](#running-under-agentic-forge))
 
 ## Agents
 
@@ -184,7 +183,7 @@ Keys read by the current skills:
 | `ship.reuse.cost`                            | `low: 40000, medium: 70000, high: 120000`                       | `esp-ship`                                | Estimated context per milestone complexity, for builder reuse                       |
 | `pr.body_from_run`                           | `true`                                                          | `esp-ship`, `esp-pr`                      | Build the PR body from the run artifacts                                            |
 | `pr.body_sections`                           | `summary, milestones, decisions, review-resolution, follow-ups` | `esp-ship`, `esp-pr`                      | Sections of that body, in order                                                     |
-| `recap.roots`                                | `["~/.esp-skills/runs"]`                                        | `esp-recap`                               | Runs roots read by the recap, besides `runs.root` (add the agentic-forge runs root) |
+| `recap.roots`                                | `["~/.esp-skills/runs"]`                                        | `esp-recap`                               | Runs roots read by the recap, besides `runs.root` (add any other runs root)         |
 | `recap.default_range_days`                   | `7`                                                             | `esp-recap`                               | Days covered when no date option is given                                           |
 | `recap.fan_out_threshold`                    | `5`                                                             | `esp-recap`                               | Above this many runs, digest them in parallel subagents                             |
 | `runs.root`                                  | `~/.esp-skills/runs`                                            | `scripts/runs.mjs`                        | Where standalone run directories are created                                        |
@@ -319,7 +318,7 @@ node scripts/merge-ready.mjs merge 42 --run-dir <run>
 
 ### Run Directories
 
-Workflow skills record their work in a run directory that follows harness contract v1, owned and published by agentic-forge: `run.json`, step result blocks, `decisions.jsonl`, `events.jsonl`, operator messages and plan amendments. Standalone runs go to `<runs.root>/<YYYY-MM-DD>-<slug>`; a harness or parent run passes `--run-dir <path>` instead. Skills never write these files by hand: `scripts/runs.mjs` creates, updates, validates and indexes them. The schemas and fixtures are in `references/contract/v1/`, and `references/contract-notes.md` maps each contract requirement to the command that meets it.
+Workflow skills record their work in a run directory that follows harness contract v1: `run.json`, step result blocks, `decisions.jsonl`, `events.jsonl`, operator messages and plan amendments. Standalone runs go to `<runs.root>/<YYYY-MM-DD>-<slug>`; a harness or parent run passes `--run-dir <path>` instead. Skills never write these files by hand: `scripts/runs.mjs` creates, updates, validates and indexes them. The schemas and fixtures are in `references/contract/v1/`, and `references/contract-notes.md` maps each contract requirement to the command that meets it.
 
 ```bash
 node scripts/runs.mjs create fix-login-timeout --workflow esp-ship
@@ -336,24 +335,6 @@ node scripts/recap.mjs collect --last 7d --repo api
 node scripts/recap.mjs risks --since 2026-11-01 --min-risk medium
 node scripts/recap.mjs sources --question "Why do refresh tokens rotate?"
 ```
-
-### Running Under agentic-forge
-
-The plugin ships an agentic-forge workflow pack in `af-workflows/` (not `workflows/`, which Claude Code uses for Workflow tool scripts). agentic-forge discovers it from the installed plugin, or from `skill_packs.paths` in its config, and `af workflows` lists it under `Skill pack: esp-skills`. Each workflow declares `requires: { agentic-forge: ">=0.12", contract: 1 }`; `af doctor` checks it, and `af run --ignore-requires` runs on an older build.
-
-| Workflow       | Flow                                                                                                                                                        | Variables                                                                                                                                      |
-| -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
-| `esp-go`       | plan -> approve -> branch -> build (one milestone per iteration) -> build-check -> review -> fix -> PR -> wait-review -> fix-review -> wait-checks -> merge | `task`, `interactive` (`plan`), `review_runtime` (`claude`), `reviewers` (`claude`), `slug`, `max_milestones` (`12`), `use_worktree` (`false`) |
-| `esp-go-light` | `esp-ship --track inline --stop-before-wait` -> wait-review -> fix-review -> wait-checks -> merge                                                           | `task`, `reviewers` (`claude`), `use_worktree` (`false`)                                                                                       |
-| `esp-epic`     | epic file for the overseer backlog -> hand-off                                                                                                              | `source`                                                                                                                                       |
-
-- Every step is a steering boundary: `af send` reaches the next step (or the next build iteration) as an `## Operator Messages` section, and the skills log what they applied in `decisions.jsonl`
-- `af amend` on `esp-go` reruns the `plan` step at the next step boundary, which amends the plan (`plan.v<N>.md`) and keeps the done milestones. The build loop takes no amendment between iterations: an amend sent during `build` applies after it, and `build-check` then stops the run until `af retry-step build` builds the remaining milestones
-- `build` stops the run when a milestone halts or needs an answer, and when `max_milestones` attempts (milestones plus verification retries) run out with milestones left. `build-check` then runs the full gates once (each iteration runs only its milestone's checks) and stops the run when one fails
-- Each `build` iteration runs `esp-ship --milestone next` in a fresh session: one milestone, one verified commit. The iteration reads the esp-ship skill file from the installed plugin, because a loop prompt cannot start with a slash command
-- `review_runtime=codex` runs the internal review on Codex (the skill is inlined); every other step runs on Claude
-- Waiting for the bot reviews and the checks runs in the harness, with no agent session; `merge` runs `esp-merge` under the harness merge lock (`AF_MERGE_LOCK`)
-- `esp-go-light` stops blocked when the task outgrows the inline track (`escalate`): run `esp-go` on the task, or take the run over with `/esp-skills:esp-ship --resume --run-dir <run-dir>` (rerunning the step escalates again)
 
 ### Shared References
 
@@ -663,9 +644,6 @@ Arguments follow CLI conventions: every discrete value is a named option with a 
 
 # Run only the next milestone, as a harness loop iteration would
 /esp-skills:esp-ship --milestone next --run-dir ~/.esp-skills/runs/2026-11-10-add-oauth-login
-
-# A harness workflow step: inline, end once the PR is open, with the harness config
-/esp-skills:esp-ship -t inline -s -d ~/.agentic-forge/runs/2026-11-10-status-json -c ~/.agentic-forge/runs/2026-11-10-status-json/config.json Add a JSON output option
 ```
 
 ### /esp-skills:esp-recap
@@ -789,28 +767,4 @@ This skill takes no arguments. It is automatically invoked when creating, editin
 
 # Create a skill with context, with the short name
 /esp-skills:esp-create-skill -s review-pr A skill that reviews pull requests for code quality and security issues
-```
-
-### agentic-forge workflows
-
-**Variables:** see [Running Under agentic-forge](#running-under-agentic-forge).
-
-**Examples:**
-
-```bash
-# Plan, approve, build one commit per milestone, review, PR, merge
-af run esp-go --var "task=Add OAuth login"
-
-# No plan approval, internal review on Codex, wait for Claude and Codex on the PR
-af run esp-go --var "task=#31" --var interactive=off --var review_runtime=codex --var reviewers=claude,codex
-
-# Small task in its own worktree, beside another run of the same repository
-af run esp-go-light --var "task=Fix the off-by-one in the pager" --var use_worktree=true
-
-# Steer a running esp-go run, or change its scope at the next boundary
-af send <run> "Reuse the existing session store"
-af amend <run> "Drop the migration milestone"
-
-# Turn an epic into a backlog file for the overseer
-af run esp-epic --var "source=docs/epics/search.md"
 ```

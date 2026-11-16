@@ -153,10 +153,6 @@ beforeEach(() => {
   write("plugins/esp-demo/agents/esp-helper.md", AGENT);
   write("plugins/esp-demo/README.md", README);
   write(
-    "plugins/esp-demo/af-workflows/go.yaml",
-    "steps:\n  - type: skill\n    skill: esp-demo:esp-demo\n"
-  );
-  write(
     "plugins/esp-demo/.claude-plugin/plugin.json",
     JSON.stringify({ name: "esp-demo", skills: ["./skills/demo/esp-demo"] })
   );
@@ -346,14 +342,10 @@ describe("validate", () => {
     );
   });
 
-  test("registration, workflows and marketplace", () => {
+  test("registration and marketplace", () => {
     write(
       "plugins/esp-demo/.claude-plugin/plugin.json",
       JSON.stringify({ skills: ["./skills/demo/gone", "./skills/demo/gone"] })
-    );
-    write(
-      "plugins/esp-demo/af-workflows/go.yaml",
-      "steps:\n  - skill: esp-demo\n"
     );
     write(
       ".claude-plugin/marketplace.json",
@@ -367,7 +359,6 @@ describe("validate", () => {
         m.includes("skill not listed: ./skills/demo/esp-demo")
       )
     );
-    assert.ok(messages.some((m) => m.includes("needs the plugin namespace")));
     assert.ok(messages.some((m) => m.includes("alphabetical order")));
   });
 

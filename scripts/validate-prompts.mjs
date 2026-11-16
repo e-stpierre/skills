@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Validate the prompt files of the repository against their templates:
-// skills, agents, plugin READMEs, plugin skill registration, workflow skill
-// namespaces and marketplace order. Section names, order and required
+// skills, agents, plugin READMEs, plugin skill registration and marketplace
+// order. Section names, order and required
 // sections are read from the templates; the argument conventions mirror
 // esp-create-skill. Judgment checks (description quality, done-conditions)
 // stay with the /normalize skill.
@@ -752,26 +752,6 @@ export function validateRegistration(root, plugin) {
   return issues;
 }
 
-/** Workflow skill steps use the full plugin namespace. */
-export function validateWorkflow(root, file) {
-  const issues = [];
-  const lines = readFileSync(join(root, file), "utf8").split(/\r?\n/);
-  for (const [i, line] of lines.entries()) {
-    const m = line.match(/^\s*(?:-\s+)?skill:\s*["']?([^"'\s#]+)/);
-    if (m && !m[1].includes(":")) {
-      issue(
-        issues,
-        file,
-        i + 1,
-        "workflow",
-        `skill "${m[1]}" needs the plugin namespace`
-      );
-    }
-  }
-  checkAscii(issues, file, lines.join("\n"), false);
-  return issues;
-}
-
 export function validateMarketplace(root) {
   const issues = [];
   const file = ".claude-plugin/marketplace.json";
@@ -823,9 +803,6 @@ export function discover(root) {
               (f) =>
                 /\/agents\/[^/]+\.md$/.test(f) && f.startsWith(`${dir}/agents/`)
             ),
-            workflows: files.filter(
-              (f) => f.startsWith(`${dir}/af-workflows/`) && /\.ya?ml$/.test(f)
-            ),
             readme: existsSync(join(root, dir, "README.md"))
               ? `${dir}/README.md`
               : null
@@ -850,20 +827,17 @@ export function validate(root) {
   const counts = {
     skills: repoSkills.length,
     agents: 0,
-    readmes: 0,
-    workflows: 0
+    readmes: 0
   };
   for (const f of repoSkills)
     issues.push(...validateSkill(root, f, templates.skill));
   for (const p of plugins) {
     counts.skills += p.skills.length;
     counts.agents += p.agents.length;
-    counts.workflows += p.workflows.length;
     for (const f of p.skills)
       issues.push(...validateSkill(root, f, templates.skill));
     for (const f of p.agents)
       issues.push(...validateAgent(root, f, templates.agent));
-    for (const f of p.workflows) issues.push(...validateWorkflow(root, f));
     if (p.readme) {
       counts.readmes++;
       issues.push(...validateReadme(root, p.readme, templates.readme, p));
@@ -900,7 +874,7 @@ function main(argv) {
       );
     }
     process.stdout.write(
-      `Checked ${counts.skills} skills, ${counts.agents} agents, ${counts.readmes} READMEs, ${counts.workflows} workflows: ${errors} errors, ${issues.length - errors} warnings\n`
+      `Checked ${counts.skills} skills, ${counts.agents} agents and ${counts.readmes} READMEs: ${errors} errors, ${issues.length - errors} warnings\n`
     );
   }
   return errors ? 1 : 0;

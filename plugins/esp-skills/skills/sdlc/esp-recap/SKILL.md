@@ -54,7 +54,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/config.mjs" get recap
 
 If the command exits with code 1 (invalid config), report its error and stop. If `node` is missing, say the skill needs Node 22 and stop.
 
-- `recap.roots` (default `["~/.esp-skills/runs"]`): runs roots to read. Add the agentic-forge runs root to recap harness runs too. `runs.root` is always read
+- `recap.roots` (default `["~/.esp-skills/runs"]`): runs roots to read. Add another root (for example a shared or archived runs directory) to recap its runs too. `runs.root` is always read
 - `recap.default_range_days` (default `7`): days covered when no date option is given, today included
 - `recap.fan_out_threshold` (default `5`): above this number of runs, digest them in parallel subagents, one batch each
 
@@ -108,7 +108,7 @@ Answer in plain markdown for the user, short and scannable. Lead with the answer
 ## Templates
 
 ```markdown
-**Recap**: 3 runs, 2026-11-04 to 2026-11-10 (roots: ~/.esp-skills/runs, ~/.agentic-forge/runs)
+**Recap**: 3 runs, 2026-11-04 to 2026-11-10 (roots: ~/.esp-skills/runs, ~/archive/esp-runs)
 
 ### o/api
 
