@@ -7,7 +7,7 @@
 // tail: pull request, review wait and fix rounds, body refresh, merge. This
 // script keeps everything deterministic out of the model: the phases of the
 // track and what to run next, the loops, the limits and budgets, the track
-// switch and the caller hand-off, the task worktree, the milestone state, the
+// switch, the task worktree, the milestone state, the
 // pull request body built from the run artifacts, and the final result block.
 // State lives in <run-dir>/ship.json and, for the milestones, in
 // <run-dir>/state.json, so an interrupted run resumes.
@@ -15,15 +15,14 @@
 // The logic lives in lib/ship/: state, phases, review-loop, tail, inline,
 // milestones, gates, workspace, triage and review-gate.
 //
-// Exit codes: 0 ok, 1 failure or invalid state, 2 usage. `escalate`, `halt`
-// and `result` exit with the contract code of their result status (0 done or
-// merged, 10 awaiting-human, 20 halted, 30 escalate, 1 failed).
+// Exit codes: 0 ok, 1 failure or invalid state, 2 usage. `halt` and `result`
+// exit with the contract code of their result status (0 done or merged, 10
+// awaiting-human, 20 halted, 1 failed).
 
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { exitCodeFor } from "./lib/contract.mjs";
 import {
-  cmdEscalate,
   cmdGateFailure,
   cmdScope,
   cmdSwitchTrack
@@ -69,8 +68,7 @@ Commands:
                        choice and writes the triage step result
   init                 Create ship.json (--request <text> --track inline|orchestrated --base <branch>);
                        resolves the phases of the track and freezes the config. A second call
-                       prints the state; --resume lifts an awaiting-human stop, or takes over
-                       an escalated caller-owned run on the orchestrated track
+                       prints the state; --resume lifts an awaiting-human stop
   show                 Print ship.json
   next                 What to run now: { action, track, phase, sub, skill, role, model, effort, cwd, ... }
   phase <name>         Record a phase: --status started|done|skipped|failed, and its facts
@@ -93,11 +91,8 @@ Commands:
   scope                Inline track: changed files since the base vs max_files_changed
                        (--estimate <n> checks a planned file count instead)
   gate-failure         Inline track: count a gate failure (--reason); the second escalates, or halts
-  switch-track         Owned inline run: move to the orchestrated track in place (--to orchestrated
+  switch-track         Inline run: move to the orchestrated track in place (--to orchestrated
                        --trigger files|design|gates --reason <text>); logs the Escalate decision
-  escalate             Caller-owned inline run: hand the task to the caller (--trigger files|design|gates
-                       --reason <text> [--question <text>] [--keep-tree]): saves escalation.patch,
-                       stashes the work, logs the decision, prints the escalate block (exit 30)
   stop                 Record a stop (--status awaiting-human|failed|halted --reason <text>)
   halt                 Halt under a halt_on key (--key --reason), log it, print the halted block (exit 20)
   pr-body              Pull request body from the run artifacts (--summary <text>, --out <file>)
@@ -106,14 +101,14 @@ Commands:
     init               Create state.json from the latest plan (or --plan), or sync it with an
                        amended plan; uses the run's frozen config
     next               What to run now: { action: run|retry|halt|done|blocked, milestone, batch }
-                       (--milestone <id|next> for one milestone, --parallel for a batch)
+                       (--parallel for a batch)
     start <id>         Begin an attempt of a milestone (emits iteration.started)
     finish <id>        End the attempt: --status done|failed|halted [--commit <sha>] [--reason <text>]
     models <id>        Builder and verifier { model, effort } (--model <alias> [--effort <level>])
     reuse <id>         Continue the last builder with a milestone or spawn a fresh one:
                        { decision: reuse|fresh, agent_id, reason, used, cost, limit }; logs a
-                       policy decision (--agent-id <id> held by this session, --single in
-                       --milestone mode, --parallel, --model, --effort)
+                       policy decision (--agent-id <id> held by this session, --parallel,
+                       --model, --effort)
     agent <id>         Record the builder agent of the current attempt (--agent-id <id>
                        [--tokens <n> reported by the Agent result] [--worktree]
                        [--model <m>] [--effort <e>] as given to milestone models)
@@ -125,18 +120,15 @@ Commands:
 
 Options:
   --run-dir <path>          Run directory (required except by milestone gates)
-  --config-snapshot <path>  Config snapshot (init; later commands use the frozen one)
   --project-dir <dir>       Repository root (default: recorded at init, else the git root)
   --track <track>           init, triage: inline or orchestrated (init default: orchestrated)
   --request <text>          init, triage: the task, an issue reference or a file path
   --record                  triage: log the decisions and write the triage step result
-  --caller-owned            init: the caller owns the run, so an inline escalation ends with exit 30
   --plan-source <source>    init: reuse, import, generate or synthesize the plan (default: reuse
                             a plan in the run directory, else generate)
   --plan-mode <mode>        init, triage: auto, skip or always (default: ship.plan_mode)
   --review-mode <mode>      init: auto, internal, pr, both or none (default: ship.review_mode)
   --no-pr, --no-merge       init: stop before the pull request, or before the merge
-  --stop-before-wait        init: leave the review wait, fix-review and merge to the caller
   --resume                  init: resume the run (see init)
   --worktree                init: work in a task worktree (default: ship.worktree)
   --branch <name>           workspace: the task branch (checked out, tracked from origin or created)
@@ -150,12 +142,8 @@ const BOOLEAN_FLAGS = new Set([
   "no-merge",
   "worktree",
   "resume",
-  "stop-before-wait",
-  "caller-owned",
   "record",
-  "keep-tree",
   "parallel",
-  "single",
   "help"
 ]);
 
@@ -251,8 +239,6 @@ export function run(argv, env = process.env) {
       return { output: cmdGateFailure(options, env) };
     case "switch-track":
       return { output: cmdSwitchTrack(options, env) };
-    case "escalate":
-      return blockOutput(cmdEscalate(options, env));
     case "stop":
       return { output: cmdStop(options, env) };
     case "halt":

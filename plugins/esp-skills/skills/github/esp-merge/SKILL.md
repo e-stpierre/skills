@@ -1,9 +1,8 @@
 ---
 name: esp-merge
 description: Merge a pull request once its objective conditions hold
-argument-hint: "[-n|--dry-run] [-m|--method <method>] [-i|--interactive <mode>] [-p|--pr <pr>] [-d|--run-dir <path>] [-c|--config-snapshot <path>]"
+argument-hint: "[-n|--dry-run] [-m|--method <method>] [-i|--interactive <mode>] [-p|--pr <pr>] [-d|--run-dir <path>]"
 disable-model-invocation: true
-metadata: { af-contract: 1, af-level: reporting }
 ---
 
 # ESP Merge
@@ -22,8 +21,7 @@ Read each option by its short or its long name (`-m squash`, `--method squash` o
 - **`[-m|--method <method>]`** (optional): `repo`, `squash`, `rebase` or `merge`. Defaults to `merge.method` (`repo`: pick from what the repository allows). An explicit method the repository does not allow is an error, never a silent fallback.
 - **`[-i|--interactive <mode>]`** (optional): `off`, `plan` or `all`. Only `all` stops for a confirmation before merging. Defaults to `defaults.interactive` (`off`). Headless sessions always use `off`.
 - **`[-p|--pr <pr>]`** (optional): Pull request number, `#<number>`, or URL. Defaults to the pull request of the current branch.
-- **`[-d|--run-dir <path>]`** (optional): Run directory owned by a harness or a parent skill. Halt decisions and the run status count as halt signals, the method decision and the merge events go to the run, and the result block is recorded as step `merge`. Without it, no run is created.
-- **`[-c|--config-snapshot <path>]`** (optional): Config snapshot from a harness or parent run, passed to every script call.
+- **`[-d|--run-dir <path>]`** (optional): Run directory owned by a parent skill (esp-ship). Halt decisions and the run status count as halt signals, the method decision and the merge events go to the run, and the result block is recorded as step `merge`. Without it, no run is created.
 
 ### Values
 
@@ -33,7 +31,7 @@ Arguments: $ARGUMENTS
 
 - For the Halt class and the `ship.halt_on` stop conditions, see [decision-policy.md](../../../references/decision-policy.md): read it before halting
 - For the background wait pattern, see [esp-fix-review](../esp-fix-review/SKILL.md) (Waiting for Reviews and Checks): read it when the runtime's launch mode is unclear
-- For how the script resolves the method and holds the harness merge lock, see [merge-script.md](references/merge-script.md): read it to explain a method choice or a lock wait
+- For how the script resolves the method, see [merge-script.md](references/merge-script.md): read it to explain a method choice
 - For the result block and exit codes, see [contract-notes.md](../../../references/contract-notes.md): read it before recording the result with `--run-dir`
 
 ## Core Principles
@@ -45,13 +43,12 @@ Arguments: $ARGUMENTS
 - Re-run the gates after every rebase, and push only a rebase whose gates pass
 - The script waits, the session sleeps: wait for checks with the script in the background, never with polling or `sleep` loops in the session
 - Run every script with Bash, with the literal `"${CLAUDE_PLUGIN_ROOT}/scripts/..."` path. The result block always comes from the script
-- The merge lock (`AF_MERGE_LOCK`) belongs to the harness and `merge-ready.mjs merge`: the skill never creates or removes it
 
 ## Skill-Specific Guidelines
 
 ### Configuration
 
-Read the sections once at the start (add `--config-snapshot <path>` when given):
+Read the sections once at the start:
 
 ```bash
 node "${CLAUDE_PLUGIN_ROOT}/scripts/config.mjs" get merge
@@ -68,13 +65,13 @@ If a command exits with code 1 (invalid config), report its error and stop. If i
 - `merge.require_resolved_threads` (default `true`): unresolved review threads block the merge
 - `merge.require_green_checks` (default `true`): every check must pass. `false`: only the required checks
 - `merge.use_auto_merge` (default `false`): with checks pending, enable GitHub auto-merge instead of waiting
-- `merge.checks_timeout_minutes` (default `30`): wait for pending checks, and for a busy merge lock
+- `merge.checks_timeout_minutes` (default `30`): wait for pending checks
 - `worktrees.root`, `worktrees.cleanup` (defaults `~/.esp-skills/worktrees`, `on-merge`): remove the task worktree after the merge, unless cleanup is `never`
 - `defaults.interactive` (default `off`): interactive mode when `--interactive` is not given
 
 ### Scripts
 
-Every `merge-ready.mjs` call takes the `--pr` value as `<pr>` (omitted without it), plus `--run-dir <path>` and `--config-snapshot <path>` when given:
+Every `merge-ready.mjs` call takes the `--pr` value as `<pr>` (omitted without it), plus `--run-dir <path>`:
 
 - **Check**: `merge-ready.mjs check [<pr>] [--method <m>]` (report: `ready`, `outcome`, `conditions`, `method`)
 - **Wait for checks**: `merge-ready.mjs check [<pr>] --wait` (polls every 30 s up to `checks_timeout_minutes`)
@@ -130,7 +127,7 @@ After `outputs.merged` is `true`:
 5. **Check**: `merge-ready.mjs check [<pr>] [--method <m>]`. With `--dry-run`, skip to step 8, with no confirmation.
 6. **Act on the outcome** (see Scripts): `pending` -> wait for checks and check again; `behind` or `conflict` -> rebase and re-check (see Rebase and Re-Check), except for a fork pull request, which goes to step 7 as is. Done when the outcome is neither `pending`, `behind` nor `conflict`, the pull request is from a fork, or the rebase limit is reached.
 7. **Confirm** (`all` mode only, see Interactive Merge), when the outcome is `ready`. Done when the user has answered.
-8. **Merge**: `merge-ready.mjs merge [<pr>] [--method <m>] [--dry-run]`. With `--run-dir`, pipe it into `runs.mjs result merge --run-dir <path>`, which records the step and prints the result line. The script re-checks under the merge lock, so a base that moved since step 6 ends `behind` without merging.
+8. **Merge**: `merge-ready.mjs merge [<pr>] [--method <m>] [--dry-run]`. With `--run-dir`, pipe it into `runs.mjs result merge --run-dir <path>`, which records the step and prints the result line. The script checks again right before merging, so a base that moved since step 6 ends `behind` without merging.
 9. **Clean up** (see Local Cleanup) when the pull request merged.
 10. **Report** (see Output Guidance), then the result line as the final output line.
 

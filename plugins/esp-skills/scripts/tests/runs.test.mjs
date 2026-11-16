@@ -116,20 +116,6 @@ describe("create", () => {
     assert.equal(out.json().run_dir, join(runsRoot, "2026-11-10-task"));
   });
 
-  test("uses runs.root from a config snapshot", () => {
-    const snapshot = join(root, "snapshot.json");
-    writeFileSync(
-      snapshot,
-      JSON.stringify({ runs: { root: join(root, "snap-runs") } })
-    );
-    const out = cli(["create", "task", "--config-snapshot", snapshot]);
-    assert.equal(out.code, 0, out.stderr);
-    assert.equal(
-      out.json().run_dir,
-      join(root, "snap-runs", "2026-11-10-task")
-    );
-  });
-
   test("adds a numeric suffix when the directory exists", () => {
     createRun();
     const second = createRun();

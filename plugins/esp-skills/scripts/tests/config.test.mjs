@@ -273,9 +273,7 @@ describe("cli get and show", () => {
     const snapshot = join(root, "snap.json");
     writeFileSync(snapshot, shown.stdout);
     rmSync(join(home, "config.json"));
-    const result = cli("get", "pr.draft", "--config-snapshot", snapshot);
-    assert.equal(result.code, 0, result.stderr);
-    assert.equal(result.json(), true);
+    assert.equal(loadConfig({ snapshot, env }).config.pr.draft, true);
   });
 
   test("sources lists every layer", () => {

@@ -32,7 +32,6 @@ const RESERVED = {
 
 const PLUGIN_WIDE = {
   d: ["run-dir"],
-  c: ["config-snapshot"],
   i: ["interactive"],
   r: ["reviewers"],
   p: ["pr", "plan"],

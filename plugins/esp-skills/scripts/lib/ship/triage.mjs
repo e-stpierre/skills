@@ -360,10 +360,7 @@ function existingTriage(dir) {
 
 function settingsFor(options, projectDir) {
   try {
-    const snapshot = stringOption(options["config-snapshot"]);
-    const { config } = loadConfig(
-      snapshot ? { snapshot: resolve(snapshot) } : { projectDir }
-    );
+    const { config } = loadConfig({ projectDir });
     return {
       ...shipSettings(config, "inline"),
       plan_mode: config.ship?.plan_mode

@@ -1,8 +1,7 @@
 ---
 name: esp-plan
 description: Implementation plan as parseable milestones in a run directory. Use to plan a feature, bug fix or chore before building it, or to amend the remaining milestones of an existing plan.
-argument-hint: "[-a|--amend] [-I|--import <path>] [-t|--type <type>] [-i|--interactive <mode>] [-d|--run-dir <path>] [-c|--config-snapshot <path>] [context]"
-metadata: { af-contract: 1, af-level: steerable }
+argument-hint: "[-a|--amend] [-I|--import <path>] [-t|--type <type>] [-i|--interactive <mode>] [-d|--run-dir <path>] [context]"
 ---
 
 # ESP Plan
@@ -19,8 +18,7 @@ Explore the codebase and write an implementation plan that `esp-ship` and a harn
 - **`[-I|--import <path>]`** (optional): Convert a task list (a checkbox progress list plus one heading per package) or a design document into a plan, with no codebase exploration: one milestone per unchecked package, checked packages listed in `## Out of Scope`, the source path in the `source` frontmatter key.
 - **`[-t|--type <type>]`** (optional): Plan type: `feature`, `bug`, `chore` or `auto`. Defaults to `plan.default_type` (`auto`).
 - **`[-i|--interactive <mode>]`** (optional): When to stop and ask: `off` (never), `plan` or `all` (ask for open choices and approve the plan before finishing). Defaults to `defaults.interactive` (`off`). Headless sessions always use `off`.
-- **`[-d|--run-dir <path>]`** (optional): Run directory owned by a harness or a parent skill. Without it, the skill creates its own run under `runs.root`.
-- **`[-c|--config-snapshot <path>]`** (optional): Config snapshot from a harness or parent run, passed to every `config.mjs` and `runs.mjs` call.
+- **`[-d|--run-dir <path>]`** (optional): Run directory owned by a parent skill (esp-ship). Without it, the skill creates its own run under `runs.root`.
 - **`[context]`** (optional): The task: free text, an issue URL, or a document path. With `--amend`, the amendment.
 
 ### Values
@@ -47,7 +45,7 @@ Arguments: $ARGUMENTS
 
 ### Configuration
 
-Read the `plan` section and the shared defaults once at the start (add `--config-snapshot <path>` when given):
+Read the `plan` section and the shared defaults once at the start:
 
 ```bash
 node "${CLAUDE_PLUGIN_ROOT}/scripts/config.mjs" get plan
@@ -64,7 +62,7 @@ If a command exits with code 1 (invalid config), report its error and stop. If i
 
 ### Run Directory and Contract
 
-esp-plan is a steerable skill: it writes a result block, reads operator messages, and asks through `needs_input` under a harness. The list abbreviates `node "${CLAUDE_PLUGIN_ROOT}/scripts/runs.mjs"` as `runs.mjs` (same for `plan.mjs`). Every `runs.mjs` call except `create` takes `--run-dir <path>`, and every `runs.mjs` call takes `--config-snapshot <path>` when given:
+esp-plan is a steerable skill: it writes a result block, reads operator messages, and asks through `needs_input` under a harness. The list abbreviates `node "${CLAUDE_PLUGIN_ROOT}/scripts/runs.mjs"` as `runs.mjs` (same for `plan.mjs`). Every `runs.mjs` call except `create` takes `--run-dir <path>`:
 
 - **Own run (no `--run-dir`)**: `runs.mjs create <slug> --title <title> --workflow esp-plan --repo <repo-root>` (prints `run_dir`)
 - **Pending messages**: `runs.mjs messages`, then `runs.mjs deliver <id>...` once applied

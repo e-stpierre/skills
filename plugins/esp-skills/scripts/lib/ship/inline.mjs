@@ -1,35 +1,20 @@
 // The inline track: the escalation limits (files changed, gate failures) and
-// the move to the orchestrated track. In a run esp-ship owns, the move is an
-// in-place track switch: the branch and the uncommitted work stay. In a
-// caller-owned run, `escalate` saves the work and ends with status escalate
-// (exit 30), so the caller decides.
+// the move to the orchestrated track, an in-place track switch: the branch and
+// the uncommitted work stay.
 
-import { writeFileSync } from "node:fs";
-import { join } from "node:path";
 import { appendDecision, now } from "../../runs.mjs";
 import { applyTrack } from "./phases.mjs";
-import { assertBlock, baseOutputs } from "./tail.mjs";
 import {
   changedFiles,
-  commitsSince,
   configOf,
   ESCALATION_TRIGGERS,
-  git,
-  isDirty,
   projectDirOf,
   readState,
   runDirOf,
-  runJson,
   ShipError,
-  skipUnfinished,
   stringOption,
-  updateState,
-  workingPatch
+  updateState
 } from "./state.mjs";
-
-/** How an inline run leaves its track: in place when esp-ship owns the run. */
-export const escalateWith = (state) =>
-  state.run_owner === "caller" ? "escalate" : "switch-track";
 
 function escalationAction(state) {
   return state.escalate ? "escalate" : "continue-over-limit";
@@ -48,7 +33,6 @@ export function scopeCheck(state, files, estimate = null) {
     exceeded,
     action
   };
-  if (action === "escalate") out.escalate_with = escalateWith(state);
   return out;
 }
 
@@ -94,7 +78,6 @@ export function cmdGateFailure(options, env = process.env) {
     limit: state.gate_failure_limit,
     action
   };
-  if (action === "escalate") out.escalate_with = escalateWith(state);
   return out;
 }
 
@@ -114,10 +97,6 @@ function assertInline(state, command) {
   if (state.track !== "inline")
     throw new ShipError(
       `${command}: the run is on the ${state.track} track, not inline`
-    );
-  if (state.escalation)
-    throw new ShipError(
-      `Already escalated (${state.escalation.trigger}): ${state.escalation.reason}`
     );
 }
 
@@ -139,7 +118,7 @@ function logEscalation(dir, state, { trigger, reason, files, decision }, env) {
 }
 
 /**
- * Switch an owned inline run to the orchestrated track, in place: the branch,
+ * Switch an inline run to the orchestrated track, in place: the branch,
  * the commits and the uncommitted work stay, the phases both tracks share keep
  * their progress, and the orchestrated phases start from the plan.
  */
@@ -154,10 +133,6 @@ export function cmdSwitchTrack(options, env = process.env) {
     );
   const { trigger, reason } = escalationInput(options);
   assertInline(state, "switch-track");
-  if (state.run_owner === "caller")
-    throw new ShipError(
-      "The caller owns this run: use escalate, so the caller decides"
-    );
   const files = changedFiles(projectDirOf(options, state), state.base_sha);
   const decision = logEscalation(
     dir,
@@ -191,10 +166,7 @@ export function cmdSwitchTrack(options, env = process.env) {
         trigger,
         reason,
         files,
-        patch: null,
-        stash: null,
-        decision: decision.id,
-        in_place: true
+        decision: decision.id
       };
       applyTrack(s, to, configOf(s.config_snapshot));
     },
@@ -212,82 +184,4 @@ export function cmdSwitchTrack(options, env = process.env) {
       ["pending", "started"].includes(updated.phase_status[p])
     )
   };
-}
-
-/**
- * Escalate a caller-owned inline run: save the work as a patch, stash it
- * (unless --keep-tree), log the decision and build the escalate block.
- */
-export function cmdEscalate(options, env = process.env) {
-  const dir = runDirOf(options);
-  const state = readState(dir);
-  const { trigger, reason } = escalationInput(options);
-  assertInline(state, "escalate");
-  if (state.run_owner !== "caller")
-    throw new ShipError(
-      "esp-ship owns this run: use switch-track to move to the orchestrated track in place"
-    );
-  const projectDir = projectDirOf(options, state);
-  const files = changedFiles(projectDir, state.base_sha);
-  const patchText = workingPatch(projectDir, state.base_sha);
-  let patch = null;
-  if (patchText.trim() !== "") {
-    patch = join(dir, "escalation.patch");
-    writeFileSync(patch, patchText, "utf8");
-  }
-  let stash = null;
-  if (!options["keep-tree"] && isDirty(projectDir)) {
-    const message = `esp-ship escalation ${runJson(dir).id}`;
-    git(["stash", "push", "--include-untracked", "-m", message], projectDir);
-    stash = message;
-  }
-  const decision = logEscalation(
-    dir,
-    state,
-    {
-      trigger,
-      reason,
-      files,
-      decision: `Escalate to the orchestrated track (${trigger})`
-    },
-    env
-  );
-  const escalation = {
-    trigger,
-    reason,
-    question: stringOption(options.question),
-    files,
-    patch,
-    stash,
-    commits: commitsSince(projectDir, state.base_sha).map((c) => c.sha),
-    decision: decision.id,
-    at: now(env).toISOString()
-  };
-  const fresh = updateState(
-    dir,
-    (s) => {
-      s.escalation = escalation;
-      skipUnfinished(s);
-    },
-    env
-  );
-  return assertBlock({
-    contract_version: 1,
-    status: "escalate",
-    summary: `Escalated to the orchestrated track (${trigger}): ${reason}`,
-    files_changed: files,
-    commit: null,
-    pr: state.pr,
-    max_risk: runJson(dir).max_risk ?? "medium",
-    outputs: {
-      ...baseOutputs(fresh, dir),
-      escalation,
-      next: {
-        skill: "esp-ship",
-        run_dir: dir,
-        track: "orchestrated",
-        resume: true
-      }
-    }
-  });
 }

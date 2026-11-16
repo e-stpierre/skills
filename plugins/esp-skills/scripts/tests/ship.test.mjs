@@ -262,7 +262,6 @@ describe("cli", () => {
       "scope",
       "gate-failure",
       "switch-track",
-      "escalate",
       "stop",
       "halt",
       "pr-body",
@@ -322,7 +321,7 @@ describe("resolvePhases", () => {
     );
   });
 
-  test("applies --no-pr, --no-merge, --stop-before-wait and internal_review_rounds 0", () => {
+  test("applies --no-pr, --no-merge and internal_review_rounds 0", () => {
     const noPr = resolvePhases("orchestrated", undefined, { noPr: true });
     assert.deepEqual(noPr.phases, [
       "plan",
@@ -345,12 +344,6 @@ describe("resolvePhases", () => {
       resolvePhases("orchestrated", ["plan", "build", "merge"]).skipped.merge,
       "needs the pr phase"
     );
-    const stopped = resolvePhases("orchestrated", undefined, {
-      stopBeforeWait: true
-    });
-    assert.equal(stopped.phases.at(-1), "pr");
-    assert.match(stopped.skipped["fix-review"], /stop-before-wait/);
-    assert.equal(stopped.skipped["await-review"], undefined);
   });
 
   test("inline: canonical order, implement required, wait phases need pr", () => {
@@ -374,10 +367,6 @@ describe("resolvePhases", () => {
     const noPr = resolvePhases("inline", ["context", "implement", "merge"]);
     assert.deepEqual(noPr.phases, ["context", "implement"]);
     assert.equal(noPr.skipped.merge, "needs the pr phase");
-    const stopped = resolvePhases("inline", undefined, {
-      stopBeforeWait: true
-    });
-    assert.deepEqual(stopped.phases, ["context", "branch", "implement", "pr"]);
     assert.throws(() => resolvePhases("inline", ["context", "pr"]), ShipError);
     assert.throws(() => resolvePhases("sideways"), ShipError);
   });
@@ -409,7 +398,6 @@ describe("init", () => {
     const s = state();
     assert.equal(s.workflow, "esp-ship");
     assert.equal(s.track, "orchestrated");
-    assert.equal(s.run_owner, "self");
     assert.equal(s.request, "Add OAuth login");
     assert.equal(s.base_sha, git("rev-parse", "HEAD"));
     assert.equal(s.internal_review_rounds, 2);
@@ -468,12 +456,10 @@ describe("init", () => {
     assert.equal(s.interactive, "plan");
     assert.equal(s.phase_status.merge, "skipped");
     rmSync(join(runDir, "ship.json"));
-    initInline("--stop-before-wait", "--caller-owned");
+    initInline("--no-merge");
     const light = state();
     assert.equal(light.max_files_changed, 3);
     assert.equal(light.escalate, false);
-    assert.equal(light.stop_before_wait, true);
-    assert.equal(light.run_owner, "caller");
     assert.deepEqual(light.phases, ["context", "implement", "pr"]);
     assert.equal(light.phase_status.branch, "skipped");
     assert.equal(light.phase_status.merge, "skipped");
@@ -492,18 +478,6 @@ describe("init", () => {
     assert.equal(again.code, 0);
     assert.equal(again.json().created, false);
     assert.equal(again.json().request, "Add OAuth login");
-  });
-
-  test("uses a given snapshot", () => {
-    const snap = join(tmp, "snap.json");
-    writeFileSync(
-      snap,
-      JSON.stringify({ version: 1, ship: { inline: { max_files_changed: 2 } } })
-    );
-    initInline("--config-snapshot", snap);
-    assert.equal(state().config_snapshot, snap);
-    assert.equal(state().max_files_changed, 2);
-    assert.equal(existsSync(join(runDir, "config.snapshot.json")), false);
   });
 });
 
@@ -1037,7 +1011,6 @@ describe("inline limits", () => {
     const over = ship("scope").json();
     assert.equal(over.count, 3);
     assert.equal(over.action, "escalate");
-    assert.equal(over.escalate_with, "switch-track");
     assert.equal(ship("scope", "--estimate", "5").json().action, "escalate");
     assert.equal(ship("scope", "--estimate", "1").json().action, "continue");
     assert.equal(ship("scope", "--estimate", "-1").code, 2);
@@ -1046,11 +1019,6 @@ describe("inline limits", () => {
   test("scopeCheck continues over the limit when escalation is off", () => {
     const s = { max_files_changed: 1, escalate: false };
     assert.equal(scopeCheck(s, ["a", "b"]).action, "continue-over-limit");
-    assert.equal(
-      scopeCheck({ ...s, escalate: true, run_owner: "caller" }, ["a", "b"])
-        .escalate_with,
-      "escalate"
-    );
   });
 
   test("the second gate failure escalates, or halts without escalation", () => {
@@ -1062,7 +1030,6 @@ describe("inline limits", () => {
     const second = ship("gate-failure", "--reason", "test failed").json();
     assert.equal(second.gate_failures, 2);
     assert.equal(second.action, "escalate");
-    assert.equal(second.escalate_with, "switch-track");
     assert.deepEqual(state().gate_failure_reasons, [
       "test failed",
       "test failed"
@@ -1079,7 +1046,7 @@ describe("inline limits", () => {
 });
 
 describe("switch-track", () => {
-  test("moves an owned inline run to the orchestrated track in place", () => {
+  test("moves an inline run to the orchestrated track in place", () => {
     initInline("--plan-source", "none");
     ship("phase", "context", "--status", "done");
     ship("phase", "branch", "--status", "done", "--branch", "feature/oauth");
@@ -1107,8 +1074,7 @@ describe("switch-track", () => {
     assert.equal(s.phase_status.plan, "pending");
     assert.equal(s.phase_status.implement, undefined);
     assert.equal(s.max_wall_minutes, 240);
-    assert.equal(s.escalated_from.in_place, true);
-    assert.equal(s.escalated_from.stash, null);
+    assert.equal(s.escalated_from.trigger, "files");
     assert.equal(s.track_history[0].phase_status.implement, "started");
     // The uncommitted work stays in the tree, with no stash.
     assert.match(git("status", "--porcelain"), /new\.txt/);
@@ -1135,13 +1101,7 @@ describe("switch-track", () => {
     );
   });
 
-  test("refuses a caller-owned run and validates its arguments", () => {
-    initInline("--caller-owned");
-    assert.equal(
-      ship("switch-track", "--trigger", "design", "--reason", "x").code,
-      1
-    );
-    rmSync(join(runDir, "ship.json"));
+  test("validates its arguments", () => {
     initInline();
     assert.equal(
       ship("switch-track", "--trigger", "mood", "--reason", "x").code,
@@ -1160,10 +1120,10 @@ describe("switch-track", () => {
       ).code,
       2
     );
-    // An owned run switches in place instead of escalating.
+    // There is no escalate command: an inline run always switches in place.
     assert.equal(
       ship("escalate", "--trigger", "files", "--reason", "x").code,
-      1
+      2
     );
     const design = ship(
       "switch-track",
@@ -1175,139 +1135,6 @@ describe("switch-track", () => {
     assert.equal(design.code, 0, design.stderr);
     assert.equal(jsonl("decisions.jsonl")[0].source, "agent");
     assert.equal(jsonl("decisions.jsonl")[0].phase, "context");
-  });
-});
-
-describe("escalate (caller-owned run)", () => {
-  test("saves a patch, stashes the work, logs the decision and exits 30", () => {
-    initInline("--caller-owned");
-    writeFileSync(join(repo, "a.txt"), "changed\n");
-    writeFileSync(join(repo, "new.txt"), "new\n");
-    const r = ship(
-      "escalate",
-      "--trigger",
-      "files",
-      "--reason",
-      "touches 14 files"
-    );
-    assert.equal(r.code, 30, r.stderr);
-    const block = r.json();
-    assert.deepEqual(validateArtifact("result", block).errors, []);
-    assert.equal(block.status, "escalate");
-    assert.deepEqual(block.files_changed, ["a.txt", "new.txt"]);
-    const e = block.outputs.escalation;
-    assert.equal(e.trigger, "files");
-    assert.equal(e.stash, `esp-ship escalation ${runJson().id}`);
-    assert.deepEqual(block.outputs.next, {
-      skill: "esp-ship",
-      run_dir: runDir,
-      track: "orchestrated",
-      resume: true
-    });
-    assert.equal(git("status", "--porcelain"), "");
-    assert.match(git("stash", "list"), /esp-ship escalation/);
-    // The patch restores the work on a clean tree.
-    git("apply", "--check", e.patch);
-    git("apply", e.patch);
-    assert.equal(readFileSync(join(repo, "new.txt"), "utf8"), "new\n");
-    const [decision] = jsonl("decisions.jsonl");
-    assert.equal(decision["x-esp-escalation"], "files");
-    assert.equal(decision.source, "policy");
-    assert.equal(decision.risk, "medium");
-    assert.equal(state().escalation.decision, decision.id);
-    assert.equal(state().phase_status.implement, "skipped");
-    assert.equal(ship("next").json().action, "result");
-    const result = ship("result");
-    assert.equal(result.code, 30);
-    assert.equal(result.json().status, "escalate");
-    assert.equal(
-      ship("escalate", "--trigger", "gates", "--reason", "again").code,
-      1
-    );
-  });
-
-  test("keeps the tree with --keep-tree, and a design escalation is an agent decision", () => {
-    initInline("--caller-owned");
-    writeFileSync(join(repo, "a.txt"), "changed\n");
-    const r = ship(
-      "escalate",
-      "--trigger",
-      "design",
-      "--reason",
-      "two storage designs",
-      "--question",
-      "SQL or KV?",
-      "--keep-tree"
-    );
-    assert.equal(r.code, 30);
-    assert.equal(r.json().outputs.escalation.stash, null);
-    assert.equal(r.json().outputs.escalation.question, "SQL or KV?");
-    assert.notEqual(git("status", "--porcelain"), "");
-    assert.equal(jsonl("decisions.jsonl")[0].source, "agent");
-  });
-
-  test("validates its arguments", () => {
-    initInline("--caller-owned");
-    assert.equal(
-      ship("escalate", "--trigger", "mood", "--reason", "x").code,
-      2
-    );
-    assert.equal(ship("escalate", "--trigger", "files").code, 2);
-    rmSync(join(runDir, "ship.json"));
-    init("--caller-owned");
-    assert.equal(
-      ship("escalate", "--trigger", "files", "--reason", "x").code,
-      1
-    );
-  });
-
-  test("a resume takes the escalated run over on the orchestrated track", () => {
-    initInline(
-      "--caller-owned",
-      "--plan-source",
-      "none",
-      "--plan-mode",
-      "skip"
-    );
-    ship("phase", "branch", "--status", "done", "--branch", "feature/oauth");
-    writeFileSync(join(repo, "b.txt"), "work in progress\n");
-    const escalated = ship(
-      "escalate",
-      "--trigger",
-      "files",
-      "--reason",
-      "12 files estimated"
-    );
-    assert.equal(escalated.code, 30, escalated.stderr);
-    writeStep("ship", JSON.parse(escalated.stdout));
-    cli(RUNS, ["update", "--run-dir", runDir, "--status", "halted"]);
-
-    const out = ship("init", "--resume");
-    assert.equal(out.code, 0, out.stderr);
-    assert.equal(out.json().taken_over, true);
-    const s = state();
-    assert.equal(s.track, "orchestrated");
-    assert.equal(s.escalation, null);
-    assert.equal(s.branch, "feature/oauth");
-    assert.equal(s.phase_status.branch, "done");
-    assert.equal(s.phase_status.plan, "pending");
-    assert.equal(s.escalated_from.trigger, "files");
-    assert.equal(s.escalated_from.in_place, false);
-    assert.equal(s.escalated_from.patch, join(runDir, "escalation.patch"));
-    assert.match(s.escalated_from.stash, /esp-ship escalation/);
-    assert.equal(runJson().status, "running");
-    assert.ok(
-      jsonl("events.jsonl").some(
-        (e) => e.type === "run.resumed" && e.data.from === "inline"
-      )
-    );
-    assert.equal(s.plan_source, "synthesize");
-    const next = ship("next").json();
-    assert.equal(next.phase, "plan");
-    assert.equal(next.plan_source, "synthesize");
-    // The escalate step of the inline run does not decide the final status.
-    ship("stop", "--status", "failed", "--reason", "gave up");
-    assert.equal(ship("result").json().status, "failed");
   });
 });
 
@@ -1474,8 +1301,8 @@ describe("result", () => {
     assert.equal(block.outputs.merge.method, "squash");
   });
 
-  test("inline: done after --stop-before-wait, with commits and gates", () => {
-    initInline("--stop-before-wait");
+  test("inline: done after the pull request, with commits and gates", () => {
+    initInline("--no-merge");
     const c = commit("b.txt", "b\n", "Add greeting");
     ship(
       "phase",
@@ -1498,8 +1325,7 @@ describe("result", () => {
     assert.deepEqual(block.files_changed, ["b.txt"]);
     assert.deepEqual(block.gates, { test: "pass" });
     assert.equal(block.outputs.track, "inline");
-    assert.deepEqual(block.outputs.deferred_phases, ["fix-review", "merge"]);
-    assert.match(block.summary, /left to the caller/);
+    assert.match(block.summary, /Done the task/);
     const recorded = cli(RUNS, [
       "result",
       "ship",
@@ -1791,32 +1617,15 @@ describe("milestone init", () => {
   });
 
   test("shares the config snapshot of ship.json", () => {
-    const snap = join(tmp, "snap.json");
-    writeFileSync(
-      snap,
-      JSON.stringify({
-        version: 1,
-        ship: { max_retries_per_milestone: 0, parallel: "on" }
-      })
-    );
-    init("--config-snapshot", snap);
+    userConfig({ ship: { max_retries_per_milestone: 0, parallel: "on" } });
+    init();
+    // A later config change does not reach the frozen run.
+    userConfig({ ship: { max_retries_per_milestone: 4, parallel: "off" } });
     assert.equal(ship("milestone", "init").code, 0);
     const s = milestones();
-    assert.equal(s.config_snapshot, snap);
+    assert.equal(s.config_snapshot, join(runDir, "config.snapshot.json"));
     assert.equal(s.max_retries, 0);
     assert.equal(s.parallel, true);
-    assert.equal(existsSync(join(runDir, "config.snapshot.json")), false);
-  });
-
-  test("uses a given config snapshot instead of writing one", () => {
-    const snap = join(tmp, "snap.json");
-    writeFileSync(
-      snap,
-      JSON.stringify({ version: 1, ship: { max_retries_per_milestone: 1 } })
-    );
-    assert.equal(ship("milestone", "init", "--config-snapshot", snap).code, 0);
-    assert.equal(milestones().config_snapshot, snap);
-    assert.equal(milestones().max_retries, 1);
   });
 
   test("is idempotent and keeps progress", () => {
@@ -2015,21 +1824,6 @@ describe("milestone loop", () => {
     assert.equal(next.reason, "plan ambiguity");
   });
 
-  test("--milestone selects one milestone and reports blocked dependencies", () => {
-    assert.equal(
-      ship("milestone", "next", "--milestone", "M3").json().milestone,
-      "M3"
-    );
-    const blocked = ship("milestone", "next", "--milestone", "M2").json();
-    assert.equal(blocked.action, "blocked");
-    assert.match(blocked.reason, /depends on M1/);
-    assert.equal(
-      ship("milestone", "next", "--milestone", "next").json().milestone,
-      "M1"
-    );
-    assert.equal(ship("milestone", "next", "--milestone", "M9").code, 2);
-  });
-
   test("finish validates its input", () => {
     assert.equal(
       ship("milestone", "finish", "M1", "--status", "done", "--commit", SHA1)
@@ -2086,13 +1880,6 @@ describe("nextStep", () => {
     assert.deepEqual(nextStep(s, { parallel: true }).batch, ["M1", "M3", "M5"]);
     const noFiles = make({ M1: {}, M2: { files: ["x"] } });
     assert.deepEqual(nextStep(noFiles, { parallel: true }).batch, ["M1"]);
-  });
-
-  test("--milestone next never batches", () => {
-    const s = make({ M1: { files: ["a"] }, M2: { files: ["b"] } });
-    assert.deepEqual(nextStep(s, { parallel: true, only: "next" }).batch, [
-      "M1"
-    ]);
   });
 
   test("builderUsed adds the runs continued after the reported tokens", () => {
@@ -2514,9 +2301,6 @@ describe("builder reuse", () => {
     const lost = reuse("M3", "--agent-id", "zz");
     assert.equal(lost.decision, "fresh");
     assert.match(lost.reason, /zz is not the last builder \(a3\)/);
-    const single = reuse("M3", "--agent-id", "a3", "--single");
-    assert.equal(single.decision, "fresh");
-    assert.match(single.reason, /--milestone mode/);
     assert.equal(reuse("M3", "--agent-id", "a3").decision, "reuse");
   });
 
@@ -2565,17 +2349,14 @@ describe("milestone models", () => {
       join(runDir, "plan.md"),
       planText(1, [milestone("M1"), milestone("M3", { complexity: "high" })])
     );
-    const snap = join(tmp, "snap.json");
-    writeFileSync(
-      snap,
-      JSON.stringify({
-        version: 1,
-        defaults: {
-          models: { builder: { high: { model: "fable", effort: "max" } } }
-        }
-      })
-    );
-    ship("milestone", "init", "--config-snapshot", snap);
+    userConfig({
+      defaults: {
+        models: { builder: { high: { model: "fable", effort: "max" } } }
+      }
+    });
+    ship("milestone", "init");
+    // The snapshot is frozen at init: a later change does not apply.
+    userConfig({});
     assert.deepEqual(ship("milestone", "models", "M3").json().builder, {
       model: "fable",
       effort: "max"

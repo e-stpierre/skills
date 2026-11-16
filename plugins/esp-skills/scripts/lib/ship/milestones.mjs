@@ -136,16 +136,13 @@ export function cmdMilestoneInit(options, env = process.env) {
   if (plan.milestones.length === 0)
     throw new ShipError(`Plan has no milestones: ${planFile}`);
 
-  // Freeze the config for deterministic resume: an explicit snapshot wins,
-  // then the one of state.json, then the one of ship.json, else the merged
-  // config is written in the run directory once.
+  // Freeze the config for deterministic resume: the snapshot of state.json
+  // wins, then the one of ship.json, else the merged config is written in the
+  // run directory once.
   const path = statePath(dir);
   const existing = existsSync(path) ? readMilestoneState(dir) : null;
   const snapshot = freezeConfig(dir, {
-    snapshot:
-      stringOption(options["config-snapshot"]) ??
-      existing?.config_snapshot ??
-      shipSnapshot(dir),
+    snapshot: existing?.config_snapshot ?? shipSnapshot(dir),
     projectDir: stringOption(options["project-dir"]) ?? undefined
   });
   const config = configOf(snapshot);
@@ -320,7 +317,7 @@ export { filesOverlap };
  * - `done`: every milestone is done
  * - `blocked`: nothing is runnable (a dependency is missing from the plan)
  */
-export function nextStep(state, { parallel = false, only } = {}) {
+export function nextStep(state, { parallel = false } = {}) {
   const ms = state.milestones;
   const order = state.order;
   const remaining = order.filter((id) => ms[id].status !== "done");
@@ -368,33 +365,6 @@ export function nextStep(state, { parallel = false, only } = {}) {
       ms[id].status === "pending" &&
       ms[id].depends.every((d) => ms[d]?.status === "done")
   );
-  if (only && only !== "next") {
-    if (!ms[only]) throw new ShipError(`Unknown milestone: ${only}`, 2);
-    if (ms[only].status === "done")
-      return {
-        ...base,
-        action: "done",
-        milestone: only,
-        batch: [],
-        note: `${only} is already done`
-      };
-    if (!runnable.includes(only))
-      return {
-        ...base,
-        action: "blocked",
-        milestone: only,
-        batch: [],
-        reason: `${only} depends on ${ms[only].depends.filter((d) => ms[d]?.status !== "done").join(", ")}`
-      };
-    return {
-      ...base,
-      action: "run",
-      milestone: only,
-      batch: [only],
-      attempt: 1,
-      amend: null
-    };
-  }
   if (runnable.length === 0)
     return {
       ...base,
@@ -407,8 +377,7 @@ export function nextStep(state, { parallel = false, only } = {}) {
   const batch = [runnable[0]];
   const alone = (id) => ms[id].files.length === 0 || wholeRepo(ms[id].files);
   const cap = Math.max(1, state.max_parallel ?? Infinity);
-  // Single Milestone Mode (only) never batches.
-  if (parallel && !only && !alone(batch[0])) {
+  if (parallel && !alone(batch[0])) {
     for (const id of runnable.slice(1)) {
       if (batch.length >= cap) break;
       if (alone(id)) continue;
@@ -432,8 +401,7 @@ export function cmdMilestoneNext(options) {
   return nextStep(state, {
     parallel:
       options.parallel === true ||
-      (options.parallel === undefined && state.parallel),
-    only: options.milestone
+      (options.parallel === undefined && state.parallel)
   });
 }
 
@@ -650,8 +618,8 @@ function builderModel(state, m, options) {
 
 /**
  * Decide whether the last builder continues with milestone `id` (pure).
- * Reuse only when every rule holds, in this order: not --milestone mode, a
- * builder ran in the main tree, `id` does not run in a parallel batch, this
+ * Reuse only when every rule holds, in this order: a builder ran in the
+ * main tree, `id` does not run in a parallel batch, this
  * session still holds the builder's agent ID, `id` is a retry of that builder
  * or depends on / shares files with a milestone it ran, the builder model and
  * effort of `id` equal the builder's, and `used + cost(id) <= limit`.
@@ -661,7 +629,6 @@ export function reuseDecision({
   id,
   model,
   agentId = null,
-  single = false,
   batch = [],
   limit = REUSE_DEFAULTS.limit_tokens,
   cost = REUSE_DEFAULTS.cost
@@ -685,7 +652,6 @@ export function reuseDecision({
     agent_id: null,
     reason
   });
-  if (single) return fresh("--milestone mode always spawns a fresh builder");
   if (!builder) return fresh("no builder ran before this milestone");
   if (builder.worktree)
     return fresh("the last builder ran in a worktree of a parallel batch");
@@ -746,7 +712,6 @@ export function cmdReuse(id, options, env = process.env) {
     id,
     model: builderModel(state, m, options),
     agentId: stringOption(options["agent-id"]),
-    single: options.single === true,
     batch: ["run", "retry"].includes(next.action) ? next.batch : [],
     limit,
     cost
@@ -866,7 +831,7 @@ const shipPlanPath = (dir) => shipJson(dir)?.plan_path ?? null;
 const shipSnapshot = (dir) => shipJson(dir)?.config_snapshot ?? null;
 
 export function cmdMilestoneGates(options) {
-  let snapshot = stringOption(options["config-snapshot"]) ?? undefined;
+  let snapshot;
   let planPath = stringOption(options.plan);
   planPath = planPath ? resolve(expandHome(planPath)) : null;
   if (options["run-dir"]) {

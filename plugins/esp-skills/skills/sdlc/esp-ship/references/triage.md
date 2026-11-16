@@ -6,7 +6,7 @@ Triage runs once, on a new run, after the run directory exists and before `ship.
 
 ## Detect
 
-Run `ship.mjs triage --request <context> --run-dir <run-dir> --project-dir <repo-root>`, with `--track <track>` when the flag was given and `--config-snapshot <path>` when given. It prints the facts and the choices it could make, with no writes:
+Run `ship.mjs triage --request <context> --run-dir <run-dir> --project-dir <repo-root>`, with `--track <track>` when the flag was given. It prints the facts and the choices it could make, with no writes:
 
 - **`input_kind`**: `plan` (the file passes plan-lint), `task-list` (a checkbox progress list whose items name package headings, such as `- [ ] FRC-02: Health probe` and `#### FRC-02: Health probe`), `document` (any other file; `plan_errors` lists the lint errors of a broken plan), `issue` (`#12`, `owner/repo#12` or an issues URL), or `prompt`
 - **`packages`**: for a task list, each package's `id`, `title` and `checked` state

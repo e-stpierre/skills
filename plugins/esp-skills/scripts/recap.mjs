@@ -172,10 +172,7 @@ function countByRisk(decisions) {
 // ---------------------------------------------------------------------------
 
 function configFor(options) {
-  return loadConfig({
-    snapshot: options["config-snapshot"],
-    projectDir: options["project-dir"]
-  }).config;
+  return loadConfig({ projectDir: options["project-dir"] }).config;
 }
 
 function splitList(value) {
@@ -641,7 +638,6 @@ Options:
   --min-risk <level>        risks: lowest decision risk to report (default high)
   --question <text>         sources: the question to answer
   --root <dir>              A runs root to read (repeatable; default recap.roots plus runs.root)
-  --config-snapshot <path>  Config snapshot used to resolve recap.* and runs.root
   --project-dir <dir>       Project root for config resolution
   --help                    Show this help`;
 

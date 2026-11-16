@@ -48,7 +48,7 @@ The script merges these layers, lowest to highest precedence:
 1. Built-in defaults: `${CLAUDE_PLUGIN_ROOT}/references/config-defaults.json`
 2. User config: `~/.esp-skills/config.json` (the `ESP_SKILLS_HOME` environment variable overrides `~/.esp-skills`)
 3. Project config: `<repo>/.esp-skills/config.json`, where `<repo>` is the nearest git root
-4. Config snapshot (the script's `--config-snapshot <path>`, passed by the harness or a parent skill, not by this skill): replaces the user and project layers for one run; defaults still fill missing keys
+4. Frozen snapshot (esp-ship only): esp-ship freezes the merged config in its run directory on the first call (`config.snapshot.json`, recorded in `ship.json`), so a resumed run keeps the config it started with. The snapshot replaces the user and project layers for that run; defaults still fill missing keys
 
 Skill arguments override the resolved values in the skill that receives them. Objects merge key by key; arrays and scalar values replace the lower layer.
 

@@ -1045,7 +1045,6 @@ Options:
   --status <status>       result: override the status
   --summary <text>        result: override the summary
   --json <object>         record: the resolution
-  --config-snapshot <p>   Config snapshot
   --project-dir <dir>     Repository root (default: nearest git root)
 
 Environment:
@@ -1106,11 +1105,7 @@ export function buildContext(options, env = process.env, io = {}) {
   );
   let config;
   try {
-    ({ config } = loadConfig({
-      projectDir,
-      snapshot: options["config-snapshot"],
-      env
-    }));
+    ({ config } = loadConfig({ projectDir, env }));
   } catch (err) {
     if (err instanceof ConfigError)
       throw new FixReviewError(err.message, err.exitCode ?? 1);

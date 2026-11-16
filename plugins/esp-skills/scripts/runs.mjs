@@ -189,10 +189,7 @@ function runId(dir) {
 }
 
 function configFor(options) {
-  return loadConfig({
-    snapshot: options["config-snapshot"],
-    projectDir: options["project-dir"]
-  }).config;
+  return loadConfig({ projectDir: options["project-dir"] }).config;
 }
 
 /** Runs root from --root, else runs.root in the config. */
@@ -955,7 +952,6 @@ Commands:
 Options:
   --run-dir <path>          Run directory (required by every command except create, index, validate, exit-code)
   --root <dir>              Runs root for create, or a root to index (repeatable)
-  --config-snapshot <path>  Config snapshot used to resolve runs.root and recap.roots
   --project-dir <dir>       Project root for config resolution
   --help                    Show this help`;
 

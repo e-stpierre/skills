@@ -2,21 +2,13 @@
 // the ship modules (files, git, the frozen config and its settings).
 //
 // ship.json is the only state file of esp-ship. It records the track (inline
-// or orchestrated), who owns the run, the phase list of the track, the facts
+// or orchestrated), the phase list of the track, the facts
 // the phases produced, the loops, the limits and the stop or halt. The
 // milestone state of the orchestrated track lives in <run-dir>/state.json
 // (see milestones.mjs), under its reserved contract name.
 
 import { spawnSync } from "node:child_process";
-import {
-  existsSync,
-  mkdtempSync,
-  readFileSync,
-  renameSync,
-  rmSync,
-  writeFileSync
-} from "node:fs";
-import { tmpdir } from "node:os";
+import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import {
   ConfigError,
@@ -37,7 +29,6 @@ export class ShipError extends Error {
 
 export const STATE_FORMAT = 1;
 export const TRACKS = ["inline", "orchestrated"];
-export const OWNERS = ["self", "caller"];
 
 /** Every phase, in canonical order. Each track runs its own subset. */
 export const PHASES = [
@@ -174,7 +165,7 @@ export function configOf(snapshot) {
   }
 }
 
-/** Freeze the config once per run: an explicit snapshot wins, then the existing one. */
+/** Freeze the config once per run: a recorded snapshot wins, then the existing file. */
 export function freezeConfig(dir, { snapshot, projectDir } = {}) {
   if (snapshot) return resolve(expandHome(String(snapshot)));
   const path = join(dir, "config.snapshot.json");
@@ -261,22 +252,6 @@ export function changedFiles(projectDir, base) {
   return [...new Set([...tracked, ...untracked])].sort();
 }
 
-/** Patch of everything since `base`, untracked files included, without touching the index. */
-export function workingPatch(projectDir, base) {
-  const scratch = mkdtempSync(join(tmpdir(), "esp-ship-"));
-  const env = { ...process.env, GIT_INDEX_FILE: join(scratch, "index") };
-  try {
-    git(["read-tree", "HEAD"], projectDir, env);
-    git(["add", "-A"], projectDir, env);
-    return git(["diff", "--cached", "--binary", base], projectDir, env);
-  } finally {
-    rmSync(scratch, { recursive: true, force: true });
-  }
-}
-
-export const isDirty = (projectDir) =>
-  lines(git(["status", "--porcelain"], projectDir)).length > 0;
-
 export function commitsSince(projectDir, base) {
   return lines(
     tryGit(["log", "--format=%H %s", `${base}..HEAD`], projectDir)
@@ -303,8 +278,6 @@ export function checkState(state) {
     errors.push(`state_format: expected ${STATE_FORMAT}`);
   if (!TRACKS.includes(state?.track))
     errors.push(`track: expected one of ${TRACKS.join(", ")}`);
-  if (!OWNERS.includes(state?.run_owner))
-    errors.push(`run_owner: expected one of ${OWNERS.join(", ")}`);
   if (typeof state?.request !== "string" || state.request.trim() === "")
     errors.push("request: expected a non-empty string");
   if (!Array.isArray(state?.phases)) errors.push("phases: expected an array");

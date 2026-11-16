@@ -1,8 +1,7 @@
 ---
 name: esp-review
 description: Code review in a fresh context, returning verified findings classified for a fixer. Use when asked to review local changes, a branch, a ref range or a pull request.
-argument-hint: "[-a|--focus <area>] [-p|--plan <path>] [-t|--target <target>] [-i|--interactive <mode>] [-d|--run-dir <path>] [-c|--config-snapshot <path>]"
-metadata: { af-contract: 1, af-level: reporting }
+argument-hint: "[-a|--focus <area>] [-p|--plan <path>] [-t|--target <target>] [-i|--interactive <mode>] [-d|--run-dir <path>]"
 ---
 
 # ESP Review
@@ -25,8 +24,7 @@ Read each option by its short or its long name (`-t main`, `--target main` or `-
   - `<base>..<head>` or `<base>...<head>`: an explicit range
   - `PR <number>`, `#<number>`, or a pull request URL: a GitHub pull request, through `gh`
 - **`[-i|--interactive <mode>]`** (optional): `off`, `plan` or `all`. Only `all` stops after the review to settle B-Decide and B-Scope findings with the user. Defaults to `defaults.interactive` (`off`). Headless sessions always use `off`.
-- **`[-d|--run-dir <path>]`** (optional): Run directory owned by a harness or a parent skill. The diff, the review and the findings are saved there, and the result block is recorded as step `review-<N>`. Without it, the skill writes them to a temporary directory and creates no run.
-- **`[-c|--config-snapshot <path>]`** (optional): Config snapshot from a harness or parent run, passed to every `config.mjs` and `runs.mjs` call.
+- **`[-d|--run-dir <path>]`** (optional): Run directory owned by a parent skill (esp-ship). The diff, the review and the findings are saved there, and the result block is recorded as step `review-<N>`. Without it, the skill writes them to a temporary directory and creates no run.
 
 ### Values
 
@@ -49,7 +47,7 @@ Arguments: $ARGUMENTS
 
 ### Configuration
 
-Read the `review` section and the shared defaults once at the start (add `--config-snapshot <path>` when given):
+Read the `review` section and the shared defaults once at the start:
 
 ```bash
 node "${CLAUDE_PLUGIN_ROOT}/scripts/config.mjs" get review
@@ -68,7 +66,7 @@ The available dimensions are `correctness`, `security`, `plan-conformance`, `tes
 
 ### Scripts
 
-`scripts/review.mjs` resolves the target and parses the review. Every `runs.mjs` call takes `--run-dir <path>` (and `--config-snapshot <path>` when given):
+`scripts/review.mjs` resolves the target and parses the review. Every `runs.mjs` call takes `--run-dir <path>`:
 
 - **Resolve target**: `review.mjs target [<target>] --project-dir <repo-root> [--run-dir <path>]` (`<target>`: the `--target` value)
 - **Latest plan**: `runs.mjs plan` (`{ path, version }`, version 0 when there is none)

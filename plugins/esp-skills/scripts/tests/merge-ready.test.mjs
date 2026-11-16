@@ -6,8 +6,6 @@ import {
   mkdtempSync,
   readFileSync,
   rmSync,
-  statSync,
-  utimesSync,
   writeFileSync
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -16,7 +14,6 @@ import { afterEach, beforeEach, describe, test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { validateArtifact } from "../lib/contract.mjs";
 import {
-  acquireMergeLock,
   buildContext,
   classifyChecks,
   cmdMerge,
@@ -45,7 +42,6 @@ const env = (extra = {}) => ({
   ...process.env,
   ESP_SKILLS_HOME: home,
   ESP_RUNS_NOW: NOW,
-  AF_MERGE_LOCK: "",
   ...extra
 });
 
@@ -647,110 +643,15 @@ describe("merge", () => {
   });
 });
 
-describe("merge lock", () => {
-  test("with AF_MERGE_LOCK the lock is held during the merge and released after", async () => {
-    const lockPath = join(tmp, "repo.merge.lock");
+describe("final re-check", () => {
+  test("a base that moved after the last check ends behind without merging", async () => {
     const client = fakeClient();
-    let heldDuringMerge = false;
-    const merge = client.merge;
-    client.merge = (...args) => {
-      heldDuringMerge = existsSync(lockPath);
-      return merge(...args);
-    };
-    const block = await cmdMerge(
-      ctx(client, { extraEnv: { AF_MERGE_LOCK: lockPath } }),
-      "9"
-    );
-    assert.equal(block.status, "merged");
-    assert.equal(heldDuringMerge, true);
-    assert.equal(existsSync(lockPath), false);
-    const locked = jsonl("events.jsonl").find((e) => e.type === "merge.locked");
-    assert.equal(locked.data.lock, lockPath);
-  });
-
-  test("without a lock the merge runs directly", async () => {
-    const client = fakeClient();
-    await cmdMerge(ctx(client), "9");
-    assert.ok(!jsonl("events.jsonl").some((e) => e.type === "merge.locked"));
-    assert.equal(client.calls.merge.length, 1);
-  });
-
-  test("a busy lock times out without merging; a stale lock is taken over", async () => {
-    const lockPath = join(tmp, "busy.lock");
-    writeFileSync(lockPath, "{}");
-    const client = fakeClient();
-    const block = await cmdMerge(ctx(client), "9", {
-      lock: lockPath,
-      lockTimeoutMinutes: 0
-    });
-    assert.equal(block.outputs.outcome, "lock-busy");
-    assert.equal(block.status, "awaiting-human");
+    const c = ctx(client);
+    assert.equal(report(c, "9").outcome, "ready");
+    client.data.compare = { ...client.data.compare, behind_by: 2 };
+    const block = await cmdMerge(c, "9");
+    assert.equal(block.outputs.outcome, "behind");
     assert.equal(client.calls.merge.length, 0);
-    assert.equal(existsSync(lockPath), true);
-
-    const old = new Date(Date.now() - 60_000);
-    utimesSync(lockPath, old, old);
-    const stale = fakeClient();
-    assert.equal(
-      (
-        await cmdMerge(ctx(stale), "9", {
-          lock: lockPath,
-          lockTimeoutMinutes: 0
-        })
-      ).status,
-      "merged"
-    );
-    assert.equal(existsSync(lockPath), false);
-  });
-
-  test("acquireMergeLock waits for a release", async () => {
-    const lockPath = join(tmp, "wait.lock");
-    writeFileSync(lockPath, "{}");
-    let sleeps = 0;
-    const lock = await acquireMergeLock(lockPath, {
-      timeoutMs: 60_000,
-      sleep: async () => {
-        sleeps += 1;
-        if (sleeps === 2) rmSync(lockPath);
-      }
-    });
-    assert.ok(lock);
-    assert.equal(sleeps, 2);
-    assert.match(readFileSync(lockPath, "utf8"), /"pid"/);
-    lock.release();
-    assert.equal(existsSync(lockPath), false);
-  });
-
-  test("acquireMergeLock keeps the lock fresh while the event loop is blocked", async () => {
-    const lockPath = join(tmp, "beat.lock");
-    const lock = await acquireMergeLock(lockPath, {
-      timeoutMs: 1000,
-      sleep: async () => {},
-      heartbeatMs: 100
-    });
-    const old = new Date(Date.now() - 60_000);
-    utimesSync(lockPath, old, old);
-    // Block like a spawnSync GitHub call: no in-process timer can fire.
-    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 2500);
-    const age = Date.now() - statSync(lockPath).mtimeMs;
-    lock.release();
-    assert.ok(age < 30_000, `lock is ${age} ms old`);
-    assert.equal(existsSync(lockPath), false);
-  });
-
-  test("acquireMergeLock never refreshes or removes a lock another holder took", async () => {
-    const lockPath = join(tmp, "taken.lock");
-    const lock = await acquireMergeLock(lockPath, {
-      timeoutMs: 1000,
-      sleep: async () => {}
-    });
-    writeFileSync(lockPath, JSON.stringify({ pid: 1, token: "other" }));
-    const old = new Date(Date.now() - 60_000);
-    utimesSync(lockPath, old, old);
-    lock.refresh();
-    assert.ok(Date.now() - statSync(lockPath).mtimeMs > 30_000);
-    lock.release();
-    assert.match(readFileSync(lockPath, "utf8"), /"other"/);
   });
 });
 

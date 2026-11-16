@@ -817,7 +817,6 @@ Options:
   --once                     Check once and exit (0 done, 10 still pending)
   --state <file>             Progress file (default: <run-dir>/${DEFAULT_STATE_FILE})
   --run-dir <path>           Run directory: state file location and review.received events
-  --config-snapshot <path>   Config snapshot to read instead of the user and project layers
   --project-dir <dir>        Repository (default: nearest git root, else cwd)
   --help                     Show this help
 
@@ -880,11 +879,7 @@ export function resolveOptions(cli, positional, env = process.env) {
   );
   let config;
   try {
-    ({ config } = loadConfig({
-      projectDir,
-      snapshot: cli["config-snapshot"],
-      env
-    }));
+    ({ config } = loadConfig({ projectDir, env }));
   } catch (err) {
     if (err instanceof ConfigError)
       throw new WaitError(err.message, err.exitCode ?? 1);

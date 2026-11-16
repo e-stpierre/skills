@@ -86,8 +86,7 @@ const SKILLS = {
  * flags. The core phase (implement, build) is required. The orchestrated track
  * always keeps `plan`: its build needs a plan file, generated, imported,
  * reused or synthesized. --no-pr drops the pull request and its wait phases,
- * --stop-before-wait leaves the wait phases to the caller, --no-merge drops
- * the merge, and internal_review_rounds 0 drops the internal review. The
+ * --no-merge drops the merge, and internal_review_rounds 0 drops the internal review. The
  * review mode drops the internal review (pr, none) or the pull request
  * review rounds (internal, none); auto keeps the internal review until the
  * review gate decides it after the build.
@@ -98,7 +97,6 @@ export function resolvePhases(
   {
     noPr = false,
     noMerge = false,
-    stopBeforeWait = false,
     reviewRounds = 2,
     reviewMode = "auto",
     reviewSource = "default"
@@ -132,8 +130,6 @@ export function resolvePhases(
     else if (phase === "pr" && noPr) skipped[phase] = "--no-pr";
     else if (WAIT_PHASES.includes(phase) && (noPr || !wanted.has("pr")))
       skipped[phase] = noPr ? "--no-pr" : "needs the pr phase";
-    else if (WAIT_PHASES.includes(phase) && stopBeforeWait)
-      skipped[phase] = "left to the caller (--stop-before-wait)";
     else if (phase === "fix-review" && !review.pr)
       skipped[phase] = reviewReason;
     else if (phase === "merge" && noMerge) skipped[phase] = "--no-merge";
@@ -151,7 +147,6 @@ export function applyTrack(state, track, config) {
   const { phases, skipped } = resolvePhases(track, settings.phases, {
     noPr: state.flags.no_pr,
     noMerge: state.flags.no_merge,
-    stopBeforeWait: state.stop_before_wait,
     reviewRounds: state.internal_review_rounds,
     reviewMode: state.review_mode ?? "auto",
     reviewSource: state.review_mode_source ?? "default"
@@ -197,10 +192,7 @@ export function cmdInit(options, env = process.env) {
   if (!TRACKS.includes(track))
     throw new ShipError(`--track must be one of ${TRACKS.join(", ")}`, 2);
   const projectDir = projectDirOf(options, null);
-  const snapshot = freezeConfig(dir, {
-    snapshot: stringOption(options["config-snapshot"]),
-    projectDir
-  });
+  const snapshot = freezeConfig(dir, { projectDir });
   const config = configOf(snapshot);
   const settings = shipSettings(config, track);
   const interactive =
@@ -229,7 +221,6 @@ export function cmdInit(options, env = process.env) {
     state_format: 1,
     workflow: "esp-ship",
     track,
-    run_owner: options["caller-owned"] ? "caller" : "self",
     request,
     project_dir: projectDir,
     repo_dir: projectDir,
@@ -264,7 +255,6 @@ export function cmdInit(options, env = process.env) {
       no_pr: Boolean(options["no-pr"]),
       no_merge: Boolean(options["no-merge"])
     },
-    stop_before_wait: Boolean(options["stop-before-wait"]),
     phases: [],
     skipped_phases: {},
     phase_status: {},
@@ -287,7 +277,6 @@ export function cmdInit(options, env = process.env) {
     gate_failure_limit: GATE_FAILURE_LIMIT,
     gate_failure_reasons: [],
     gates: {},
-    escalation: null,
     escalated_from: null,
     track_history: [],
     stop: null,
@@ -300,14 +289,12 @@ export function cmdInit(options, env = process.env) {
 
 /**
  * Resume a run. An awaiting-human stop is lifted and the phases it left
- * unfinished are restored, keeping the completed work. A caller-owned run
- * that escalated is taken over on the orchestrated track, in the same run.
- * Halted and failed runs stay stopped.
+ * unfinished are restored, keeping the completed work. Halted and failed
+ * runs stay stopped.
  */
 export function resumeRun(dir, env = process.env) {
   const path = statePath(dir);
   let resumed = null;
-  let takeover = null;
   // Time spent stopped does not count against the wall-time budget.
   const addPause = (s, since) => {
     const gap = (now(env).getTime() - Date.parse(since ?? "")) / 60000;
@@ -318,37 +305,6 @@ export function resumeRun(dir, env = process.env) {
     dir,
     (s) => {
       if (s.halt) return;
-      if (s.escalation && s.track === "inline") {
-        takeover = s.escalation;
-        addPause(s, s.escalation.at);
-        const { decision, trigger, reason, files, patch, stash, at } =
-          s.escalation;
-        s.escalated_from = {
-          track: "inline",
-          trigger,
-          reason,
-          files: files ?? [],
-          patch: patch ?? null,
-          stash: stash ?? null,
-          decision,
-          in_place: false
-        };
-        s.track_history = [
-          ...(s.track_history ?? []),
-          {
-            from: "inline",
-            to: "orchestrated",
-            trigger,
-            reason,
-            decision,
-            at,
-            phase_status: s.phase_status
-          }
-        ];
-        s.escalation = null;
-        applyTrack(s, "orchestrated", configOf(s.config_snapshot));
-        return;
-      }
       if (s.stop?.status !== "awaiting-human") return;
       resumed = s.stop;
       addPause(s, s.stop.at);
@@ -359,15 +315,7 @@ export function resumeRun(dir, env = process.env) {
     },
     env
   );
-  if (takeover) {
-    cmdUpdate({ "run-dir": dir, status: "running" }, env);
-    appendEvent(
-      dir,
-      "run.resumed",
-      { by: "esp-ship", from: "inline", trigger: takeover.trigger },
-      env
-    );
-  } else if (resumed)
+  if (resumed)
     appendEvent(
       dir,
       "run.resumed",
@@ -377,8 +325,7 @@ export function resumeRun(dir, env = process.env) {
   return {
     state_path: path,
     created: false,
-    resumed: Boolean(resumed || takeover),
-    taken_over: Boolean(takeover),
+    resumed: Boolean(resumed),
     ...state
   };
 }
@@ -443,11 +390,6 @@ export function milestoneBudget(state) {
 export function dispatch(dir, state, at, config) {
   if (state.halt)
     return { action: "result", reason: `halted (${state.halt.key})` };
-  if (state.escalation)
-    return {
-      action: "result",
-      reason: `escalated (${state.escalation.trigger}): the caller decides`
-    };
   if (state.stop)
     return { action: "result", reason: `stopped: ${state.stop.reason}` };
   const budget = budgetCheck(state, at);

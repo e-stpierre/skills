@@ -58,7 +58,7 @@ Report the commands you ran so the verifier can run the same ones.
 
 ### Commits
 
-- Read the commit settings with `node "${CLAUDE_PLUGIN_ROOT}/scripts/config.mjs" get commit` (add `--config-snapshot <path>` when the spawn prompt gives one). If `node` is unavailable, use the defaults: plain style, co-author trailer on.
+- Read the commit settings with `node "${CLAUDE_PLUGIN_ROOT}/scripts/config.mjs" get commit`. If `node` is unavailable, use the defaults: plain style, co-author trailer on.
 - Title: reference the work item. Plain style: `M2: Add token refresh`. Conventional style: `feat(auth): M2 add token refresh`. Review fixes: `fix(review): <what changed>` in both styles.
 - Body: a short list of what changed and why, then the `Co-Authored-By` trailer when `commit.co_author` is on.
 - **Retry**: when the spawn prompt gives a commit to amend and `HEAD` is that commit, amend it (`git commit --amend`) so the work item keeps one commit. If `HEAD` is any other commit, leave it untouched: stop and report it as a blocker.

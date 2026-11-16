@@ -1,7 +1,7 @@
 ---
 name: esp-recap
 description: Sourced recap of past esp-skills and harness runs. Use to summarize what runs did, to report their risky decisions and critical findings, or to answer why a past run did something.
-argument-hint: "[-k|--risks] [-a|--all] [-s|--since <date>] [-e|--until <date>] [-l|--last <span>] [-g|--repo <name>] [-t|--status <status>...] [-x|--run-risk <level>] [-c|--config-snapshot <path>] [context]"
+argument-hint: "[-k|--risks] [-a|--all] [-s|--since <date>] [-e|--until <date>] [-l|--last <span>] [-g|--repo <name>] [-t|--status <status>...] [-x|--run-risk <level>] [context]"
 ---
 
 # ESP Recap
@@ -22,7 +22,6 @@ Tell the user what happened across their runs, what was risky, or why a decision
 - **`[-g|--repo <name>]`** (optional): Only runs of this repository, matched on the end of the `run.json` `repo` (`api` matches `o/api`).
 - **`[-t|--status <status>...]`** (optional): `run.json` statuses (`merged`, `halted`, `awaiting-human`, ...). Repeat the option or pass a comma-separated list.
 - **`[-x|--run-risk <level>]`** (optional): Only runs whose `max_risk` is at least `low`, `medium` or `high`. A run filter in every mode, apart from the risk report's decision threshold (step 5).
-- **`[-c|--config-snapshot <path>]`** (optional): Config snapshot from a harness. Used to resolve `recap.*` and `runs.root`.
 - **`[context]`** (optional): Empty for a recap of the range; a run ID or run directory path for the recap of one run; a question ("why did we rotate refresh tokens?") for Q&A. With `--risks`, extra words narrow the report.
 
 ### Values
@@ -46,7 +45,7 @@ Arguments: $ARGUMENTS
 
 ### Configuration
 
-Read the section once at the start (add `--config-snapshot <path>` when given):
+Read the section once at the start:
 
 ```bash
 node "${CLAUDE_PLUGIN_ROOT}/scripts/config.mjs" get recap
@@ -60,7 +59,7 @@ If the command exits with code 1 (invalid config), report its error and stop. If
 
 ### Script
 
-`scripts/recap.mjs` takes the filters above by their long names only (`--since`, `--until`, `--last`, `--all`, `--repo`, `--status`, and `--risk` for `--run-risk`), plus `--limit <N>` and `--config-snapshot`: pass `-s 2026-11-01` as `--since 2026-11-01`. Every item it returns carries a `source` path.
+`scripts/recap.mjs` takes the filters above by their long names only (`--since`, `--until`, `--last`, `--all`, `--repo`, `--status`, and `--risk` for `--run-risk`), plus `--limit <N>`: pass `-s 2026-11-01` as `--since 2026-11-01`. Every item it returns carries a `source` path.
 
 - `collect`: `range`, `count`, `fan_out`, `batches` (run paths per subagent), and one digest per run: title, workflow, repo, status, PR, outcome, decision counts by risk, critical findings, steps, commits
 - `show <run-id|path>`: one run in full: `run.json`, summary sections, decisions, step results, commits, critical findings, latest plan path

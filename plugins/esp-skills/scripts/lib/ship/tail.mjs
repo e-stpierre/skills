@@ -32,7 +32,6 @@ import {
   stepsByRound,
   stringOption,
   updateState,
-  WAIT_PHASES,
   WAIT_STEP
 } from "./state.mjs";
 
@@ -41,8 +40,7 @@ export const RESULT_STATUSES = [
   "merged",
   "halted",
   "awaiting-human",
-  "failed",
-  "escalate"
+  "failed"
 ];
 
 // ---------------------------------------------------------------------------
@@ -208,7 +206,6 @@ export function baseOutputs(state, dir) {
   const out = {
     request: state.request,
     track: state.track,
-    run_owner: state.run_owner,
     branch: state.branch,
     base: state.base,
     base_sha: state.base_sha,
@@ -222,7 +219,6 @@ export function baseOutputs(state, dir) {
     review_mode: state.review_mode ?? "auto",
     review_gate: state.review_gate ?? null,
     gate_failures: state.gate_failures,
-    stop_before_wait: state.stop_before_wait,
     state_path: statePath(dir),
     summary_path: join(dir, "summary.md")
   };
@@ -307,7 +303,7 @@ function orderedSteps(steps) {
 /**
  * Final result block. The status is the one of the last phase step that ran
  * (an earlier step that did not end done was continued past), unless the task
- * escalated, halted or a loop stopped it; merged wins over done.
+ * halted or a loop stopped it; merged wins over done.
  */
 export function buildResult(
   dir,
@@ -325,10 +321,8 @@ export function buildResult(
   const last = ordered.at(-1) ?? null;
   let derived = last ? last.result.status : "done";
   if (named("merge")?.status === "merged") derived = "merged";
-  if (derived === "escalate") derived = "failed";
   if (state.stop) derived = state.stop.status;
   if (state.halt) derived = "halted";
-  if (state.escalation) derived = "escalate";
   const carrier = last;
   const finalStatus = status ?? derived;
   const commits = commitsSince(projectDir, state.base_sha);
@@ -420,14 +414,8 @@ export function buildResult(
         "method_reason",
         "failing"
       ]),
-      deferred_phases: state.stop_before_wait
-        ? WAIT_PHASES.filter((p) =>
-            state.skipped_phases?.[p]?.includes("stop-before-wait")
-          )
-        : [],
       stop: state.stop ?? undefined,
-      halt: state.halt ?? undefined,
-      escalation: state.escalation ?? undefined
+      halt: state.halt ?? undefined
     }
   };
   if (discovered.length > 0) block.discovered_items = discovered;
@@ -440,7 +428,7 @@ export function buildResult(
     if (blockers.length > 0) block.blockers = [...new Set(blockers)];
   }
   if (block.gates === undefined) delete block.gates;
-  for (const key of ["stop", "halt", "escalation"])
+  for (const key of ["stop", "halt"])
     if (block.outputs[key] === undefined) delete block.outputs[key];
   return assertBlock(block);
 }
@@ -455,16 +443,12 @@ function defaultSummary(status, state, merge, built) {
     case "merged":
       return `Merged ${what}${milestones}:${pr} with ${merge?.outputs?.method ?? "the resolved method"}.`;
     case "done":
-      if (state.stop_before_wait && state.pr)
-        return `Opened${pr}; review, fixes and merge are left to the caller.`;
       if (state.pr) return `Done ${what}${milestones}:${pr}.`;
       if (state.track === "inline")
         return `Committed ${state.commit ? state.commit.slice(0, 7) : "the change"} on ${state.branch ?? "the branch"}.`;
       return `Built ${what}${milestones} on ${state.branch ?? "the branch"}.`;
     case "halted":
       return `Halted ${what}${state.halt ? ` (${state.halt.key}): ${state.halt.reason}` : state.stop ? `: ${state.stop.reason}` : "."}`;
-    case "escalate":
-      return `Escalated to the orchestrated track (${state.escalation?.trigger}).`;
     case "awaiting-human":
       return `Waiting for a human on ${what}${pr}${state.stop ? `: ${state.stop.reason}` : "."}`;
     default:

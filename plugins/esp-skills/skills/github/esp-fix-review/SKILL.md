@@ -1,9 +1,8 @@
 ---
 name: esp-fix-review
 description: Resolve PR review comments, failing CI checks, or esp-review findings
-argument-hint: "[-l|--internal] [-w|--wait] [-t|--timeout <minutes>] [-m|--max-rounds <n>] [-r|--reviewers <name>...] [-i|--interactive <mode>] [-p|--pr <pr>] [-e|--findings <path>] [-d|--run-dir <path>] [-c|--config-snapshot <path>]"
+argument-hint: "[-l|--internal] [-w|--wait] [-t|--timeout <minutes>] [-m|--max-rounds <n>] [-r|--reviewers <name>...] [-i|--interactive <mode>] [-p|--pr <pr>] [-e|--findings <path>] [-d|--run-dir <path>]"
 disable-model-invocation: true
-metadata: { af-contract: 1, af-level: steerable }
 ---
 
 # ESP Fix Review
@@ -26,8 +25,7 @@ Read each option by its short or its long name (`-m 2`, `--max-rounds 2` or `--m
 - **`[-i|--interactive <mode>]`** (optional): `off`, `plan` or `all`. Only `all` stops to settle B-Decide and B-Scope items with the user and shows a recap before pushing. Defaults to `defaults.interactive` (`off`). Headless sessions always use `off`.
 - **`[-p|--pr <pr>]`** (optional): Pull request number, `#<number>`, or URL. Defaults to the pull request of the current branch. Ignored with `--internal`.
 - **`[-e|--findings <path>]`** (optional): With `--internal`, the `esp-review` findings file (`review-<N>.json`). Defaults to the latest one in `--run-dir`; required with `--internal` when there is no `--run-dir`.
-- **`[-d|--run-dir <path>]`** (optional): Run directory owned by a harness or a parent skill. The state is `<run-dir>/fix-review.json`, every resolution is logged in `decisions.jsonl`, the wait keeps its progress in `<run-dir>/fix-review-wait.json` and records each review as a `review.received` event, and the result block is recorded as step `fix-review` (`fix-review-<N>` in internal mode, after `review-<N>`). Without it, the state goes to a temporary directory and no run is created.
-- **`[-c|--config-snapshot <path>]`** (optional): Config snapshot from a harness or parent run, passed to every script call.
+- **`[-d|--run-dir <path>]`** (optional): Run directory owned by a parent skill (esp-ship). The state is `<run-dir>/fix-review.json`, every resolution is logged in `decisions.jsonl`, the wait keeps its progress in `<run-dir>/fix-review-wait.json` and records each review as a `review.received` event, and the result block is recorded as step `fix-review` (`fix-review-<N>` in internal mode, after `review-<N>`). Without it, the state goes to a temporary directory and no run is created.
 
 ### Values
 
@@ -57,7 +55,7 @@ Arguments: $ARGUMENTS
 
 ### Configuration
 
-Read the sections once at the start (add `--config-snapshot <path>` when given):
+Read the sections once at the start:
 
 ```bash
 node "${CLAUDE_PLUGIN_ROOT}/scripts/config.mjs" get fix-review
@@ -83,7 +81,7 @@ If a command exits with code 1 (invalid config), report its error and stop. If i
 
 ### Scripts
 
-`scripts/fix-review.mjs` keeps the state. Every call takes the same state options for the whole invocation, plus `--config-snapshot <path>` when given:
+`scripts/fix-review.mjs` keeps the state. Every call takes the same state options for the whole invocation:
 
 - Pull request mode with `--run-dir`: `--run-dir <path>` (state in `<run-dir>/fix-review.json`).
 - Internal mode with `--run-dir`: `--run-dir <path> --state <run-dir>/fix-review-<N>.json`, N from the findings file `review-<N>.json`, so each internal round keeps its own round counter, apart from the pull request rounds.
@@ -126,7 +124,7 @@ With `--run-dir`, `record` logs the decision (`phase: fix-review`, `x-esp-class`
 
 ### Waiting for Reviews and Checks
 
-The wait command (add `--config-snapshot <path>` when given):
+The wait command:
 
 ```bash
 node "${CLAUDE_PLUGIN_ROOT}/scripts/wait-for-review.mjs" <pr> --reviewers <a,b> --checks [--timeout-minutes <n>] --state <state-file> [--run-dir <path>]
