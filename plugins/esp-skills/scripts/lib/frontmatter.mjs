@@ -5,7 +5,7 @@
  * Returns null when the document has no frontmatter.
  */
 export function parseFrontmatter(text) {
-  const match = /^﻿?---\r?\n([\s\S]*?)\r?\n---\r?(?:\n|$)/.exec(text);
+  const match = /^\uFEFF?---\r?\n([\s\S]*?)\r?\n---\r?(?:\n|$)/.exec(text);
   if (!match) return null;
   const data = {};
   for (const line of match[1].split(/\r?\n/)) {

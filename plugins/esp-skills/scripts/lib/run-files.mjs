@@ -169,7 +169,7 @@ export function checkSummary(frontmatter) {
   const { errors, field } = checker(frontmatter);
   field("task", { required: true }).id();
   field("title", { required: true }).text();
-  field("status", { required: true }).oneOf([...RUN_STATUSES, "escalate"]);
+  field("status", { required: true }).oneOf(RUN_STATUSES);
   field("workflow", { nullable: true }).text();
   field("pr", { nullable: true }).text();
   field("max_risk", { nullable: true }).oneOf(RISK_ORDER);

@@ -395,6 +395,15 @@ function stripReplyLines(lines) {
   return { lines: lines.slice(start, end), start, status, discovered };
 }
 
+/** Text of the reply's `Summary:` line, or null. */
+function replySummary(lines) {
+  for (const line of lines) {
+    const m = /^Summary:\s*(.+)$/i.exec(line.trim());
+    if (m) return m[1].trim();
+  }
+  return null;
+}
+
 function parseFinding(id, meta, body, line, errors) {
   const parts = meta.split(/\s+-\s+/).map((p) => p.trim());
   const where = `line ${line} (${id})`;
@@ -564,6 +573,7 @@ export function parseReview(text) {
     spans,
     lines,
     status: reply.status,
+    summary: replySummary(lines),
     discovered,
     block,
     errors
@@ -637,9 +647,14 @@ export function buildReport(
   };
   if (paths.review) outputs.review_path = paths.review;
   if (paths.findings) outputs.findings_path = paths.findings;
+  // A reviewer that replied anything but `Status: done` did not review the
+  // diff: report it as failed, never as a clean review.
+  const failed = parsed.status != null && parsed.status !== "done";
   const outcome = {
-    status: "done",
-    summary,
+    status: failed ? "failed" : "done",
+    summary: failed
+      ? (parsed.summary ?? `The reviewer replied Status: ${parsed.status}.`)
+      : summary,
     max_risk: maxRisk,
     outputs
   };
@@ -665,6 +680,9 @@ export function renderReview(parsed, dropped) {
   const lines = parsed.lines.filter((_, i) => !remove.has(i));
   while (lines.length > 0 && lines.at(-1).trim() === "") lines.pop();
   while (lines.length > 0 && lines[0].trim() === "") lines.shift();
+  // Keep a non-done status, so parsing the rewritten review still fails it.
+  if (parsed.status && parsed.status !== "done")
+    lines.unshift(`Status: ${parsed.status}`, "");
   // Keep the discovered items, so parsing the rewritten review finds them again.
   const discovered = (parsed.discovered ?? []).map(
     (d) =>

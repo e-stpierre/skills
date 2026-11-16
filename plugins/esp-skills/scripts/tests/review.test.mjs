@@ -344,6 +344,20 @@ no location here
     assert.equal(report.outcome.summary, "No findings, 1 candidate rejected.");
     assert.equal(report.outcome.max_risk, "low");
   });
+
+  test("a failed reviewer reply is a failed outcome, not a clean review", () => {
+    const parsed = parseReview(
+      "Status: failed\nSummary: The diff file could not be read.\n"
+    );
+    assert.deepEqual(parsed.errors, []);
+    const report = buildReport(parsed);
+    assert.equal(report.outcome.status, "failed");
+    assert.equal(report.outcome.summary, "The diff file could not be read.");
+    const again = buildReport(
+      parseReview(renderReview(parsed, report.dropped))
+    );
+    assert.equal(again.outcome.status, "failed");
+  });
 });
 
 describe("buildReport", () => {

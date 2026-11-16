@@ -286,7 +286,7 @@ node scripts/wait-for-review.mjs 42 --reviewers codex,claude --checks --timeout-
 node scripts/wait-for-review.mjs 42 --reviewers codex --once
 ```
 
-- Exit codes: 0 done, 10 awaiting-human (timeout, with the choice to wait again or skip in `blockers`), 1 failed (closed pull request or repeated `gh` errors), 2 usage error
+- Exit codes: 0 ok (`done`, or `awaiting-human` on a timeout, with the choice to wait again or skip in `blockers`; read `status`), 1 failed (closed pull request or repeated `gh` errors), 2 usage error
 - Verified logins: Codex reviews as `chatgpt-codex-connector[bot]` and starts on its own when a PR opens or leaves draft; `@codex review` asks for a new review after a push. The Claude GitHub Action reviews through an issue comment by `claude[bot]`, not a PR review
 
 ### Fixing Reviews

@@ -14,17 +14,17 @@ The format of `summary.md`, written once per run by the skill that owns the run 
 
 Values are flat scalars (no lists or nested objects), checked by `runs.mjs check`.
 
-| Field               | Required | Value                                                                             |
-| ------------------- | -------- | --------------------------------------------------------------------------------- |
-| `task`              | Yes      | The run ID (the run directory name)                                               |
-| `title`             | Yes      | Task title, quoted                                                                |
-| `status`            | Yes      | Final status: a `run.json` status (`done`, `merged`, `halted`, ...) or `escalate` |
-| `workflow`          | No       | Skill or workflow that owned the run (`esp-ship`), or `null`                      |
-| `pr`                | No       | Pull request URL, or `null`                                                       |
-| `max_risk`          | No       | `low`, `medium`, `high`, or `null` (copy from `run.json`)                         |
-| `decisions`         | No       | Number of lines in `decisions.jsonl`                                              |
-| `critical_findings` | No       | Number of critical findings reported during the run                               |
-| `duration_minutes`  | No       | Minutes between `started_at` and `ended_at`, or `null`                            |
+| Field               | Required | Value                                                                                           |
+| ------------------- | -------- | ----------------------------------------------------------------------------------------------- |
+| `task`              | Yes      | The run ID (the run directory name)                                                             |
+| `title`             | Yes      | Task title, quoted                                                                              |
+| `status`            | Yes      | Final status: a `run.json` status (`done`, `merged`, `halted`, `awaiting-human`, `failed`, ...) |
+| `workflow`          | No       | Skill or workflow that owned the run (`esp-ship`), or `null`                                    |
+| `pr`                | No       | Pull request URL, or `null`                                                                     |
+| `max_risk`          | No       | `low`, `medium`, `high`, or `null` (copy from `run.json`)                                       |
+| `decisions`         | No       | Number of lines in `decisions.jsonl`                                                            |
+| `critical_findings` | No       | Number of critical findings reported during the run                                             |
+| `duration_minutes`  | No       | Minutes between `started_at` and `ended_at`, or `null`                                          |
 
 ## Sections
 

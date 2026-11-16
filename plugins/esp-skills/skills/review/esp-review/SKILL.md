@@ -110,7 +110,7 @@ In every other mode the review settles nothing: the fixer applies the classes wi
 4. **Resolve the plan**: `--plan`, else with `--run-dir` the path from `runs.mjs plan` when its version is above 0, else none.
 5. **Resolve the dimensions**: when every comma-separated item of `--focus` is a dimension name, use those; otherwise use `review.dimensions` and pass `--focus` as the focus text. Remove `plan-conformance` when there is no plan.
 6. **Run the reviewer** (see Running the Reviewer). Done when its reply is saved verbatim to `review_path`.
-7. **Parse and filter**: run `review.mjs parse` with `--md-out` and `--out` (see Scripts). If it exits 1, correct only the reported headings and lines in `review_path` to the finding format, without changing what the findings say, and parse again. If it still fails, end with `Status: failed` and the errors in the summary.
+7. **Parse and filter**: run `review.mjs parse` with `--md-out` and `--out` (see Scripts). If it exits 1, correct only the reported headings and lines in `review_path` to the finding format, without changing what the findings say, and parse again. If it still fails, end with `Status: failed` and the errors in the summary. When the reviewer replied `Status: failed`, the outcome is `failed` with its summary: end with that reply.
 8. **Interactive review** (`all` only, see Interactive Review).
 9. **Record the step** (under esp-ship only): run the step 7 `parse` command again, piped into `ship.mjs record <step> --run-dir <path>` (the `step` from `target`).
 10. **Report**: print the content of `review_path`, then the reply (see Output Guidance).
