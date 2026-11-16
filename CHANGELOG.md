@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.9.1
 
 - Added `scripts/validate-prompts.mjs` (`pnpm validate`, part of `pnpm check` and CI): checks skills, agents and plugin READMEs against the templates, the argument conventions, links, ASCII, skill registration, workflow skill namespaces and marketplace order
 - `/normalize` runs the script, then adds the judgment checks; it takes `-a|--autofix` and `-t|--target <path>...`
