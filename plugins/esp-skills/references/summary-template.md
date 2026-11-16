@@ -4,7 +4,7 @@ The format of `summary.md`, written once per run by the skill that owns the run 
 
 ## Writing Rules
 
-- Write it from the run artifacts, not from memory: `run.json`, `plan.md` (latest version from `runs.mjs plan`), `decisions.jsonl`, `steps/*/result.json`, the plan versions (`plan.v<N>.md`), and `notes.md` (its operator lines).
+- Write it from the run artifacts, not from memory: `run.json`, `plan.md` (latest version from `runs.mjs plan`), `decisions.jsonl`, the outcome (`ship.mjs outcome`) and the step records of `ship.json`, the plan versions (`plan.v<N>.md`), and `notes.md` (its operator lines).
 - Keep every section. When a section has nothing to report, write `None.` so readers know it was checked.
 - Reference decisions by ID (`D003`), milestones by ID (`M2`), and plan amendments by version (`plan.v2.md`).
 - The summary answers "what happened and what should I look at", not "how the work was done".
@@ -89,7 +89,7 @@ None.
 
 ## Follow-ups Created
 
-- follow-up: "Remove the deprecated /auth/renew alias" (result block of step 06-fix-review)
+- follow-up: "Remove the deprecated /auth/renew alias" (discovered item of step fix-review)
 
 ## Metrics
 

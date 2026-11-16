@@ -51,12 +51,13 @@ Arguments: $ARGUMENTS
 - For the classes, the stop conditions and asking under a harness, see [decision-policy.md](../../../references/decision-policy.md): read it before asking or halting
 - For the subagent models, see [model-selection.md](../../../references/model-selection.md): read it when `next` gives no model
 - For `summary.md`, see [summary-template.md](../../../references/summary-template.md): read it in step 9
-- For the run directory commands and exit codes, see [contract-notes.md](../../../references/contract-notes.md): read it when a `runs.mjs` call fails or exits non-zero
+- For the run directory commands, see [contract-notes.md](../../../references/contract-notes.md): read it when a `runs.mjs` call fails
+- For the reply every subagent ends with, see Replies in [decision-policy.md](../../../references/decision-policy.md): read it before acting on a subagent reply
 
 ## Core Principles
 
-- This session orchestrates. It runs the inline phases itself and spawns every other phase in a fresh subagent, keeping only each result line. Details stay in the run directory
-- `ship.mjs next` decides the phase, the model and the loop. Every state change goes through `ship.mjs` and `runs.mjs`, the only writers of `ship.json`, `state.json`, `run.json`, `decisions.jsonl` and the result files
+- This session orchestrates. It runs the inline phases itself and spawns every other phase in a fresh subagent, keeping only each short reply. Details stay in the run directory
+- `ship.mjs next` decides the phase, the model and the loop. Every state change goes through `ship.mjs` and `runs.mjs`, the only writers of `ship.json` (with its step records), `state.json`, `run.json` and `decisions.jsonl`
 - Run every script with Bash, with the literal `"${CLAUDE_PLUGIN_ROOT}/scripts/..."` path. The scripts take long option names only, and `--reviewers` as one comma-separated value
 - The inline track makes one implementation commit. The orchestrated track makes one verified commit per milestone. Review fixes are separate `fix(review): ...` commits
 - A milestone is done only when an independent `esp-verifier` passes it: the builder's own report never counts
@@ -97,8 +98,9 @@ The phase skills read their own sections (`plan`, `review`, `fix-review`, `merge
 - **`review-gate`**: decide the internal review of `--review auto` from the diff of the build (see review.md)
 - **`review-loop`**, **`pr-loop`**: the internal review rounds and the pull request rounds
 - **`milestone init|next|start|finish|models|reuse|agent|gates|show`**: the milestone loop (see milestones.md)
-- **`stop`**, **`halt`**: record a stop, or halt under a `ship.halt_on` key (exit 20)
-- **`pr-body`**, **`result`**: the pull request body from the run artifacts, and the final result block
+- **`record <step>`**: store the facts of a step (`review-<N>`, `fix-review-<N>`, `fix-review-wait`, `fix-review`, `merge`, `build-<id>`) in the `steps` list of `ship.json`, from the JSON a script printed (stdin or `--json`). The phase skills record their own step under esp-ship
+- **`stop`**, **`halt`**: record a stop, or halt under a `ship.halt_on` key. Both print the state as JSON
+- **`pr-body`**, **`outcome`**: the pull request body from the run artifacts, and the outcome of the run for `summary.md` and the report
 
 `next` actions:
 
@@ -107,7 +109,7 @@ The phase skills read their own sections (`plan`, `review`, `fix-review`, `merge
 - **`complete`**: the internal review loop ended. Record `phase review --status done`
 - **`halt`**: run `ship.mjs halt` with its `key` and `reason`
 - **`stop`**: run `ship.mjs stop` with its `status` and `reason`
-- **`result`**: go to the result
+- **`finish`**: every phase ended: go to the outcome
 
 ### Phase Map
 
@@ -129,18 +131,18 @@ invoked with: <arguments>. In that file, ${CLAUDE_PLUGIN_ROOT} means <plugin-roo
 Work in <cwd>. You are a subagent: never ask questions (interactive mode off); wait in the foreground, at most
 10 minutes per command, when the skill says to wait in the background.
 <extra context>
-End with the result line printed by runs.mjs result, copied exactly, as your final line.
+End with the reply that file's Output Guidance describes (Status, Summary, ... lines), and nothing after it.
 ```
 
 `<plugin-root>` is the value of `${CLAUDE_PLUGIN_ROOT}` in this session (`echo "${CLAUDE_PLUGIN_ROOT}"`). `<arguments>` uses long option names. Every phase skill that takes it also gets `--run-dir <run-dir>`. User messages received since the last phase go in `<extra context>` (see User Messages).
 
-Before spawning a phase, record `phase <name> --status started`. After it returns, act on its result status: `done` (or `merged` for the merge) records `phase <name> --status done`. `halted` runs `ship.mjs stop --status halted --reason <summary>` (the phase logged its Halt decision). `awaiting-human` or `failed` runs `ship.mjs stop` with that status, unless Waiting and Open Items says otherwise. A subagent that returns no valid result line counts as `failed` with reason `no result block`.
+Before spawning a phase, record `phase <name> --status started`. After it returns, act on the `Status:` line of its reply: `done` records `phase <name> --status done`. `halted` runs `ship.mjs stop --status halted --reason <summary>` (the phase logged its Halt decision). `needs-decision` runs `ship.mjs stop --status awaiting-human` with the question as the reason, and `failed` runs `ship.mjs stop --status failed`, unless Waiting and Open Items says otherwise. A subagent whose reply has no `Status:` line counts as `failed` with reason `no status line`. The facts a later step needs (findings, open items, the merge) are in the step the phase skill recorded with `ship.mjs record`, not in the reply.
 
 The milestone builders and verifiers are not phase subagents: this session spawns them as `esp-skills:esp-builder` and `esp-skills:esp-verifier` (see milestones.md).
 
 ### Waiting and Open Items
 
-- A plan that returns `awaiting-human` (open questions): in `plan` or `all` mode, ask, log the answers as operator decisions, and run the plan phase again with `--amend` and the answers. In `off` mode, `ship.mjs stop --status awaiting-human`.
+- A plan that replies `needs-decision` (open questions): in `plan` or `all` mode, ask, log the answers as operator decisions, and run the plan phase again with `--amend` and the answers. In `off` mode, `ship.mjs stop --status awaiting-human`.
 - Open pull request review items, or a merge blocked by a condition, end the task with `awaiting-human` and the pull request left open.
 
 ### Interactive Checkpoints
@@ -148,7 +150,7 @@ The milestone builders and verifiers are not phase subagents: this session spawn
 Only in `plan` or `all` mode, standalone and not headless. This session does the asking, logs each answer with `runs.mjs decision` (`source: operator`), and passes it to the next subagent in its prompt:
 
 - **After the plan, or after the inline context phase** (`plan`, `all`): approve the plan (title, milestones, risks, open questions) or the approach and the files, or give feedback. Feedback runs the plan again with `--amend`
-- **Before each internal fix** (`all`): the findings by class (`by_class` from the review result, details in `findings_path`). Fix as recommended, or choose for the B items
+- **Before each internal fix** (`all`): the findings by class (`outputs.by_class` of the `review-<N>` step in `ship.json`, details in its `outputs.findings_path`). Fix as recommended, or choose for the B items
 - **After each pull request round** (`all`): the round recap (fixed, rejected, deferred). Continue, or stop with the pull request open
 - **Before the merge** (`all`): merge now, or stop with the pull request open
 
@@ -162,16 +164,16 @@ A message the user sends while the task runs is read at the next phase or milest
 2. **Load configuration** (see Configuration).
 3. **Preflight**: a git repository, and `gh auth status` succeeds unless `--no-pr`. A dirty working tree is fine (the branch phase moves the task to a worktree, see [workspace.md](references/workspace.md)), except with `--branch` naming the current branch, or with `ship.dirty_tree: fail`. Otherwise report it and stop with `status: failed`.
 4. **Resolve the run**: with `--run-dir`, use it (`runs.mjs create --run-dir <path>` is a no-op on an existing run). Otherwise `runs.mjs create <slug> --title <task title> --workflow esp-ship --repo <owner/name or repo path>`. Resolve the base: `pr.base`, else the repository default branch.
-5. **Triage** (new runs only): run `ship.mjs triage` on the request, with `--plan-mode <mode>` when `-L` or `--plan-mode` was given, and pick the track and the plan source (see [triage.md](references/triage.md)). Done when `ship.mjs triage --record` has logged the choices. With `nothing_to_do`, skip to step 9 with the triage result.
+5. **Triage** (new runs only): run `ship.mjs triage` on the request, with `--plan-mode <mode>` when `-L` or `--plan-mode` was given, and pick the track and the plan source (see [triage.md](references/triage.md)). Done when `ship.mjs triage --record` has logged the choices. With `nothing_to_do`, skip to step 9 with the triage facts (`result` of `--record`, also in `<run-dir>/triage.json`).
 6. **Initialize**: `ship.mjs init --request <request text> --track <track> --base <base> --project-dir <repo-root>`, with `--plan-source <source>` from triage, `--plan-mode` and `--review-mode` when given, and the long form of each other flag that was given (`--no-pr`, `--no-merge`, `--worktree`, `--max-rounds`, `--interactive`, `--reviewers`). For a resume, run `ship.mjs init --resume` without `--request`. Done when `init` prints the state.
-7. **Loop**: run `ship.mjs next` and act on `action` (see Task State and Phase Map). Before each phase, handle user messages and the interactive checkpoints. Done when `next` returns `result`.
-8. **Result**: `ship.mjs result` piped into `runs.mjs result ship --run-dir <run-dir>`. Pass `--summary` when the default one does not say enough. Done when it prints the result line.
-9. **Summary and run status**: write `<run-dir>/summary.md` per the summary template (`workflow: esp-ship`, the track in the outcome, `status` is the result status), from the result block and `decisions.jsonl`, naming each skipped phase with its reason (`outputs.skipped_phases`), until `runs.mjs validate` passes on it. Set `runs.mjs update --status` to the result status (`merged`, `done`, `awaiting-human`, `halted`, `failed`).
-10. **Report** (see Output Guidance), ending with the line printed by `runs.mjs result` as the final output line, copied verbatim.
+7. **Loop**: run `ship.mjs next` and act on `action` (see Task State and Phase Map). Before each phase, handle user messages and the interactive checkpoints. Done when `next` returns `finish`.
+8. **Outcome**: `ship.mjs outcome`. Pass `--summary` when the default one does not say enough. Done when it prints the outcome JSON.
+9. **Summary and run status**: write `<run-dir>/summary.md` per the summary template (`workflow: esp-ship`, the track in the outcome, `status` is the outcome status), from the outcome and `decisions.jsonl`, naming each skipped phase with its reason (`outputs.skipped_phases`), until `runs.mjs validate` passes on it. Set `runs.mjs update --status` to the outcome status (`merged`, `done`, `awaiting-human`, `halted`, `failed`).
+10. **Report** (see Output Guidance), ending with the reply.
 
 ## Output Guidance
 
-A short report, then the result block as the final line. Orchestrated track:
+A short report, then the reply of decision-policy.md (Replies), built from the outcome. Orchestrated track:
 
 ```markdown
 ### Ship: Add OAuth login (orchestrated)
@@ -185,8 +187,10 @@ A short report, then the result block as the final line. Orchestrated track:
 - **Summary**: ~/.esp-skills/runs/2026-11-10-oauth-login/summary.md
 ```
 
-```text
-{"contract_version":1,"status":"merged","summary":"Merged \"Add OAuth login\" (3 of 3 milestones): https://github.com/o/r/pull/42 with squash.","files_changed":["src/auth/google.ts","src/routes/login.ts","src/session.ts"],"commit":"9b8e7d6...","pr":"https://github.com/o/r/pull/42","max_risk":"medium","outputs":{"track":"orchestrated","branch":"feature/oauth-login","milestones":["M1","M2","M3"],"milestone_commits":{"M1":"1a2b3c4...","M2":"5d6e7f8...","M3":"9a8b7c6..."},"review_fix_commits":3,"merge":{"outcome":"merged","merged":true,"method":"squash"}}}
+```markdown
+Status: done
+Commit: 9b8e7d6c5b4a3f2e1d0c9b8a7f6e5d4c3b2a1f0e
+Summary: Merged "Add OAuth login" (3 of 3 milestones): https://github.com/o/r/pull/42 with squash.
 ```
 
 Inline track:

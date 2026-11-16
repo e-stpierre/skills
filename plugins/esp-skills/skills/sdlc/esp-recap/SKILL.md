@@ -8,7 +8,7 @@ argument-hint: "[-k|--risks] [-a|--all] [-s|--since <date>] [-e|--until <date>] 
 
 ## Overview
 
-Tell the user what happened across their runs, what was risky, or why a decision was made, with a source for every statement. The skill reads the run directories (`run.json`, `summary.md`, `decisions.jsonl`, step results, review findings) that `esp-ship` and a harness leave behind, older `esp-go`, `esp-go-light` and `esp-build` runs included, under every root in `recap.roots`. It has three modes: recap (the default), risk report (`--risks`), and Q&A when `[context]` is a question. `scripts/recap.mjs` selects the runs and returns compact JSON with the path of each artifact, so the skill reads only what it needs.
+Tell the user what happened across their runs, what was risky, or why a decision was made, with a source for every statement. The skill reads the run directories (`run.json`, `summary.md`, `decisions.jsonl`, the step records of `ship.json`, review findings) that `esp-ship` and a harness leave behind, older `esp-go`, `esp-go-light` and `esp-build` runs included, under every root in `recap.roots`. It has three modes: recap (the default), risk report (`--risks`), and Q&A when `[context]` is a question. `scripts/recap.mjs` selects the runs and returns compact JSON with the path of each artifact, so the skill reads only what it needs.
 
 ## Arguments
 
@@ -62,7 +62,7 @@ If the command exits with code 1 (invalid config), report its error and stop. If
 `scripts/recap.mjs` takes the filters above by their long names only (`--since`, `--until`, `--last`, `--all`, `--repo`, `--status`, and `--risk` for `--run-risk`), plus `--limit <N>`: pass `-s 2026-11-01` as `--since 2026-11-01`. Every item it returns carries a `source` path.
 
 - `collect`: `range`, `count`, `fan_out`, `batches` (run paths per subagent), and one digest per run: title, workflow, repo, status, PR, outcome, decision counts by risk, critical findings, steps, commits
-- `show <run-id|path>`: one run in full: `run.json`, summary sections, decisions, step results, commits, critical findings, latest plan path
+- `show <run-id|path>`: one run in full: `run.json`, summary sections, decisions, step records, commits, critical findings, latest plan path
 - `risks [--min-risk <level>]`: decisions at or above the level (default `high`), critical review findings, and halted, blocked, failed or waiting runs
 - `sources --question <text>`: Q&A candidates in source order: matching decisions and summary sections, then per matching run the repo, branch, commits and files for git, and the PR URLs
 
@@ -84,7 +84,7 @@ When `collect` returns `fan_out: true`, spawn one subagent per entry of `batches
    1. Run `recap.mjs collect` with the filters. With no run, say which roots and range were read (`roots`, `range`) and suggest `--all` or a wider `--last`.
    2. With `fan_out: true`, digest the batches in subagents (see Fan-Out). Otherwise use the digests as they are, and run `show` on a run only when its digest leaves out something the user asked for.
    3. Write the recap (see Output Guidance): done when every run in range has its bullet and every statement its source.
-4. **One-run recap**: run `recap.mjs show <run-id|path>`. Use the summary sections first; read the plan or a step result only when the summary does not answer.
+4. **One-run recap**: run `recap.mjs show <run-id|path>`. Use the summary sections first; read the plan or a step record only when the summary does not answer.
 5. **Risk report**: run `recap.mjs risks` with the filters, plus `--min-risk medium` (or `low`) when the user asks for lower-risk decisions too; `--min-risk` sets the decision threshold, apart from the `--run-risk` run filter. For each item, open its source only when the line in the output is not enough to explain it. Group by run.
 6. **Q&A**: go through the sources in this order and stop as soon as the question is answered:
    1. Run `recap.mjs sources --question "<question>"` with the filters. When it finds nothing in range, run it again with `--all` before giving up.

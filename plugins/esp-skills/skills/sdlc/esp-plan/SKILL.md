@@ -8,7 +8,7 @@ argument-hint: "[-a|--amend] [-I|--import <path>] [-t|--type <type>] [-i|--inter
 
 ## Overview
 
-Explore the codebase and write an implementation plan that `esp-ship` can parse: milestones with IDs, goals, complexity, dependencies, files, tasks, acceptance criteria and validation commands. Use it to plan a feature, bug fix or chore before building it, with `--import` to convert a task list or a design document without exploring, or with `--amend` to change the remaining milestones of an existing plan without touching completed ones. The plan is written to a run directory, and the skill ends with a contract result block.
+Explore the codebase and write an implementation plan that `esp-ship` can parse: milestones with IDs, goals, complexity, dependencies, files, tasks, acceptance criteria and validation commands. Use it to plan a feature, bug fix or chore before building it, with `--import` to convert a task list or a design document without exploring, or with `--amend` to change the remaining milestones of an existing plan without touching completed ones. The plan is written to a run directory, and the skill ends with a short markdown reply.
 
 ## Arguments
 
@@ -37,7 +37,7 @@ Arguments: $ARGUMENTS
 - Explore the codebase before planning, and follow its existing patterns and conventions
 - Every milestone is one coherent, reviewable commit that changes code and can be verified by its validation commands
 - Write plans to the run directory only, never inside the repository, and never commit them
-- Run every script with Bash, with the literal `"${CLAUDE_PLUGIN_ROOT}/scripts/..."` path. `run.json`, `decisions.jsonl` and result files are written by `runs.mjs` only
+- Run every script with Bash, with the literal `"${CLAUDE_PLUGIN_ROOT}/scripts/..."` path. `run.json` and `decisions.jsonl` are written by `runs.mjs` only
 - A plan is done only when plan-lint passes
 - Plans size the work only as milestones and their complexity, with no time estimates or deadlines
 
@@ -60,18 +60,15 @@ If a command exits with code 1 (invalid config), report its error and stop. If i
 - `defaults.models.explorer` (default `sonnet`): model and effort passed to each Explore subagent
 - `defaults.language` (default `en-US`): language of the plan prose
 
-### Run Directory and Contract
+### Run Directory
 
-esp-plan writes a result block, and in a headless session or a subagent it hands questions back to its caller (see Asking and Deciding). The list abbreviates `node "${CLAUDE_PLUGIN_ROOT}/scripts/runs.mjs"` as `runs.mjs` (same for `plan.mjs`). Every `runs.mjs` call except `create` takes `--run-dir <path>`:
+esp-plan writes the plan into a run directory, ends with a short reply, and in a headless session or a subagent it hands questions back to its caller (see Asking and Deciding). The list abbreviates `node "${CLAUDE_PLUGIN_ROOT}/scripts/runs.mjs"` as `runs.mjs` (same for `plan.mjs`). Every `runs.mjs` call except `create` takes `--run-dir <path>`:
 
 - **Own run (no `--run-dir`)**: `runs.mjs create <slug> --title <title> --workflow esp-plan --repo <repo-root>` (prints `run_dir`)
 - **Latest plan**: `runs.mjs plan` (`{ path, version }`, version 0 when there is none)
 - **Plan commands** (`lint`, `import`, `batches`, `diff`): see the plan format
 - **Decision**: `runs.mjs decision --json '<decision>'` (see the decision policy for fields and `x-esp-class`)
-- **Result block**: `runs.mjs result <step> --json '<block>'` prints the final output line
-- **Own run finished**: `runs.mjs update --status done`, or `halted` or `awaiting-human` to match the result
-
-The step name is `plan` for a new plan and `plan-v<N>` for an amendment that writes version N.
+- **Own run finished**: `runs.mjs update --status done`, or `halted` or `awaiting-human` to match the reply status
 
 ### Parallel Milestones
 
@@ -86,7 +83,7 @@ The step name is `plan` for a new plan and `plan-v<N>` for an amendment that wri
 Classify every open choice with the decision policy:
 
 - **A-Fix and B-Decide**: pick the recommended option, record it in the plan (Architecture, Fix Strategy or Scope), and log it as a decision with `phase: plan`
-- **B-Scope or Halt** (ambiguity that changes scope or public API): in `plan` or `all` mode, ask. In a headless session or a subagent, write the plan with the safest assumption stated in `## Open Questions`, then end with `status: awaiting-human` and the question in `blockers`, so the main session asks (see the decision policy). Standalone with `off`, state the assumption in `## Open Questions` and log it
+- **B-Scope or Halt** (ambiguity that changes scope or public API): in `plan` or `all` mode, ask. In a headless session or a subagent, write the plan with the safest assumption stated in `## Open Questions`, then end with `Status: needs-decision` and the question in a `Question:` line, so the main session asks (see the decision policy). Standalone with `off`, state the assumption in `## Open Questions` and log it
 
 ## Instructions
 
@@ -105,13 +102,13 @@ Classify every open choice with the decision policy:
 11. **Amend**: follow the four steps of Amendments in [plan-format.md](../../../references/plan-format.md). Fail when `runs.mjs plan` returns version 0; with no `state.json`, no milestone is completed. Done when `plan.mjs diff` passes and one decision logged the amendment. Continue at step 12.
 12. **Plan-lint**: run `plan.mjs lint` on the written file. Fix every error and lint again until `valid` is true. Resolve each warning, or state in the report why it stays. A shared-file warning is resolved by a real `Depends`, or by moving the shared files to an earlier milestone (see Parallel Milestones).
     - **Parallel batches**: when the plan has two or more milestones, run `plan.mjs batches <plan-file>` (with `--run-dir <run-dir>` for an amendment, so completed milestones are left out) and write its `summary` lines as a list in a `## Parallel Batches` context section, just before `## Milestones` (replace the section of a copied version). Lint again, and for an amendment run `plan.mjs diff` again.
-13. **Interactive approval** (`plan` or `all`): present the summary and ask for approval before the result block. Apply requested changes to the same file (the version is final only once approved) and lint again.
-14. **Write the result block** with `runs.mjs result <step>` and update an own run's status. Use `status: done` (or `awaiting-human` with the question in `blockers`, see Asking and Deciding), `max_risk` from the plan's risks, and `outputs` with `plan_path`, `plan_version`, `plan_type`, `milestones` (IDs) and `milestones_remaining` (IDs not completed). For an import, add `source` (the path) and `imported` (package ID to milestone ID). For an amendment, add `amendment` (the decision ID) and `affects`.
-15. **Report** the summary (see Output Guidance), then end with the line printed by `runs.mjs result` as the final output line.
+13. **Interactive approval** (`plan` or `all`): present the summary and ask for approval before the reply. Apply requested changes to the same file (the version is final only once approved) and lint again.
+14. **Update an own run's status**: `runs.mjs update --status done`, or `awaiting-human` when a question is open (see Asking and Deciding).
+15. **Report** the summary, then end with the reply (see Output Guidance): `Status: done` (or `needs-decision` with the `Question:` line), and a `Summary:` naming the plan path, its version and the milestone IDs. For an import, name the source; for an amendment, the amendment decision ID and the affected milestones.
 
 ## Output Guidance
 
-A short summary, then the result block as the final line:
+A short summary, then the reply of `${CLAUDE_PLUGIN_ROOT}/references/decision-policy.md` (Replies):
 
 ```text
 Plan written to <run-dir>/plan.md (version 1, feature)
@@ -125,7 +122,9 @@ Open questions: none
 Plan-lint: passed
 
 Next: /esp-skills:esp-ship --run-dir <run-dir>
-{"contract_version":1,"status":"done","summary":"Planned Add OAuth login in 2 milestones.","outputs":{"plan_path":"...","plan_version":1,"plan_type":"feature","milestones":["M1","M2"],"milestones_remaining":["M1","M2"]}}
+
+Status: done
+Summary: Planned Add OAuth login in 2 milestones (M1, M2): <run-dir>/plan.md, version 1, feature
 ```
 
 For an amendment, list the changed, added and removed milestones and the amendment decision ID instead of the full milestone list.

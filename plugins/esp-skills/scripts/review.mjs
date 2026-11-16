@@ -346,6 +346,55 @@ function stripResultLine(lines) {
   return { lines, block: null };
 }
 
+const DISCOVERED_TYPES = [
+  "bug",
+  "debt",
+  "security",
+  "docs",
+  "test",
+  "follow-up",
+  "other"
+];
+
+/** One `Discovered: <type> - <title> - <evidence>` line as a discovered item. */
+function parseDiscovered(text) {
+  const parts = text.split(/\s+-\s+/);
+  const type = parts[0].trim().toLowerCase();
+  if (parts.length >= 2 && DISCOVERED_TYPES.includes(type)) {
+    const item = { type, title: parts[1].trim() };
+    const evidence = parts.slice(2).join(" - ").trim();
+    if (evidence) item.evidence = evidence;
+    return item;
+  }
+  return { type: "other", title: text.trim() };
+}
+
+/**
+ * Split the reply lines around the review: a leading `Status:` line and the
+ * trailing `Discovered:` lines of the reply format.
+ */
+function stripReplyLines(lines) {
+  let start = 0;
+  while (start < lines.length && lines[start].trim() === "") start++;
+  let status = null;
+  const head = /^Status:\s*(\S+)/i.exec(lines[start] ?? "");
+  if (head) {
+    status = head[1].toLowerCase();
+    start++;
+  }
+  let end = lines.length;
+  const discovered = [];
+  for (let i = lines.length - 1; i >= start; i--) {
+    const text = lines[i].trim();
+    if (text === "") continue;
+    const m = /^Discovered:\s*(.+)$/i.exec(text);
+    if (!m) break;
+    discovered.unshift(parseDiscovered(m[1]));
+    end = i;
+  }
+  return { lines: lines.slice(start, end), start, status, discovered };
+}
+
 function parseFinding(id, meta, body, line, errors) {
   const parts = meta.split(/\s+-\s+/).map((p) => p.trim());
   const where = `line ${line} (${id})`;
@@ -413,11 +462,17 @@ function parseFinding(id, meta, body, line, errors) {
 /**
  * Parse reviewer markdown into findings. Sections: an optional `### Review:`
  * header, `#### F<n> - <severity> - <dimension> - <class>` findings,
- * `#### Rejected Candidates`, and an optional trailing JSON line.
+ * `#### Rejected Candidates`, wrapped in the reply format: an optional leading
+ * `Status:` line and trailing `Discovered:` lines. A trailing JSON line from
+ * older reviewers is still accepted for its `discovered_items`.
  */
 export function parseReview(text) {
   const raw = text.replace(/^\uFEFF/, "").split(/\r?\n/);
-  const { lines, block } = stripResultLine(raw);
+  const stripped = stripResultLine(raw);
+  const block = stripped.block;
+  const reply = stripReplyLines(stripped.lines);
+  const lines = reply.lines;
+  const offset = reply.start;
   const errors = [];
   const findings = [];
   const rejected = [];
@@ -477,7 +532,7 @@ export function parseReview(text) {
         id: finding[1],
         meta: finding[2],
         body: [],
-        line: index + 1,
+        line: index + offset + 1,
         start: index
       };
       return;
@@ -496,7 +551,23 @@ export function parseReview(text) {
     }
   });
   close(lines.length);
-  return { header, findings, rejected, spans, lines, block, errors };
+  const discovered =
+    reply.discovered.length > 0
+      ? reply.discovered
+      : Array.isArray(block?.discovered_items)
+        ? block.discovered_items
+        : [];
+  return {
+    header,
+    findings,
+    rejected,
+    spans,
+    lines,
+    status: reply.status,
+    discovered,
+    block,
+    errors
+  };
 }
 
 const RISK_BY_SEVERITY = {
@@ -572,7 +643,7 @@ export function buildReport(
     max_risk: maxRisk,
     outputs
   };
-  const discovered = parsed.block?.discovered_items;
+  const discovered = parsed.discovered ?? parsed.block?.discovered_items;
   if (Array.isArray(discovered) && discovered.length > 0)
     outcome.discovered_items = discovered;
   return {
@@ -584,7 +655,7 @@ export function buildReport(
   };
 }
 
-/** Review markdown with dropped findings removed and the trailing JSON line stripped. */
+/** Review markdown without the dropped findings, the status line and a trailing JSON line. */
 export function renderReview(parsed, dropped) {
   const remove = new Set();
   for (const span of parsed.spans) {
@@ -593,6 +664,13 @@ export function renderReview(parsed, dropped) {
   }
   const lines = parsed.lines.filter((_, i) => !remove.has(i));
   while (lines.length > 0 && lines.at(-1).trim() === "") lines.pop();
+  while (lines.length > 0 && lines[0].trim() === "") lines.shift();
+  // Keep the discovered items, so parsing the rewritten review finds them again.
+  const discovered = (parsed.discovered ?? []).map(
+    (d) =>
+      `Discovered: ${d.type} - ${d.title}${d.evidence ? ` - ${d.evidence}` : ""}`
+  );
+  if (discovered.length > 0) lines.push("", ...discovered);
   return `${lines.join("\n")}\n`;
 }
 

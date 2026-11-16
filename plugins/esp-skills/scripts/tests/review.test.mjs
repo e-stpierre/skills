@@ -26,7 +26,9 @@ import {
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REVIEW = join(HERE, "..", "review.mjs");
 
-const REVIEW_MD = `### Review: abc1234..def5678
+const REVIEW_MD = `Status: done
+
+### Review: abc1234..def5678
 
 Dimensions: correctness, security, tests. Candidates: 6, verified: 3, rejected: 3.
 
@@ -56,7 +58,8 @@ Dimensions: correctness, security, tests. Candidates: 6, verified: 3, rejected: 
 - \`src/math.js:12\` missing null check: callers validate input in \`src/cli.js:8\`
 - \`src/math.js:30\` unused export: imported by \`src/report.js:2\`
 - \`src/math.js:40\` slow loop: runs once per process
-{"status":"done","summary":"3 findings","discovered_items":[{"type":"debt","title":"Legacy rounding helper","evidence":"src/round.js:1"}]}
+
+Discovered: debt - Legacy rounding helper - src/round.js:1
 `;
 
 function git(cwd, ...args) {
@@ -266,7 +269,38 @@ describe("parseReview", () => {
     assert.equal(f3.class, "B-Decide");
     assert.equal(f3.recommended, "inline it");
     assert.equal(parsed.rejected.length, 3);
-    assert.equal(parsed.block.discovered_items.length, 1);
+    assert.equal(parsed.status, "done");
+    assert.deepEqual(parsed.discovered, [
+      {
+        type: "debt",
+        title: "Legacy rounding helper",
+        evidence: "src/round.js:1"
+      }
+    ]);
+  });
+
+  test("still reads the discovered items of a trailing JSON line", () => {
+    const legacy = REVIEW_MD.replace("Status: done\n\n", "").replace(
+      "\nDiscovered: debt - Legacy rounding helper - src/round.js:1\n",
+      '{"status":"done","discovered_items":[{"type":"bug","title":"Old"}]}\n'
+    );
+    const parsed = parseReview(legacy);
+    assert.deepEqual(parsed.errors, []);
+    assert.equal(parsed.status, null);
+    assert.equal(parsed.findings.length, 3);
+    assert.deepEqual(parsed.discovered, [{ type: "bug", title: "Old" }]);
+  });
+
+  test("an untyped Discovered line becomes an other item", () => {
+    const parsed = parseReview(
+      REVIEW_MD.replace(
+        "debt - Legacy rounding helper - src/round.js:1",
+        "flaky CI on Windows"
+      )
+    );
+    assert.deepEqual(parsed.discovered, [
+      { type: "other", title: "flaky CI on Windows" }
+    ]);
   });
 
   test("accepts CRLF, a BOM and headings inside code fences", () => {
@@ -378,13 +412,25 @@ describe("renderReview and the parse command", () => {
   });
   afterEach(() => rmSync(dir, { recursive: true, force: true }));
 
-  test("renderReview drops filtered findings and the trailing JSON line", () => {
+  test("renderReview drops filtered findings and the status line, and keeps discovered items", () => {
     const parsed = parseReview(REVIEW_MD);
     const md = renderReview(parsed, ["F3"]);
     assert.doesNotMatch(md, /#### F3/);
     assert.match(md, /#### F2/);
     assert.match(md, /#### Rejected Candidates/);
-    assert.doesNotMatch(md, /"status":"done"/);
+    assert.doesNotMatch(md, /^Status:/m);
+    assert.match(md, /^### Review:/);
+    assert.deepEqual(parseReview(md).discovered, parsed.discovered);
+  });
+
+  test("renderReview writes the items of a trailing JSON line as Discovered lines", () => {
+    const legacy = REVIEW_MD.replace(
+      "Discovered: debt - Legacy rounding helper - src/round.js:1",
+      '{"status":"done","discovered_items":[{"type":"bug","title":"Old"}]}'
+    );
+    const md = renderReview(parseReview(legacy), []);
+    assert.doesNotMatch(md, /"status"/);
+    assert.match(md, /^Discovered: bug - Old$/m);
   });
 
   test("parse rewrites the review in place and writes the findings file", () => {

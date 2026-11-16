@@ -102,3 +102,10 @@ Title: Add user authentication
 ```text
 Failed to create PR: <error message from gh CLI>
 ```
+
+**Called by another skill** (`esp-ship`): end with the reply of `${CLAUDE_PLUGIN_ROOT}/references/decision-policy.md` (Replies):
+
+```markdown
+Status: done
+Summary: PR created: https://github.com/owner/repo/pull/123
+```

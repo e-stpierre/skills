@@ -27,7 +27,7 @@ Arguments work like a standard CLI: discrete values are named options with a sho
 
 ## Agents
 
-Subagents spawned by the workflow skills. Each returns a contract result block and keeps details in the run dir. Spawn sites pass the model and effort of the role from the config (see `references/model-selection.md`); the frontmatter model is only a fallback.
+Subagents spawned by the workflow skills. Each ends with a short markdown reply (`Status:`, `Commit:`, `Summary:` and, when needed, `Blockers:`, `Discovered:` and `Question:` lines; see Replies in `references/decision-policy.md`) and keeps details in the run dir. Spawn sites pass the model and effort of the role from the config (see `references/model-selection.md`); the frontmatter model is only a fallback.
 
 | Agent                     | Description                                                                         |
 | ------------------------- | ----------------------------------------------------------------------------------- |
@@ -207,7 +207,7 @@ The SDLC skills (`esp-plan`, `esp-analyze`) accept an optional `[context]` argum
 /esp-skills:esp-plan --interactive plan --type bug
 ```
 
-The `esp-review` skill produces markdown and a result block and performs no write-side effects on the repository. Routing the review (stdout, PR comment, file, CI annotation) is the caller's responsibility.
+The `esp-review` skill produces markdown and an outcome and performs no write-side effects on the repository. Routing the review (stdout, PR comment, file, CI annotation) is the caller's responsibility.
 
 ### Plans
 
@@ -237,6 +237,8 @@ node scripts/ship.mjs next --run-dir <run>
 node scripts/ship.mjs review-gate --run-dir <run>
 node scripts/ship.mjs pr-loop --run-dir <run> --after fix
 node scripts/ship.mjs pr-body --run-dir <run> --out <run>/pr-body.md
+node scripts/review.mjs parse <run>/review-1.md --out <run>/review-1.json | node scripts/ship.mjs record review-1 --run-dir <run>
+node scripts/ship.mjs outcome --run-dir <run>
 ```
 
 - **Triage**: detects the request (a plan file, a task list, a design document, a prompt or an issue) and picks the plan source (`reuse`, `import`, `generate`, `synthesize`, or none) and the track. A task list whose packages are all checked ends `done` with no branch. Each choice is a decision in `decisions.jsonl`
@@ -265,14 +267,14 @@ node scripts/ship.mjs milestone reuse M3 --agent-id <id> --run-dir ~/.esp-skills
 
 ### Reviews
 
-`esp-review` reviews a diff in a fresh-context `esp-reviewer` (or inline on a runtime without subagents) across the dimensions `correctness`, `security`, `plan-conformance`, `tests`, `conventions`, `simplification` and `performance`. A find pass collects candidates and a verify pass tries to prove each one wrong; survivors get a severity and a class from the decision policy (A, B-Decide, B-Scope) with a fix. `scripts/review.mjs` resolves the target into a diff file and parses the review into findings and a result block:
+`esp-review` reviews a diff in a fresh-context `esp-reviewer` (or inline on a runtime without subagents) across the dimensions `correctness`, `security`, `plan-conformance`, `tests`, `conventions`, `simplification` and `performance`. A find pass collects candidates and a verify pass tries to prove each one wrong; survivors get a severity and a class from the decision policy (A, B-Decide, B-Scope) with a fix. `scripts/review.mjs` resolves the target into a diff file and parses the review into findings and an outcome, which esp-ship records with `ship.mjs record`:
 
 ```bash
 node scripts/review.mjs target main --run-dir ~/.esp-skills/runs/2026-11-10-add-oauth-login
 node scripts/review.mjs parse review-1.md --min-severity medium --md-out review-1.md --out review-1.json
 ```
 
-- Findings below `review.min_severity` are dropped, and the counts by class and severity go to the result block
+- Findings below `review.min_severity` are dropped, and the counts by class and severity go to the outcome
 - `review-<N>.json` (`review_format: 1`) is the machine-readable list a fixer consumes
 
 ### Waiting for Reviews and Checks
@@ -289,14 +291,14 @@ node scripts/wait-for-review.mjs 42 --reviewers codex --once
 
 ### Fixing Reviews
 
-`esp-fix-review` resolves review items in rounds: fetch -> classify (A-Fix, B-Decide, B-Scope, Reject) -> fix and commit -> push -> reply and resolve -> wait for the re-review. `scripts/fix-review.mjs` keeps the state (`<run-dir>/fix-review.json`): handled item IDs, so a later round or a rerun never reprocesses a comment, the round count bounded by `--max-rounds`, and the GitHub replies still owed. The model classifies and fixes; the script posts the replies, resolves the threads and builds the result block:
+`esp-fix-review` resolves review items in rounds: fetch -> classify (A-Fix, B-Decide, B-Scope, Reject) -> fix and commit -> push -> reply and resolve -> wait for the re-review. `scripts/fix-review.mjs` keeps the state (`<run-dir>/fix-review.json`): handled item IDs, so a later round or a rerun never reprocesses a comment, the round count bounded by `--max-rounds`, and the GitHub replies still owed. The model classifies and fixes; the script posts the replies, resolves the threads and builds the outcome:
 
 ```bash
 node scripts/fix-review.mjs round --run-dir <run>
 node scripts/fix-review.mjs fetch 42 --reviewers codex --run-dir <run>
 node scripts/fix-review.mjs record --run-dir <run> --json '{"items":["inline:101"],"resolution":"fixed","class":"A-Fix","decision":"Fixed the bound","rationale":"skipped the last element","commit":"3f2a1c0"}'
 node scripts/fix-review.mjs respond --run-dir <run>
-node scripts/fix-review.mjs result --run-dir <run>
+node scripts/fix-review.mjs outcome --run-dir <run>
 ```
 
 - `internal [review-<N>.json]` loads `esp-review` findings instead of PR comments, for the internal review loop
@@ -319,7 +321,7 @@ node scripts/merge-ready.mjs merge 42 --run-dir <run>
 
 ### Run Directories
 
-Workflow skills record their work in a run directory that follows harness contract v1: `run.json`, step result blocks, `decisions.jsonl`, `notes.md` (builder facts and operator corrections) and plan versions. Standalone runs go to `<runs.root>/<YYYY-MM-DD>-<slug>`; a parent skill (esp-ship) passes `--run-dir <path>` instead. Skills never write these files by hand: `scripts/runs.mjs` creates, updates, validates and indexes them. The schemas and fixtures are in `references/contract/v1/`, and `references/contract-notes.md` maps each contract requirement to the command that meets it.
+Workflow skills record their work in a run directory that follows harness contract v1: `run.json`, `decisions.jsonl`, `ship.json` (the esp-ship state and its step records), `notes.md` (builder facts and operator corrections) and plan versions. Standalone runs go to `<runs.root>/<YYYY-MM-DD>-<slug>`; a parent skill (esp-ship) passes `--run-dir <path>` instead. Skills never write these files by hand: `scripts/runs.mjs` creates, updates, validates and indexes them. The schemas and fixtures are in `references/contract/v1/`, and `references/contract-notes.md` maps each contract requirement to the command that meets it.
 
 ```bash
 node scripts/runs.mjs create fix-login-timeout --workflow esp-ship

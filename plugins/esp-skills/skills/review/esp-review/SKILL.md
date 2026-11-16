@@ -24,7 +24,7 @@ Read each option by its short or its long name (`-t main`, `--target main` or `-
   - `<base>..<head>` or `<base>...<head>`: an explicit range
   - `PR <number>`, `#<number>`, or a pull request URL: a GitHub pull request, through `gh`
 - **`[-i|--interactive <mode>]`** (optional): `off`, `plan` or `all`. Only `all` stops after the review to settle B-Decide and B-Scope findings with the user. Defaults to `defaults.interactive` (`off`). Headless sessions always use `off`.
-- **`[-d|--run-dir <path>]`** (optional): Run directory owned by a parent skill (esp-ship). The diff, the review and the findings are saved there, and the result block is recorded as step `review-<N>`. Without it, the skill writes them to a temporary directory and creates no run.
+- **`[-d|--run-dir <path>]`** (optional): Run directory owned by a parent skill (esp-ship). The diff, the review and the findings are saved there, and the outcome is recorded as step `review-<N>` in `ship.json`. Without it, the skill writes them to a temporary directory and creates no run.
 
 ### Values
 
@@ -41,7 +41,7 @@ Arguments: $ARGUMENTS
 - Review only the diff. Pre-existing issues outside the changed lines are not findings; a serious one becomes a discovered item (see decision-policy.md)
 - High signal only: the review holds verified findings and rejected candidates, nothing else
 - Read-only and routes nothing: the skill writes only into the run or temporary directory, and the caller decides where the review goes (terminal, PR comment, file, CI log)
-- Run every script with Bash, with the literal `"${CLAUDE_PLUGIN_ROOT}/scripts/..."` path. Counts, result files and the result block always come from `review.mjs` and `runs.mjs`
+- Run every script with Bash, with the literal `"${CLAUDE_PLUGIN_ROOT}/scripts/..."` path. Counts, the findings file and the outcome always come from `review.mjs`, never from a hand count
 
 ## Skill-Specific Guidelines
 
@@ -71,9 +71,9 @@ The available dimensions are `correctness`, `security`, `plan-conformance`, `tes
 - **Resolve target**: `review.mjs target [<target>] --project-dir <repo-root> [--run-dir <path>]` (`<target>`: the `--target` value)
 - **Latest plan**: `runs.mjs plan` (`{ path, version }`, version 0 when there is none)
 - **Parse and filter**: `review.mjs parse <review_path> --min-severity <level> --verified <bool> --md-out <review_path> --out <findings_path>`
-- **Result block**: the same `parse` command plus `--result`, piped into `runs.mjs result <step>` with `--run-dir`
+- **Record the step** (under esp-ship, whose run dir has `ship.json`): the same `parse` command piped into `ship.mjs record <step> --run-dir <path>`, which stores its `outcome`
 
-`target` prints `{ kind, base, head, files, untracked, pr, empty, step, diff_path, review_path, findings_path }`. With `--run-dir`, the paths are `<run-dir>/review-<N>.diff`, `.md` and `.json`, where N is the next review round. `parse` exits 1 with the list of malformed findings when the review does not follow the finding format.
+`target` prints `{ kind, base, head, files, untracked, pr, empty, step, diff_path, review_path, findings_path }`. With `--run-dir`, the paths are `<run-dir>/review-<N>.diff`, `.md` and `.json`, where N is the next review round. `parse` prints `{ file, valid, findings, rejected, dropped, outcome }`, where `outcome` is `{ status, summary, max_risk, outputs, discovered_items }`, and exits 1 with the list of malformed findings when the review does not follow the finding format. It strips the reviewer's `Status:` line and keeps its `Discovered:` lines.
 
 ### Running the Reviewer
 
@@ -106,18 +106,18 @@ In every other mode the review settles nothing: the fixer applies the classes wi
 
 1. **Parse arguments**: read every option by its short or long name, and resolve the interactive mode per its Definition.
 2. **Load configuration** (see Configuration).
-3. **Resolve the target**: run `review.mjs target` with the `--target` value. On exit code 2, report the usage error and stop. If `empty` is true, report that there is nothing to review, end with the result block `{"contract_version":1,"status":"done","summary":"Nothing to review: the diff is empty.","max_risk":"low","outputs":{"findings":0}}` (through `runs.mjs result <step>` with `--run-dir`), and stop.
+3. **Resolve the target**: run `review.mjs target` with the `--target` value. On exit code 2, report the usage error and stop. If `empty` is true, report that there is nothing to review, record it under esp-ship with `ship.mjs record <step> --json '{"status":"done","summary":"Nothing to review: the diff is empty.","max_risk":"low","outputs":{"findings":0}}'`, reply `Status: done` with that summary, and stop.
 4. **Resolve the plan**: `--plan`, else with `--run-dir` the path from `runs.mjs plan` when its version is above 0, else none.
 5. **Resolve the dimensions**: when every comma-separated item of `--focus` is a dimension name, use those; otherwise use `review.dimensions` and pass `--focus` as the focus text. Remove `plan-conformance` when there is no plan.
 6. **Run the reviewer** (see Running the Reviewer). Done when its reply is saved verbatim to `review_path`.
-7. **Parse and filter**: run `review.mjs parse` with `--md-out` and `--out` (see Scripts). If it exits 1, correct only the reported headings and lines in `review_path` to the finding format, without changing what the findings say, and parse again. If it still fails, end with `status: failed` and the errors in the summary.
+7. **Parse and filter**: run `review.mjs parse` with `--md-out` and `--out` (see Scripts). If it exits 1, correct only the reported headings and lines in `review_path` to the finding format, without changing what the findings say, and parse again. If it still fails, end with `Status: failed` and the errors in the summary.
 8. **Interactive review** (`all` only, see Interactive Review).
-9. **Write the result block**: run the step 7 `parse` command again with `--result`. With `--run-dir`, pipe it into `runs.mjs result <step>` (the `step` from `target`), which records it and prints the final line.
-10. **Report**: print the content of `review_path`, then the result line as the final output line.
+9. **Record the step** (under esp-ship only): run the step 7 `parse` command again, piped into `ship.mjs record <step> --run-dir <path>` (the `step` from `target`).
+10. **Report**: print the content of `review_path`, then the reply (see Output Guidance).
 
 ## Output Guidance
 
-The review markdown, then the result block as the final line:
+The review markdown, then the reply of `${CLAUDE_PLUGIN_ROOT}/references/decision-policy.md` (Replies), built from the `outcome` of `parse`:
 
 ```markdown
 ### Review: 3f2a1c0..9b8e7d6
@@ -143,8 +143,9 @@ Dimensions: correctness, security, tests. Candidates: 5, verified: 2, rejected: 
 - `src/math.js:20` missing null check: callers validate input in `src/cli.js:8`
 ```
 
-```text
-{"contract_version":1,"status":"done","summary":"2 findings (1 high, 1 medium), 3 candidates rejected.","max_risk":"high","outputs":{"findings":2,"by_class":{"A":1,"B-Decide":1,"B-Scope":0},"by_severity":{"critical":0,"high":1,"medium":1,"low":0},"rejected":3,"verified":true,"min_severity":"medium","dropped":0,"review_path":"...","findings_path":"..."}}
+```markdown
+Status: done
+Summary: 2 findings (1 high, 1 medium), 3 candidates rejected. Review: <run-dir>/review-1.md, findings: <run-dir>/review-1.json
 ```
 
-When nothing survives, the review says `No findings.` and still lists the rejected candidates. `outputs.findings_path` points at the parsed findings (`review_format: 1`), which `esp-fix-review --internal` consumes.
+When nothing survives, the review says `No findings.` and still lists the rejected candidates. `outputs.findings_path` of the outcome points at the parsed findings (`review_format: 1`), which `esp-fix-review --internal` consumes.
