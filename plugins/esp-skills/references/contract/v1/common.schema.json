@@ -38,17 +38,6 @@
         "merged"
       ]
     },
-    "result_status": {
-      "description": "Status reported by a step in its result block.",
-      "enum": [
-        "done",
-        "merged",
-        "halted",
-        "awaiting-human",
-        "failed",
-        "escalate"
-      ]
-    },
     "nullable_string": {
       "type": ["string", "null"]
     },

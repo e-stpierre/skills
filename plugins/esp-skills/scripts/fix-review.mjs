@@ -5,14 +5,13 @@
 // bodies, issue comments) or of an esp-review findings file, filters them by
 // reviewer and by the handled IDs already recorded, tracks the bounded fix
 // rounds, records how each item was resolved (and logs the decision), posts
-// the replies and resolves the threads on GitHub, and builds the contract
-// result block. The model classifies and fixes; this script keeps the state.
+// the replies and resolves the threads on GitHub, and builds the outcome of
+// the rounds. The model classifies and fixes; this script keeps the state.
 //
 // State: <run-dir>/fix-review.json with --run-dir, else --state <file>.
 // `ESP_GH_CMD` (a JSON array) replaces `gh`, for tests.
 //
-// Exit codes: 0 ok, 1 failure, 2 usage error. `result` exits with the
-// contract code of its status (0 done, 10 awaiting-human, 20 halted).
+// Exit codes: 0 ok, 1 failure (and `outcome` with status failed), 2 usage error.
 
 import { spawnSync } from "node:child_process";
 import {
@@ -32,7 +31,7 @@ import {
   loadConfig
 } from "./config.mjs";
 import { checkBucket, fetchChecks } from "./lib/checks.mjs";
-import { exitCodeFor, maxRisk, validateArtifact } from "./lib/contract.mjs";
+import { maxRisk } from "./lib/contract.mjs";
 import { withLock } from "./lib/lock.mjs";
 import { appendDecision, now } from "./runs.mjs";
 import {
@@ -861,10 +860,10 @@ function countResolutions(handled) {
 }
 
 /**
- * Build the result block from the state. Options: `remaining` (unhandled
+ * Build the outcome from the state. Options: `remaining` (unhandled
  * items left when the loop stopped), `status`, `summary`, `pr`, `haltOn`.
  */
-export function buildResult(
+export function buildOutcome(
   state,
   { remaining = 0, status, summary, haltOn = [], statePath = null } = {}
 ) {
@@ -930,7 +929,6 @@ export function buildResult(
       ? `Halted on ${where}: ${remaining} items left after ${state.max_rounds} rounds (${parts.join(", ")}).`
       : `Fix-review of ${where} over ${state.rounds.length} round${state.rounds.length === 1 ? "" : "s"}: ${parts.join(", ")}.`);
   const block = {
-    contract_version: 1,
     status: resolvedStatus,
     summary: text,
     max_risk: risk,
@@ -957,15 +955,10 @@ export function buildResult(
       (h) => `${state.items[h.id]?.url ?? h.id}: ${h.decision}`
     );
   }
-  const check = validateArtifact("result", block);
-  if (!check.valid)
-    throw new FixReviewError(
-      `Invalid result block:\n${check.errors.map((e) => `  ${e.path}: ${e.message}`).join("\n")}`
-    );
   return block;
 }
 
-/** Log the budget halt that buildResult decided. */
+/** Log the budget halt that buildOutcome decided. */
 function logBudgetHalt(runDir, state, remaining, env) {
   appendDecision(
     runDir,
@@ -982,16 +975,16 @@ function logBudgetHalt(runDir, state, remaining, env) {
   );
 }
 
-export function cmdResult(ctx, options) {
+export function cmdOutcome(ctx, options) {
   const { statePath, env, runDir, config } = ctx;
   if (!statePath)
-    throw new FixReviewError("result needs --run-dir or --state", 2);
+    throw new FixReviewError("outcome needs --run-dir or --state", 2);
   const state = readState(statePath, env);
   const remaining =
     options.remaining !== undefined ? Number(options.remaining) : 0;
   if (!Number.isInteger(remaining) || remaining < 0)
     throw new FixReviewError("--remaining must be an integer >= 0", 2);
-  const block = buildResult(state, {
+  const block = buildOutcome(state, {
     remaining,
     status: options.status,
     summary: options.summary,
@@ -1017,7 +1010,7 @@ Commands:
   round                   Start the next fix round (exhausted: true when none is left)
   record                  Record a resolution (--json <object> or stdin)
   respond                 Post owed replies, resolve threads, minimize comments
-  result                  Print the contract result block
+  outcome                 Print the outcome of the rounds: { status, summary, outputs, ... }
 
 Options:
   --run-dir <path>        Run directory: state in <run-dir>/fix-review.json, decisions logged
@@ -1025,9 +1018,9 @@ Options:
   --reviewers <a,b>       Only items from these reviewers (names from fix-review.wait.reviewers, or logins)
   --max-rounds <n>        Round limit (default: fix-review.max_rounds)
   --include-handled       Also return items already handled
-  --remaining <n>         result: unhandled items left when the loop stopped
-  --status <status>       result: override the status
-  --summary <text>        result: override the summary
+  --remaining <n>         outcome: unhandled items left when the loop stopped
+  --status <status>       outcome: override the status
+  --summary <text>        outcome: override the summary
   --json <object>         record: the resolution
   --project-dir <dir>     Repository root (default: nearest git root)
 
@@ -1156,11 +1149,11 @@ export function run(argv, env = process.env, io = {}) {
       const out = cmdRespond(ctx);
       return { output: out, exitCode: out.failed.length ? 1 : 0 };
     }
-    case "result": {
-      const block = cmdResult(ctx, options);
+    case "outcome": {
+      const block = cmdOutcome(ctx, options);
       return {
         output: JSON.stringify(block),
-        exitCode: exitCodeFor(block.status)
+        exitCode: block.status === "failed" ? 1 : 0
       };
     }
     default:

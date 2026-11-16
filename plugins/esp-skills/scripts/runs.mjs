@@ -29,7 +29,6 @@ import {
   CONTRACT_VERSION,
   RISK_ORDER,
   TERMINAL_RUN_STATUSES,
-  exitCodeFor,
   maxRisk,
   parseFrontmatter,
   validateArtifact
@@ -166,7 +165,7 @@ function parseJsonInput(raw, what) {
   }
 }
 
-function readStdin() {
+export function readStdin() {
   try {
     return readFileSync(0, "utf8");
   } catch {
@@ -212,7 +211,7 @@ function splitList(value) {
 // ---------------------------------------------------------------------------
 
 /** Raise run.json max_risk to `risk` when it is higher. */
-function raiseRunRisk(dir, risk, env) {
+export function raiseRunRisk(dir, risk, env) {
   if (!risk) return;
   const path = join(dir, "run.json");
   withLock(path, () => {
@@ -339,7 +338,7 @@ export function cmdUpdate(options, env = process.env) {
 }
 
 // ---------------------------------------------------------------------------
-// Decisions and results
+// Decisions
 // ---------------------------------------------------------------------------
 
 /** Append a decision; fills `id` (D001, D002, ...) and `at` when missing. */
@@ -357,41 +356,6 @@ export function cmdDecision(options, env = process.env) {
   const dir = requireRunDir(options);
   const input = parseJsonInput(options.json ?? readStdin(), "decision");
   return appendDecision(dir, input, env);
-}
-
-/** Resolve a step directory name: reuse `NN-<name>` when it exists, otherwise number it. */
-export function stepDirName(dir, step) {
-  if (!step || !ID_PATTERN.test(step))
-    throw new RunsError(`Invalid step name: ${step ?? "(missing)"}`, 2);
-  if (/^\d+-/.test(step)) return step;
-  const stepsDir = join(dir, "steps");
-  const existing = existsSync(stepsDir)
-    ? readdirSync(stepsDir)
-        .filter((d) => /^\d+-/.test(d))
-        .sort()
-    : [];
-  const match = existing.filter((d) => d.replace(/^\d+-/, "") === step).at(-1);
-  if (match) return match;
-  const next =
-    existing.reduce((max, d) => Math.max(max, Number.parseInt(d, 10)), 0) + 1;
-  return `${String(next).padStart(2, "0")}-${step}`;
-}
-
-export function cmdResult(step, options, env = process.env) {
-  const dir = requireRunDir(options);
-  const input = parseJsonInput(options.json ?? readStdin(), "result");
-  const block = { contract_version: CONTRACT_VERSION, ...input };
-  const name = stepDirName(dir, step);
-  const path = join(dir, "steps", name, "result.json");
-  assertArtifact("result", block, path);
-  writeJsonAtomic(path, block);
-  raiseRunRisk(dir, block.max_risk, env);
-  return {
-    path,
-    step: name,
-    exit_code: exitCodeFor(block.status),
-    line: JSON.stringify(block)
-  };
 }
 
 // ---------------------------------------------------------------------------
@@ -656,7 +620,6 @@ const JSONL_ARTIFACTS = { "decisions.jsonl": "decision" };
 export function artifactFor(file) {
   const name = basename(file);
   if (name === "run.json") return "run";
-  if (name === "result.json") return "result";
   if (name === "summary.md") return "summary-frontmatter";
   if (JSONL_ARTIFACTS[name]) return JSONL_ARTIFACTS[name];
   return null;
@@ -732,7 +695,7 @@ export function validateFile(file, schemaName) {
 
 /**
  * Pull request body built from the run artifacts (decisions.jsonl, the build
- * state.json and the step results), per pr.body_sections. Used by esp-pr with
+ * state.json and the esp-ship step records in ship.json), per pr.body_sections. Used by esp-pr with
  * a run directory when pr.body_from_run is on. --summary is the one free text.
  */
 export function cmdPrBody(options) {
@@ -772,18 +735,15 @@ Commands:
   get                    Print run.json
   update                 Update run.json fields (--status, --pr, --branch, --max-risk, --model, --budget, ...)
   decision               Append to decisions.jsonl (--json <object> or stdin); fills id and at
-  result <step>          Validate a result block (--json or stdin), write steps/<NN-step>/result.json,
-                         and print the block as one line (the final output line of a step)
   plan                   Print the latest plan version (plan.md = 1, plan.v<N>.md = N)
   notes                  Run notes in notes.md: --append <text> [--milestone <id>] [--from operator|agent]
                          (one line, under the lock), or --show [--milestone <id>] (includes run-wide lines)
   index                  List runs (--root, --since, --until, --last 7d, --repo, --status, --risk, --limit)
   pr-body                Pull request body from the run artifacts (--summary <text>, --out <file>)
   validate <file>        Validate a contract file (--schema <artifact> when it cannot be inferred)
-  exit-code <status>     Print the exit code of a result status
 
 Options:
-  --run-dir <path>          Run directory (required by every command except create, index, validate, exit-code)
+  --run-dir <path>          Run directory (required by every command except create, index, validate)
   --root <dir>              Runs root for create, or a root to index (repeatable)
   --project-dir <dir>       Project root for config resolution
   --help                    Show this help`;
@@ -833,10 +793,6 @@ export function run(argv, env = process.env) {
       return { output: cmdUpdate(options, env) };
     case "decision":
       return { output: cmdDecision(options, env) };
-    case "result": {
-      const out = cmdResult(args[0], options, env);
-      return { output: out.line };
-    }
     case "plan":
       return { output: cmdPlan(options) };
     case "notes":
@@ -851,9 +807,6 @@ export function run(argv, env = process.env) {
       const out = validateFile(args[0], options.schema);
       return { output: out, exitCode: out.valid ? 0 : 1 };
     }
-    case "exit-code":
-      if (!args[0]) throw new RunsError("Usage: exit-code <status>", 2);
-      return { output: String(exitCodeFor(args[0])) };
     default:
       throw new RunsError(`Unknown command: ${command}\n\n${USAGE}`, 2);
   }

@@ -10,11 +10,10 @@
 //   check [pr]   Evaluate every merge condition, print the report
 //   method [pr]  Resolve the merge method, print it
 //   merge [pr]   Check again right before merging, merge, clean up, log the
-//                decision, print a contract result block
+//                decision, print the outcome as JSON ({ status, summary, outputs })
 //
-// Exit codes: check and method exit 0 when they ran (read `ready` / `method`).
-// merge exits with the contract code of its result status (0 done or merged,
-// 10 awaiting-human, 20 halted, 1 failed). 2 is a usage error everywhere.
+// Exit codes: 0 ok (check and method when they ran, read `ready` / `method`;
+// merge with any status but failed), 1 failed, 2 usage error.
 
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
@@ -27,7 +26,6 @@ import {
   loadConfig
 } from "./config.mjs";
 import { classifyChecks, fetchChecks } from "./lib/checks.mjs";
-import { exitCodeFor, validateArtifact } from "./lib/contract.mjs";
 import { appendDecision } from "./runs.mjs";
 import { prArgument, repoFromUrl } from "./wait-for-review.mjs";
 
@@ -816,7 +814,7 @@ function failingReasons(rep) {
   return reasons;
 }
 
-/** Build and validate the merge result block. */
+/** Build the merge outcome. */
 export function buildResult(
   rep,
   {
@@ -831,7 +829,6 @@ export function buildResult(
   const status = STATUS_BY_OUTCOME[outcome] ?? "awaiting-human";
   const reasons = [...(rep ? failingReasons(rep) : []), ...blockers];
   const block = {
-    contract_version: 1,
     status,
     summary,
     max_risk: status === "halted" ? "high" : "low",
@@ -856,11 +853,6 @@ export function buildResult(
   };
   if (status !== "done" && status !== "merged" && reasons.length > 0)
     block.blockers = reasons;
-  const check = validateArtifact("result", block);
-  if (!check.valid)
-    throw new MergeError(
-      `Invalid result block:\n${check.errors.map((e) => `  ${e.path}: ${e.message}`).join("\n")}`
-    );
   return block;
 }
 
@@ -1035,8 +1027,8 @@ const USAGE = `Usage: merge-ready.mjs <command> [pr] [options]
 Commands:
   check [pr]              Evaluate the merge conditions and resolve the method (JSON report)
   method [pr]             Resolve the merge method only
-  merge [pr]              Check again, merge, clean up, log the decision, print a contract
-                          result block
+  merge [pr]              Check again, merge, clean up, log the decision, print the
+                          outcome { status, summary, outputs }
 
 [pr] is a number, #<n>, or a URL (default: the pull request of the current branch).
 
@@ -1050,8 +1042,8 @@ Options:
   --run-dir <path>        Run directory: halt signals and decisions
   --project-dir <dir>     Repository root (default: nearest git root)
 
-Exit codes: check and method 0 when they ran; merge exits with the contract code of its
-status (0 done or merged, 10 awaiting-human, 20 halted, 1 failed); 2 usage error.
+Exit codes: 0 ok (check and method when they ran; merge with any status but failed),
+1 failed, 2 usage error.
 
 Environment:
   ESP_GH_CMD              JSON array replacing the gh command (tests)`;
@@ -1175,7 +1167,7 @@ export async function run(argv, env = process.env, io = {}) {
       });
       return {
         output: JSON.stringify(block),
-        exitCode: exitCodeFor(block.status)
+        exitCode: block.status === "failed" ? 1 : 0
       };
     }
     default:

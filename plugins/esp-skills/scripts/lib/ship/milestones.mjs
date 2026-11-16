@@ -20,6 +20,7 @@ import { gatesFor } from "./gates.mjs";
 import {
   configOf,
   freezeConfig,
+  parseJsonOption,
   readJson,
   runDirOf,
   SHA,
@@ -356,7 +357,8 @@ export function nextStep(state, { parallel = false } = {}) {
       batch: [current],
       attempt: m.attempts + 1,
       amend: m.commit ?? null,
-      last_failure: m.last_failure
+      last_failure: m.last_failure,
+      failures: m.last_failures ?? []
     };
   }
 
@@ -447,6 +449,25 @@ export function cmdStart(id, options, env = process.env) {
   return entry;
 }
 
+/** --failures <json>: the verifier's failures, a list of objects or strings. */
+function failuresOption(raw) {
+  if (raw === undefined || raw === null || raw === true) return null;
+  const value = parseJsonOption(raw, "failures");
+  const list = Array.isArray(value) ? value : [value];
+  if (
+    !list.every(
+      (f) =>
+        (typeof f === "string" && f.trim() !== "") ||
+        (f && typeof f === "object" && !Array.isArray(f))
+    )
+  )
+    throw new ShipError(
+      "--failures must be a JSON list of objects or strings",
+      2
+    );
+  return list;
+}
+
 export function cmdFinish(id, options, env = process.env) {
   const dir = runDirOf(options);
   const status = options.status;
@@ -456,6 +477,7 @@ export function cmdFinish(id, options, env = process.env) {
     options.commit && options.commit !== true ? String(options.commit) : null;
   if (commit && !SHA.test(commit))
     throw new ShipError(`--commit must be a commit SHA, got ${commit}`, 2);
+  const failures = failuresOption(options.failures);
   const entry = updateState(
     dir,
     (state) => {
@@ -477,6 +499,9 @@ export function cmdFinish(id, options, env = process.env) {
           : options.reason && options.reason !== true
             ? String(options.reason)
             : (m.last_failure ?? status);
+      // The verifier's failures reach the builder of the retry (milestone next).
+      if (status === "done") delete m.last_failures;
+      else if (failures) m.last_failures = failures;
       return {
         milestone: id,
         status,

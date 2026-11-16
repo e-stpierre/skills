@@ -382,9 +382,9 @@ export function milestoneBudget(state) {
 /** What the orchestrator runs now: the phase, its subagent model, and what it needs. */
 export function dispatch(dir, state, at, config) {
   if (state.halt)
-    return { action: "result", reason: `halted (${state.halt.key})` };
+    return { action: "finish", reason: `halted (${state.halt.key})` };
   if (state.stop)
-    return { action: "result", reason: `stopped: ${state.stop.reason}` };
+    return { action: "finish", reason: `stopped: ${state.stop.reason}` };
   const budget = budgetCheck(state, at);
   if (budget.action === "halt")
     return {
@@ -395,7 +395,7 @@ export function dispatch(dir, state, at, config) {
     };
   const phase = nextPhase(state);
   if (!phase)
-    return { action: "result", reason: "every phase is done or skipped" };
+    return { action: "finish", reason: "every phase is done or skipped" };
   const cwd = state.worktree ?? state.project_dir;
   const out = {
     action: "run",

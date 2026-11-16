@@ -3,9 +3,10 @@
 //
 // ship.json is the only state file of esp-ship. It records the track (inline
 // or orchestrated), the phase list of the track, the facts
-// the phases produced, the loops, the limits and the stop or halt. The
+// the phases produced, the step records, the loops, the limits and the stop
+// or halt. The
 // milestone state of the orchestrated track lives in <run-dir>/state.json
-// (see milestones.mjs), under its reserved contract name.
+// (see milestones.mjs).
 
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
@@ -306,6 +307,14 @@ export function checkState(state) {
     errors.push("gate_failures: expected an integer >= 0");
   if (state?.base_sha && !SHA.test(state.base_sha))
     errors.push("base_sha: expected a commit SHA");
+  if (
+    state?.steps !== undefined &&
+    !(
+      Array.isArray(state.steps) &&
+      state.steps.every((r) => typeof r?.name === "string")
+    )
+  )
+    errors.push("steps: expected a list of named step records");
   return errors;
 }
 
@@ -356,7 +365,7 @@ export function skipUnfinished(state) {
 }
 
 // ---------------------------------------------------------------------------
-// Step results
+// Step records (the `steps` list of ship.json, see steps.mjs)
 // ---------------------------------------------------------------------------
 
 /** Steps named `<prefix>-<N>`, keyed by N. */

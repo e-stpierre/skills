@@ -102,10 +102,12 @@ function makeRun(
     );
     runs(["update", "--run-dir", dir, "--max-risk", d.risk], now);
   }
-  for (const [name, block] of steps)
-    runs(
-      ["result", name, "--run-dir", dir, "--json", JSON.stringify(block)],
-      now
+  if (steps.length > 0)
+    writeFileSync(
+      join(dir, "ship.json"),
+      JSON.stringify({
+        steps: steps.map(([name, block]) => ({ name, ...block, at: now }))
+      })
     );
   if (critical.length > 0) {
     writeFileSync(
@@ -414,8 +416,9 @@ describe("show", () => {
     assert.match(data.decisions[0].source, /decisions\.jsonl:1$/);
     assert.deepEqual(
       data.steps.map((s) => s.step),
-      ["01-plan", "02-build", "03-await-review", "04-go"]
+      ["plan", "build", "await-review", "go"]
     );
+    assert.match(data.steps[0].source, /ship\.json$/);
     assert.equal(data.commits[0].sha, "abcdef1");
     assert.equal(data.critical_findings[0].id, "F1");
     assert.equal(recap("show", "missing-run").code, 1);

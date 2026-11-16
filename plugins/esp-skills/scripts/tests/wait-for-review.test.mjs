@@ -12,7 +12,6 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, test } from "node:test";
 import { fileURLToPath } from "node:url";
-import { validateArtifact } from "../lib/contract.mjs";
 import {
   checksStatus,
   codexState,
@@ -323,7 +322,7 @@ describe("waitForReview", () => {
       ...clock
     });
     assert.equal(result.status, "done");
-    assert.deepEqual(validateArtifact("result", result).errors, []);
+    assert.equal("contract_version" in result, false);
     assert.deepEqual(clock.sleeps, [60_000, 90_000, 135_000]);
     assert.deepEqual(result.outputs.completed, ["codex"]);
     assert.equal(result.outputs.polls, 4);
@@ -365,7 +364,7 @@ describe("waitForReview", () => {
     assert.equal(result.status, "awaiting-human");
     assert.match(result.summary, /Timed out after 5 min/);
     assert.match(result.blockers[0], /wait again/);
-    assert.deepEqual(validateArtifact("result", result).errors, []);
+    assert.equal("contract_version" in result, false);
     assert.deepEqual(result.outputs.pending, ["codex"]);
     const waited = clock.sleeps.reduce((a, b) => a + b, 0);
     assert.equal(waited, 5 * 60_000);
@@ -613,7 +612,7 @@ describe("waiting for checks", () => {
     assert.deepEqual(result.outputs.checks.failing, ["ci"]);
     assert.deepEqual(result.outputs.checks.passing, ["lint"]);
     assert.match(result.summary, /1 failing \(ci\)/);
-    assert.deepEqual(validateArtifact("result", result).errors, []);
+    assert.equal("contract_version" in result, false);
   });
 
   test("an empty check list is pending inside the grace period", async () => {
@@ -738,7 +737,7 @@ if (args[0] === "pr" && args[1] === "view") {
     );
   }
 
-  test("prints a result block and exits 0 when reviewed", () => {
+  test("prints the outcome and exits 0 when reviewed", () => {
     const res = runCli(
       ["7", "--reviewers", "codex", "--once"],
       [codexReview(HEAD)]
@@ -746,15 +745,15 @@ if (args[0] === "pr" && args[1] === "view") {
     assert.equal(res.status, 0, res.stderr);
     const result = JSON.parse(res.stdout.trim().split("\n").pop());
     assert.equal(result.status, "done");
-    assert.deepEqual(validateArtifact("result", result).errors, []);
+    assert.equal("contract_version" in result, false);
   });
 
-  test("exits 10 while still pending with --once", () => {
+  test("exits 0 with awaiting-human while still pending with --once", () => {
     const res = runCli(
       ["#7", "--reviewers", "codex", "--once"],
       [codexReview(OLD)]
     );
-    assert.equal(res.status, 10, res.stderr);
+    assert.equal(res.status, 0, res.stderr);
     assert.equal(JSON.parse(res.stdout.trim()).status, "awaiting-human");
   });
 

@@ -21,7 +21,6 @@ import {
   latestPlan,
   readNotes,
   slugify,
-  stepDirName,
   validateFile
 } from "../runs.mjs";
 
@@ -322,79 +321,6 @@ describe("decisions", () => {
     assert.equal(ids.size, workers * perWorker);
     assert.equal(validateFile(join(dir, "decisions.jsonl")).valid, true);
     assert.equal(existsSync(join(dir, "decisions.jsonl.lock")), false);
-  });
-});
-
-describe("result", () => {
-  test("writes steps/NN-<step>/result.json and prints the block on one line", () => {
-    const dir = createRun();
-    const block = fixture("result", "done-full");
-    const out = cli([
-      "result",
-      "build-M2",
-      "--run-dir",
-      dir,
-      "--json",
-      JSON.stringify(block)
-    ]);
-    assert.equal(out.code, 0, out.stderr);
-    assert.equal(out.stdout.trim().split("\n").length, 1);
-    assert.deepEqual(JSON.parse(out.stdout), block);
-    assert.deepEqual(
-      readJson(join(dir, "steps", "01-build-M2", "result.json")),
-      block
-    );
-  });
-
-  test("adds contract_version", () => {
-    const dir = createRun();
-    const { contract_version, ...block } = fixture("result", "awaiting-human");
-    const out = cli([
-      "result",
-      "review",
-      "--run-dir",
-      dir,
-      "--json",
-      JSON.stringify(block)
-    ]);
-    assert.equal(out.code, 0, out.stderr);
-    assert.equal(JSON.parse(out.stdout).contract_version, 1);
-  });
-
-  test("rejects an invalid block without writing it", () => {
-    const dir = createRun();
-    const out = cli([
-      "result",
-      "plan",
-      "--run-dir",
-      dir,
-      "--json",
-      '{"status":"ok"}'
-    ]);
-    assert.equal(out.code, 1);
-    assert.equal(existsSync(join(dir, "steps")), false);
-  });
-
-  test("step names are numbered once and reused on retry", () => {
-    const dir = createRun();
-    assert.equal(stepDirName(dir, "plan"), "01-plan");
-    mkdirSync(join(dir, "steps", "01-plan"), { recursive: true });
-    assert.equal(stepDirName(dir, "plan"), "01-plan");
-    assert.equal(stepDirName(dir, "build-M1"), "02-build-M1");
-    assert.equal(stepDirName(dir, "07-custom"), "07-custom");
-    assert.throws(() => stepDirName(dir, "../x"), /Invalid step/);
-  });
-
-  test("exit-code maps statuses", () => {
-    const codes = [
-      "done",
-      "merged",
-      "awaiting-human",
-      "halted",
-      "escalate",
-      "failed"
-    ].map((s) => cli(["exit-code", s]).stdout.trim());
-    assert.deepEqual(codes, ["0", "0", "10", "20", "30", "1"]);
   });
 });
 
@@ -846,6 +772,6 @@ describe("validate", () => {
     const bare = join(root, "x.json");
     writeFileSync(bare, "{}");
     assert.equal(cli(["validate", bare]).code, 2);
-    assert.equal(cli(["validate", bare, "--schema", "result"]).code, 1);
+    assert.equal(cli(["validate", bare, "--schema", "run"]).code, 1);
   });
 });

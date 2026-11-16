@@ -3,7 +3,7 @@
 //
 // The skill never opens run files by hand to decide what to read. This script
 // lists the runs in range (through runs.mjs indexRuns), reads their summary
-// frontmatter, decisions and step results, and returns JSON with the path of
+// frontmatter, decisions and step records, and returns JSON with the path of
 // every artifact it used, so each statement in a recap can cite its source.
 //
 // Commands: collect (recap mode), show (one run in full, used by fan-out
@@ -149,7 +149,7 @@ export function readCriticalFindings(dir) {
   return found;
 }
 
-/** Commits of a run: milestone commits from state.json, then step result commits. */
+/** Commits of a run: milestone commits from state.json, then step record commits. */
 function runCommits(dir, steps) {
   const commits = [];
   const add = (sha, from) => {
@@ -345,7 +345,7 @@ export function showRun(dir) {
       max_risk: s.result.max_risk ?? null,
       blockers: s.result.blockers ?? [],
       discovered_items: s.result.discovered_items ?? [],
-      source: join(dir, "steps", s.step, "result.json")
+      source: join(dir, s.step === "triage" ? "triage.json" : "ship.json")
     })),
     commits: runCommits(dir, steps),
     critical_findings: readCriticalFindings(dir)

@@ -312,7 +312,7 @@ describe("ship.mjs workspace", () => {
     assert.equal(decisions.length, 1, "logged once across both calls");
     assert.equal(decisions[0].source, "policy");
     assert.deepEqual(decisions[0].files.sort(), ["a.txt", "notes.txt"]);
-    const result = ship("result").json();
+    const result = ship("outcome").json();
     assert.equal(result.outputs.workspace.kind, "worktree");
     assert.equal(result.outputs.workspace.worktree, out.worktree);
     gitIn(repo, "worktree", "remove", "--force", out.worktree);

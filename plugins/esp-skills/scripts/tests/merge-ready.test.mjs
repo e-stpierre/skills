@@ -13,7 +13,6 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, test } from "node:test";
 import { fileURLToPath } from "node:url";
-import { validateArtifact } from "../lib/contract.mjs";
 import {
   buildContext,
   classifyChecks,
@@ -469,7 +468,7 @@ describe("merge", () => {
     const client = fakeClient();
     const block = await cmdMerge(ctx(client), "9");
     assert.equal(block.status, "merged");
-    assert.equal(validateArtifact("result", block).valid, true);
+    assert.equal("contract_version" in block, false);
     assert.deepEqual(client.calls.merge, [
       { number: 9, method: "squash", head: HEAD, auto: false }
     ]);
@@ -525,7 +524,7 @@ describe("merge", () => {
     assert.equal(block.outputs.outcome, "protected");
     assert.match(block.blockers.join(" "), /review/i);
     assert.equal(client.calls.merge.length, 0);
-    assert.equal(validateArtifact("result", block).valid, true);
+    assert.equal("contract_version" in block, false);
     const [decision] = jsonl("decisions.jsonl");
     assert.match(decision.decision, /Did not merge #9: protected/);
   });

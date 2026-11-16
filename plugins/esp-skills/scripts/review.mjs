@@ -5,7 +5,7 @@
 // request), writes the diff to a file the read-only reviewer can open, and
 // picks the review round in the run directory. `parse` reads the reviewer's
 // markdown, enforces the configured minimum severity, and builds the
-// contract result block, so no SKILL.md counts findings by hand.
+// outcome (counts by class and severity), so no SKILL.md counts findings by hand.
 //
 // Exit codes: 0 success, 1 failure (bad review, git or gh error), 2 usage error.
 
@@ -21,7 +21,6 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { validateArtifact } from "./lib/contract.mjs";
 
 export class ReviewError extends Error {
   constructor(message, exitCode = 1) {
@@ -341,7 +340,7 @@ function stripResultLine(lines) {
       if (block && typeof block === "object" && "status" in block)
         return { lines: lines.slice(0, end - 1), block };
     } catch {
-      // Not a result block: keep the line.
+      // Not a trailing JSON line: keep the line.
     }
   }
   return { lines, block: null };
@@ -414,7 +413,7 @@ function parseFinding(id, meta, body, line, errors) {
 /**
  * Parse reviewer markdown into findings. Sections: an optional `### Review:`
  * header, `#### F<n> - <severity> - <dimension> - <class>` findings,
- * `#### Rejected Candidates`, and an optional trailing result block line.
+ * `#### Rejected Candidates`, and an optional trailing JSON line.
  */
 export function parseReview(text) {
   const raw = text.replace(/^\uFEFF/, "").split(/\r?\n/);
@@ -513,7 +512,7 @@ function countBy(findings, key, values) {
   return counts;
 }
 
-/** Build the report and the contract result block from parsed review markdown. */
+/** Build the report and its outcome from parsed review markdown. */
 export function buildReport(
   parsed,
   { minSeverity = "low", verified = true, paths = {} } = {}
@@ -567,8 +566,7 @@ export function buildReport(
   };
   if (paths.review) outputs.review_path = paths.review;
   if (paths.findings) outputs.findings_path = paths.findings;
-  const result = {
-    contract_version: 1,
+  const outcome = {
     status: "done",
     summary,
     max_risk: maxRisk,
@@ -576,23 +574,17 @@ export function buildReport(
   };
   const discovered = parsed.block?.discovered_items;
   if (Array.isArray(discovered) && discovered.length > 0)
-    result.discovered_items = discovered;
-  const check = validateArtifact("result", result);
-  if (!check.valid) {
-    throw new ReviewError(
-      `Result block is invalid: ${check.errors.map((e) => `${e.path} ${e.message}`).join("; ")}`
-    );
-  }
+    outcome.discovered_items = discovered;
   return {
     valid: true,
     findings: kept,
     rejected: parsed.rejected,
     dropped,
-    result
+    outcome
   };
 }
 
-/** Review markdown with dropped findings removed and the result line stripped. */
+/** Review markdown with dropped findings removed and the trailing JSON line stripped. */
 export function renderReview(parsed, dropped) {
   const remove = new Set();
   for (const span of parsed.spans) {
@@ -637,10 +629,10 @@ export function cmdParse(file, options = {}) {
       `${JSON.stringify(
         {
           review_format: 1,
-          base: report.result.outputs.base,
-          head: report.result.outputs.head,
-          min_severity: report.result.outputs.min_severity,
-          verified: report.result.outputs.verified,
+          base: report.outcome.outputs.base,
+          head: report.outcome.outputs.head,
+          min_severity: report.outcome.outputs.min_severity,
+          verified: report.outcome.outputs.verified,
           findings: report.findings,
           rejected: report.rejected
         },
@@ -648,9 +640,6 @@ export function cmdParse(file, options = {}) {
         2
       )}\n`
     );
-  }
-  if (options.result !== undefined && parseBool(options.result, "result")) {
-    return { output: JSON.stringify(report.result) };
   }
   return { output: { file: path, ...report } };
 }
@@ -668,7 +657,7 @@ Commands:
                          Prints { kind, base, head, files, empty, round, step, diff_path,
                          review_path, findings_path, ... }
   parse <review.md>      Parse reviewer markdown, apply --min-severity, and print
-                         { findings, rejected, dropped, result } (exit 1 with errors when a
+                         { findings, rejected, dropped, outcome } (exit 1 with errors when a
                          finding is malformed)
 
 Options:
@@ -679,13 +668,12 @@ Options:
   --min-severity <lvl>   Drop findings below low|medium|high|critical (parse, default low)
   --verified <bool>      Whether the verify pass ran (parse, default true)
   --md-out <file>        Write the review markdown without dropped findings (parse)
-  --result               Print only the result block, as one line (parse)
   --help                 Show this help
 
 Environment:
   ESP_GH_CMD             JSON array replacing the gh command (tests)`;
 
-const BOOLEAN_OPTIONS = new Set(["result", "help"]);
+const BOOLEAN_OPTIONS = new Set(["help"]);
 
 export function parseArgs(argv) {
   const options = {};

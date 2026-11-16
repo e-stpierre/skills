@@ -3,9 +3,9 @@
 // Shared by the workflow skills (esp-ship on both tracks, and esp-pr): the
 // body is rendered from files in the run directory, never from the
 // model's memory, so it can be refreshed before the merge and stays in sync
-// with decisions.jsonl and the step results.
+// with decisions.jsonl and the step records.
 
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 export const BODY_SECTIONS = [
@@ -42,17 +42,25 @@ function readJsonl(path) {
     });
 }
 
-/** Step results of a run, in step order: [{ step, name, result }]. */
+/**
+ * Step records of a run, in the order they were first recorded:
+ * [{ step, name, at, result }]. triage.json (written before ship.json exists)
+ * comes first, then the `steps` list of ship.json.
+ */
 export function readStepResults(runDir) {
-  const stepsDir = join(runDir, "steps");
-  if (!existsSync(stepsDir)) return [];
-  return readdirSync(stepsDir)
-    .filter((d) => /^\d+-/.test(d))
-    .sort()
-    .flatMap((step) => {
-      const result = readJson(join(stepsDir, step, "result.json"));
-      return result ? [{ step, name: step.replace(/^\d+-/, ""), result }] : [];
-    });
+  const records = [];
+  const triage = readJson(join(runDir, "triage.json"));
+  if (triage) records.push({ name: "triage", ...triage });
+  const ship = readJson(join(runDir, "ship.json"));
+  if (Array.isArray(ship?.steps)) records.push(...ship.steps);
+  return records
+    .filter((r) => r && typeof r.name === "string" && r.status)
+    .map(({ name, at, ...result }) => ({
+      step: name,
+      name,
+      at: at ?? null,
+      result
+    }));
 }
 
 /** Everything the body needs, read from the run directory. */

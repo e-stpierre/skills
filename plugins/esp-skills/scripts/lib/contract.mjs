@@ -1,4 +1,4 @@
-// Harness contract v1: schemas, status vocabulary and exit codes.
+// Harness contract v1: schemas and status vocabulary.
 // agentic-forge owns the contract; references/contract/v1/ is a copy of its
 // schemas/contract-v1/ and is re-synced from there, never edited here.
 
@@ -19,7 +19,7 @@ export const CONTRACT_DIR = resolve(
 );
 
 /** Artifact names, mapped to their schema file (without `.schema.json`). */
-export const ARTIFACTS = ["run", "result", "decision", "summary-frontmatter"];
+export const ARTIFACTS = ["run", "decision", "summary-frontmatter"];
 
 export const RISK_ORDER = ["low", "medium", "high"];
 
@@ -30,16 +30,6 @@ export const TERMINAL_RUN_STATUSES = [
   "done",
   "merged"
 ];
-
-/** Exit code per result status. Plain skills only use 0 and 1. */
-export const EXIT_CODES = {
-  done: 0,
-  merged: 0,
-  "awaiting-human": 10,
-  halted: 20,
-  escalate: 30,
-  failed: 1
-};
 
 let cache;
 
@@ -66,11 +56,6 @@ export function validateArtifact(artifact, value) {
   const schema = schemas[artifact];
   if (!schema) throw new Error(`Unknown contract artifact: ${artifact}`);
   return validate(schema, value, { schemas: Object.values(schemas) });
-}
-
-/** Exit code for a result status (unknown statuses map to 1). */
-export function exitCodeFor(status) {
-  return EXIT_CODES[status] ?? 1;
 }
 
 /** Return the higher of two risk levels (null-safe). */

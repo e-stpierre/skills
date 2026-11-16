@@ -1,9 +1,8 @@
 // The shared tail of both tracks: the pull request options, the review wait
-// and fix rounds, the pull request body, the halt, and the final result block.
+// and fix rounds, the pull request body, the halt, and the outcome of the run.
 
 import { existsSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { validateArtifact } from "../contract.mjs";
 import {
   ATTRIBUTION,
   BODY_SECTIONS,
@@ -35,7 +34,7 @@ import {
   WAIT_STEP
 } from "./state.mjs";
 
-export const RESULT_STATUSES = [
+export const OUTCOME_STATUSES = [
   "done",
   "merged",
   "halted",
@@ -58,7 +57,7 @@ export function prOptions(state, config) {
  * Pull request round loop: wait (reviews and checks of the head, step
  * `fix-review-wait`) -> fix-review (one round per call, with --max-rounds <n>)
  * -> wait again while the round pushed commits and rounds are left.
- * `--after wait|fix` reads that step's result.
+ * `--after wait|fix` reads that step's record.
  */
 export function prLoopAction(
   state,
@@ -70,7 +69,7 @@ export function prLoopAction(
   if (!result)
     return {
       action: after === "wait" ? "wait" : "fix",
-      reason: `no ${after} result yet`
+      reason: `no ${after} record yet`
     };
   if (after === "wait") {
     const failing = result.outputs?.checks?.failing ?? [];
@@ -158,7 +157,7 @@ export function cmdPrLoop(options, env = process.env) {
 // Pull request body
 // ---------------------------------------------------------------------------
 
-/** Body from plan.md (title and overview), the build state, decisions.jsonl and the step results. */
+/** Body from plan.md (title and overview), the build state, decisions.jsonl and the step records. */
 export function cmdPrBody(options) {
   const dir = runDirOf(options);
   const state = readState(dir);
@@ -183,17 +182,8 @@ export function cmdPrBody(options) {
 }
 
 // ---------------------------------------------------------------------------
-// Result blocks
+// Halt and outcome
 // ---------------------------------------------------------------------------
-
-export function assertBlock(block) {
-  const { valid, errors } = validateArtifact("result", block);
-  if (!valid)
-    throw new ShipError(
-      `Invalid result block:\n  ${errors.map((e) => `${e.path}: ${e.message}`).join("\n  ")}`
-    );
-  return block;
-}
 
 function pick(object, keys) {
   if (!object) return null;
@@ -227,7 +217,7 @@ export function baseOutputs(state, dir) {
   return out;
 }
 
-/** Halt the task under a halt_on key: log the Halt decision and build the block. */
+/** Halt the task under a halt_on key: log the Halt decision, record the halt and print the state. */
 export function cmdHalt(options, env = process.env) {
   const dir = runDirOf(options);
   const key = options.key;
@@ -261,17 +251,15 @@ export function cmdHalt(options, env = process.env) {
     env
   );
   const projectDir = projectDirOf(options, state);
-  return assertBlock({
-    contract_version: 1,
+  return {
     status: "halted",
     summary: `Halted (${key}): ${options.reason}`,
-    files_changed: filesSince(projectDir, state.base_sha),
     commit: headOf(projectDir),
     pr: state.pr,
-    max_risk: "high",
     blockers: [`${key}: ${options.reason}`],
-    outputs: { ...baseOutputs(state, dir), halt: state.halt }
-  });
+    halt: state.halt,
+    phase_status: state.phase_status
+  };
 }
 
 /**
@@ -301,11 +289,11 @@ function orderedSteps(steps) {
 }
 
 /**
- * Final result block. The status is the one of the last phase step that ran
+ * Outcome of the run, for summary.md and the report. The status is the one of the last phase step that ran
  * (an earlier step that did not end done was continued past), unless the task
  * halted or a loop stopped it; merged wins over done.
  */
-export function buildResult(
+export function buildOutcome(
   dir,
   state,
   {
@@ -359,7 +347,6 @@ export function buildResult(
     buildStep?.gates ??
     (Object.keys(state.gates ?? {}).length > 0 ? state.gates : undefined);
   const block = {
-    contract_version: 1,
     status: finalStatus,
     summary:
       summary ??
@@ -428,7 +415,7 @@ export function buildResult(
   if (block.gates === undefined) delete block.gates;
   for (const key of ["stop", "halt"])
     if (block.outputs[key] === undefined) delete block.outputs[key];
-  return assertBlock(block);
+  return block;
 }
 
 function defaultSummary(status, state, merge, built) {
@@ -454,15 +441,18 @@ function defaultSummary(status, state, merge, built) {
   }
 }
 
-export function cmdResult(options) {
+export function cmdOutcome(options) {
   const dir = runDirOf(options);
   const state = readState(dir);
-  if (options.status !== undefined && !RESULT_STATUSES.includes(options.status))
+  if (
+    options.status !== undefined &&
+    !OUTCOME_STATUSES.includes(options.status)
+  )
     throw new ShipError(
-      `--status must be one of ${RESULT_STATUSES.join(", ")}`,
+      `--status must be one of ${OUTCOME_STATUSES.join(", ")}`,
       2
     );
-  return buildResult(dir, state, {
+  return buildOutcome(dir, state, {
     status: options.status,
     summary: stringOption(options.summary) ?? undefined,
     projectDir: projectDirOf(options, state),

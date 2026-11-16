@@ -5,8 +5,6 @@ import { describe, test } from "node:test";
 import {
   ARTIFACTS,
   CONTRACT_DIR,
-  EXIT_CODES,
-  exitCodeFor,
   loadSchemas,
   maxRisk,
   parseFrontmatter,
@@ -72,18 +70,6 @@ describe("contract v1 schemas", () => {
 });
 
 describe("contract helpers", () => {
-  test("exit codes follow the contract", () => {
-    assert.deepEqual(EXIT_CODES, {
-      done: 0,
-      merged: 0,
-      "awaiting-human": 10,
-      halted: 20,
-      escalate: 30,
-      failed: 1
-    });
-    assert.equal(exitCodeFor("unknown"), 1);
-  });
-
   test("maxRisk keeps the highest level", () => {
     assert.equal(maxRisk(null, "low"), "low");
     assert.equal(maxRisk("high", "medium"), "high");

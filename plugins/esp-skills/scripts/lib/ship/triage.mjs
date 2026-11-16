@@ -2,23 +2,25 @@
 // source, the track, and the nothing-to-do exit. Detection is deterministic;
 // for a prompt or an issue without --track, the model judges the track and
 // passes it back with --judged-track. `--record` logs one decision per choice
-// and writes the triage step result.
+// and writes triage.json.
 
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { basename, isAbsolute, join, resolve } from "node:path";
 import { parseFrontmatter } from "../contract.mjs";
 import { lintPlan, parseTaskList } from "../../plan.mjs";
-import { appendDecision, cmdResult, latestPlan } from "../../runs.mjs";
+import { appendDecision, latestPlan, now, raiseRunRisk } from "../../runs.mjs";
 import { loadConfig } from "../../config.mjs";
 import { modeOf, PLAN_MODES } from "./review-gate.mjs";
 import {
   positiveInt,
   projectDirOf,
+  readJson,
   runDirOf,
   shipSettings,
   ShipError,
   stringOption,
-  TRACKS
+  TRACKS,
+  writeJson
 } from "./state.mjs";
 
 export const INPUT_KINDS = ["plan", "task-list", "document", "prompt", "issue"];
@@ -345,17 +347,13 @@ function summaryOf(result) {
   return `Triage: ${result.input_kind} on the ${result.track} track, plan ${result.plan_source}.`;
 }
 
+/** The recorded triage of a run (triage.json), or null. */
 function existingTriage(dir) {
-  const steps = join(dir, "steps");
-  if (!existsSync(steps)) return null;
-  const name = readdirSync(steps)
-    .filter((d) => /^\d+-triage$/.test(d))
-    .sort()
-    .at(-1);
-  const path = name && join(steps, name, "result.json");
-  return path && existsSync(path)
-    ? JSON.parse(readFileSync(path, "utf8").replace(/^\uFEFF/, ""))
-    : null;
+  const path = join(dir, "triage.json");
+  if (!existsSync(path)) return null;
+  const { at, ...record } = readJson(path);
+  void at;
+  return record;
 }
 
 function settingsFor(options, projectDir) {
@@ -374,7 +372,7 @@ function settingsFor(options, projectDir) {
 
 /**
  * `ship.mjs triage`: detect and decide. With --record (needs --run-dir), log
- * one decision per choice and write the `triage` step result; a second
+ * one decision per choice and write triage.json; a second
  * --record prints the recorded result without logging again.
  */
 export function cmdTriage(options, env = process.env) {
@@ -439,15 +437,8 @@ export function cmdTriage(options, env = process.env) {
     max_risk: "low",
     outputs: { ...facts, decisions: decisions.map((d) => d.id) }
   };
-  const written = cmdResult(
-    "triage",
-    { "run-dir": dir, json: JSON.stringify(block) },
-    env
-  );
-  return {
-    recorded: true,
-    result: block,
-    step: written.step,
-    line: written.line
-  };
+  const path = join(dir, "triage.json");
+  writeJson(path, { ...block, at: now(env).toISOString() });
+  raiseRunRisk(dir, block.max_risk, env);
+  return { recorded: true, result: block, path };
 }
