@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.9.1
 
 - **Renamed options**: `esp-ship` `-p|--plan <mode>` is now `-L|--plan-mode <mode>` (`-p` is reserved for a PR or a plan path), and `esp-fix-review` `-m|--rounds` is now `-m|--max-rounds`, matching `esp-ship` and `fix-review.max_rounds`. `esp-pr` `-w|--draft` is now `-D|--draft`, and `esp-recap` `-x|--risk` is now `-x|--run-risk`, apart from the risk report's `--min-risk`
 - `esp-commit` stages only tracked changes (`git add -u`) when nothing is staged, instead of `git add .`
