@@ -20,9 +20,9 @@ Run `milestone next` (add `--parallel` when the skill got `--parallel`: it force
 
 For one milestone:
 
-1. **Messages**: `runs.mjs messages`. Pending messages, and any `## Operator Messages` section not passed on yet, go to this builder.
+1. **Operator notes**: record each user message received since the last milestone with `runs.mjs notes --append <text> --from operator` (add `--milestone <id>` when it concerns one milestone only). The builder reads it from `notes.md`.
 2. **Start**: `milestone start <id> --base <git rev-parse HEAD>` (a retry keeps and prints the base of the first attempt), then `milestone models <id>` (with `--model <alias>` when `--model` was given). Record the models with `runs.mjs update --model builder=<alias>[:<effort>] --model verifier=<alias>`.
-3. **Build**: `milestone reuse <id>` decides whether the last builder continues (see Builder Reuse). On `reuse`, continue that builder. On `fresh`, spawn a new one (see Spawning). Then record the builder with `milestone agent <id> --agent-id <agentId> --tokens <subagent_tokens>`, both taken from the Agent result, plus the `--model` and `--effort` given to `milestone models` when the skill got `--model`, so the recorded builder model matches the one `milestone reuse` compares. Deliver the messages you passed with `runs.mjs deliver <id>`.
+3. **Build**: `milestone reuse <id>` decides whether the last builder continues (see Builder Reuse). On `reuse`, continue that builder. On `fresh`, spawn a new one (see Spawning). Then record the builder with `milestone agent <id> --agent-id <agentId> --tokens <subagent_tokens>`, both taken from the Agent result, plus the `--model` and `--effort` given to `milestone models` when the skill got `--model`, so the recorded builder model matches the one `milestone reuse` compares. A continued builder does not reread `notes.md`: pass it the operator lines recorded in step 1.
 4. **Builder outcome**: `halted` or `awaiting-human` follows Halting. `failed` with no commit runs `milestone finish <id> --status failed --reason <first blocker>`, then loop.
 5. **Verify**: spawn the verifier with the builder's commit.
 6. **Finish**: verifier `done` runs `milestone finish <id> --status done --commit <commit>`. Otherwise `milestone finish <id> --status failed --commit <commit> --reason <first blocker>`. In `all` mode, show the milestone result before continuing.
@@ -33,7 +33,7 @@ An attempt interrupted while `in-progress` comes back from `next` as a `retry` a
 
 Verifiers are always fresh. Spawn each subagent with the Agent tool, with the `model` and `effort` from `milestone models <id>` (they override the agent frontmatter), in the foreground. Keep each prompt self-contained, and keep only each final result line. A subagent that returns no valid result line is a failed attempt with reason `no result block`.
 
-- **Builder** (`esp-skills:esp-builder`): the milestone block from `plan.mjs parse` (ID, title, goal, tasks, files, acceptance criteria, validation), `--run-dir <run-dir>`, step `build-<id>`, the scoped gate commands of the milestone (`commands` from `milestone gates --milestone <id>`), and the working directory. On a retry, add the commit to amend (`next.amend`) and the verifier failures (`outputs.failures` and `blockers` of the last `verify-<id>` result). Add pending operator messages as an `## Operator Messages` section
+- **Builder** (`esp-skills:esp-builder`): the milestone block from `plan.mjs parse` (ID, title, goal, tasks, files, acceptance criteria, validation), `--run-dir <run-dir>`, step `build-<id>`, the scoped gate commands of the milestone (`commands` from `milestone gates --milestone <id>`), and the working directory. On a retry, add the commit to amend (`next.amend`) and the verifier failures (`outputs.failures` and `blockers` of the last `verify-<id>` result)
 - **Verifier** (`esp-skills:esp-verifier`): the milestone ID, the acceptance criteria and the validation commands, the expected commit (the builder's `commit`), the base (from `milestone start`), the expected commit count (`1`), the gate commands (the builder's `outputs.gate_commands`, else the scoped commands of the milestone), `--run-dir <run-dir>` and step `verify-<id>`
 
 The builder writes `steps/<NN>-build-<id>/result.json` and the verifier `steps/<NN>-verify-<id>/result.json`. A retry reuses both step directories.
@@ -65,7 +65,7 @@ To continue a builder, send it the input a fresh builder would get with SendMess
 Halt the build (log a Halt decision with `phase: build` and the milestone ID in `refs`, then stop the loop) when:
 
 - `next` returns `halt`: retries are exhausted. First run `milestone finish <id> --status halted --reason <reason>` when the milestone is still `failed`
-- A builder returns `halted`: finish the milestone as `halted`. A builder returns `awaiting-human` with a blocking `needs_input`: finish the milestone as `failed` with the question as `--reason`, so `--resume` retries it with the answer, and pass its `needs_input` on
+- A builder returns `halted`: finish the milestone as `halted`. A builder returns `awaiting-human` with a question in `blockers`: finish the milestone as `failed` with the question as `--reason`, so `--resume` retries it with the answer, and ask it in the main session (see the decision policy)
 - `next` returns `blocked`: the plan has a dependency that cannot be satisfied
 
 In `all` mode, ask before halting on exhausted retries: the user can grant one more attempt (log it as an operator decision and run `milestone init` again with a higher `ship.max_retries_per_milestone` in a project config), or stop.

@@ -866,14 +866,7 @@ function countResolutions(handled) {
  */
 export function buildResult(
   state,
-  {
-    remaining = 0,
-    status,
-    summary,
-    haltOn = [],
-    statePath = null,
-    runDir = null
-  } = {}
+  { remaining = 0, status, summary, haltOn = [], statePath = null } = {}
 ) {
   const entries = Object.entries(state.handled).map(([id, h]) => ({
     id,
@@ -958,19 +951,11 @@ export function buildResult(
     }
   };
   if (discovered.length) block.discovered_items = discovered;
-  if (resolvedStatus === "awaiting-human" && counts.open > 0 && runDir) {
+  if (resolvedStatus === "awaiting-human" && counts.open > 0) {
     const open = items.filter((h) => h.resolution === "open");
-    block.needs_input = {
-      id: "fix-review-open",
-      question:
-        `${open.length} review item${open.length === 1 ? "" : "s"} need${open.length === 1 ? "s" : ""} a decision: ${open
-          .map((h) => h.decision)
-          .join("; ")}`.slice(0, 1000),
-      options: [],
-      recommended: null,
-      context: open.map((h) => state.items[h.id]?.url ?? h.id).join(", "),
-      blocking: true
-    };
+    block.blockers = open.map(
+      (h) => `${state.items[h.id]?.url ?? h.id}: ${h.decision}`
+    );
   }
   const check = validateArtifact("result", block);
   if (!check.valid)
@@ -1011,8 +996,7 @@ export function cmdResult(ctx, options) {
     status: options.status,
     summary: options.summary,
     haltOn: config.ship?.halt_on ?? [],
-    statePath,
-    runDir
+    statePath
   });
   if (runDir && !options.status && block.status === "halted")
     logBudgetHalt(runDir, state, remaining, env);

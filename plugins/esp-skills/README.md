@@ -222,7 +222,7 @@ node scripts/plan.mjs import docs/backlog.md --run-dir ~/.esp-skills/runs/2026-1
 ```
 
 - Plans live in the run directory, never in the repository, and are never edited once written
-- An amendment writes `plan.v<N>.md`, keeps completed milestones unchanged, and is logged in `amendments.jsonl` and `decisions.jsonl`
+- An amendment writes `plan.v<N>.md`, keeps completed milestones unchanged, and is logged as one decision in `decisions.jsonl`
 - Plans never name models: milestone `complexity` selects the builder model from the config
 - `batches` lists the dependency waves split into batches of milestones with disjoint files, and lint warns when two independent milestones share files
 - `import` converts a task list into a plan with one milestone per unchecked package, and `synthesize` writes a one-milestone plan with no model
@@ -260,7 +260,7 @@ node scripts/ship.mjs milestone reuse M3 --agent-id <id> --run-dir ~/.esp-skills
 - **Parallel batches**: `plan.mjs batches` groups milestones whose dependencies are done and whose files do not overlap; with `ship.parallel: auto`, a batch of two or more is built in worktrees at once (up to `ship.max_parallel`), and the verified commits are cherry-picked in plan order
 - **Scoped gates**: builders and verifiers run the milestone's validation commands plus `ship.gates.always`; the full gates run once after the build, with one fixer round before the task halts
 - **Builder reuse**: a builder whose milestone the next one depends on, or shares files with, continues with it while the same model and effort apply and its estimated context stays within `ship.reuse.limit_tokens`. Verifiers are always fresh
-- **Run notes**: builders read `<run-dir>/notes.md` before they start and append short facts for later milestones (`runs.mjs notes`)
+- **Run notes**: builders read `<run-dir>/notes.md` before they start and append short facts for later milestones (`runs.mjs notes`). A message you send while esp-ship runs is recorded there as an operator line (`runs.mjs notes --append <text> --from operator`), so the next builder applies it
 - An amended plan (`esp-plan --amend`) is picked up by `milestone init`, with done milestones kept
 
 ### Reviews
@@ -284,7 +284,7 @@ node scripts/wait-for-review.mjs 42 --reviewers codex,claude --checks --timeout-
 node scripts/wait-for-review.mjs 42 --reviewers codex --once
 ```
 
-- Exit codes: 0 done, 10 awaiting-human (timeout, with a `needs_input` request to wait again or skip), 1 failed (closed pull request or repeated `gh` errors), 2 usage error
+- Exit codes: 0 done, 10 awaiting-human (timeout, with the choice to wait again or skip in `blockers`), 1 failed (closed pull request or repeated `gh` errors), 2 usage error
 - Verified logins: Codex reviews as `chatgpt-codex-connector[bot]` and starts on its own when a PR opens or leaves draft; `@codex review` asks for a new review after a push. The Claude GitHub Action reviews through an issue comment by `claude[bot]`, not a PR review
 
 ### Fixing Reviews
@@ -319,12 +319,13 @@ node scripts/merge-ready.mjs merge 42 --run-dir <run>
 
 ### Run Directories
 
-Workflow skills record their work in a run directory that follows harness contract v1: `run.json`, step result blocks, `decisions.jsonl`, `events.jsonl`, operator messages and plan amendments. Standalone runs go to `<runs.root>/<YYYY-MM-DD>-<slug>`; a harness or parent run passes `--run-dir <path>` instead. Skills never write these files by hand: `scripts/runs.mjs` creates, updates, validates and indexes them. The schemas and fixtures are in `references/contract/v1/`, and `references/contract-notes.md` maps each contract requirement to the command that meets it.
+Workflow skills record their work in a run directory that follows harness contract v1: `run.json`, step result blocks, `decisions.jsonl`, `notes.md` (builder facts and operator corrections) and plan versions. Standalone runs go to `<runs.root>/<YYYY-MM-DD>-<slug>`; a parent skill (esp-ship) passes `--run-dir <path>` instead. Skills never write these files by hand: `scripts/runs.mjs` creates, updates, validates and indexes them. The schemas and fixtures are in `references/contract/v1/`, and `references/contract-notes.md` maps each contract requirement to the command that meets it.
 
 ```bash
 node scripts/runs.mjs create fix-login-timeout --workflow esp-ship
 node scripts/runs.mjs index --last 7d --status merged,done --risk medium
-node scripts/runs.mjs validate ~/.esp-skills/runs/2026-11-10-fix-login-timeout/events.jsonl
+node scripts/runs.mjs notes --append "Keep the public API unchanged" --from operator --run-dir ~/.esp-skills/runs/2026-11-10-fix-login-timeout
+node scripts/runs.mjs validate ~/.esp-skills/runs/2026-11-10-fix-login-timeout/decisions.jsonl
 ```
 
 ### Recaps
@@ -341,7 +342,7 @@ node scripts/recap.mjs sources --question "Why do refresh tokens rotate?"
 
 Workflow skills and agents share these references at the plugin root, reached through `${CLAUDE_PLUGIN_ROOT}`:
 
-- `references/decision-policy.md`: classes A-Fix, B-Decide, B-Scope, Reject and Halt, interactive and autonomous behavior, `needs_input` under a harness, `ship.halt_on` stop conditions, risk levels and decision logging
+- `references/decision-policy.md`: classes A-Fix, B-Decide, B-Scope, Reject and Halt, interactive and autonomous behavior, questions from headless sessions and subagents, `ship.halt_on` stop conditions, risk levels and decision logging
 - `references/summary-template.md`: frontmatter and sections of a run `summary.md`
 - `references/plan-format.md`: plan format 1, the milestone block, parsed JSON, amendments and plan-lint
 - `references/model-selection.md`: roles and the model and effort precedence

@@ -26,7 +26,6 @@ The spawn prompt provides:
 - **Focus** (optional): an area or concern to weigh more heavily
 - **Minimum severity** (optional): `low`, `medium` (default), `high`, or `critical`. Drop verified findings below it
 - **Verify** (optional): `true` by default. `false` skips Pass 2 (see there)
-- **Operator messages** (optional): an `## Operator Messages` section. Apply each message to the review, for example a concern to check or a finding to ignore
 
 ### Pass 1: Find
 

@@ -25,7 +25,7 @@ Read each option by its short or its long name (`-m 2`, `--max-rounds 2` or `--m
 - **`[-i|--interactive <mode>]`** (optional): `off`, `plan` or `all`. Only `all` stops to settle B-Decide and B-Scope items with the user and shows a recap before pushing. Defaults to `defaults.interactive` (`off`). Headless sessions always use `off`.
 - **`[-p|--pr <pr>]`** (optional): Pull request number, `#<number>`, or URL. Defaults to the pull request of the current branch. Ignored with `--internal`.
 - **`[-e|--findings <path>]`** (optional): With `--internal`, the `esp-review` findings file (`review-<N>.json`). Defaults to the latest one in `--run-dir`; required with `--internal` when there is no `--run-dir`.
-- **`[-d|--run-dir <path>]`** (optional): Run directory owned by a parent skill (esp-ship). The state is `<run-dir>/fix-review.json`, every resolution is logged in `decisions.jsonl`, the wait keeps its progress in `<run-dir>/fix-review-wait.json` and records each review as a `review.received` event, and the result block is recorded as step `fix-review` (`fix-review-<N>` in internal mode, after `review-<N>`). Without it, the state goes to a temporary directory and no run is created.
+- **`[-d|--run-dir <path>]`** (optional): Run directory owned by a parent skill (esp-ship). The state is `<run-dir>/fix-review.json`, every resolution is logged in `decisions.jsonl`, the wait keeps its progress in `<run-dir>/fix-review-wait.json`, and the result block is recorded as step `fix-review` (`fix-review-<N>` in internal mode, after `review-<N>`). Without it, the state goes to a temporary directory and no run is created.
 
 ### Values
 
@@ -94,7 +94,6 @@ If a command exits with code 1 (invalid config), report its error and stop. If i
 - **Record a resolution**: `fix-review.mjs record --json '<resolution>'`
 - **Replies and threads**: `fix-review.mjs respond`
 - **Result block**: `fix-review.mjs result [--remaining <n>]`
-- **Operator messages**: `runs.mjs messages --run-dir <path>`, then `runs.mjs deliver <id>...` once applied
 
 `fetch` returns `{ pr, url, head, branch, items, skipped, reviewers_seen, pending_github }`. Each item has an `id` (`inline:<id>`, `review:<id>`, `comment:<id>`), its `author`, `bot`, `body`, `path` and `line` for inline comments, `outdated`, and `url`. Your own comments, resolved threads and handled items are left out. `internal` returns items with `id` `finding:review-<N>:F<n>` and the finding's `class`, `severity`, `location`, `fix`, `options` and `recommended`. Failing checks have the `id` `check:<name>@<sha>`.
 
@@ -199,15 +198,14 @@ Record each answer with `source: operator`. In every other mode, apply the Auton
 3. **Check prerequisites**: in pull request mode, `gh auth status` must succeed and the pull request must exist and be open. The working tree must be clean and on the pull request branch (internal mode: on the branch that was reviewed). Otherwise report it and stop.
 4. **Prepare the state**: pick the state options of the mode (see Scripts), creating the temporary directory when there is no `--run-dir`. Every later `fix-review.mjs` call carries them.
 5. **Wait** (`--wait`, pull request mode): run the wait (see Waiting for Reviews and Checks) and handle its outcome. Done when the script has exited and the outcome says to continue.
-6. **Read operator messages**: the injected `## Operator Messages` section, plus `runs.mjs messages` with `--run-dir`. They override comments they contradict. Deliver them with `runs.mjs deliver` once applied.
-7. **Start a round**: run `fix-review.mjs round`, with `--max-rounds <n>` when `-m|--max-rounds` is given. If it returns `exhausted: true`, go to step 13.
-8. **Fetch items**: `fix-review.mjs fetch [<pr>] [--reviewers <a,b>]` (the `--pr` value, the reviewer names joined with commas), or `fix-review.mjs internal [<findings>]` (the `--findings` value) with `--internal`. If `pending_github` is not empty, run `fix-review.mjs respond` first: a previous run stopped before replying.
-9. **Classify and resolve** (see Classifying Items): read the code each item points at, decide its class, apply the fixes, and record each resolution. Record noise as `skipped` in one call. The step is done when every fetched item has a recorded resolution.
-10. **Fix CI** (pull request mode, `fix_ci` on, see CI Checks): done when every failing check is recorded `fixed` or `open`.
-11. **Commit, push and respond** (see Committing Fixes): run the full gates, commit, then record the fixed items with their commit. In pull request mode, `git push`, then `fix-review.mjs respond`. In `all` mode, show the recap before pushing. Internal mode never pushes. Done when every fixed item has its commit recorded and, in pull request mode, `pending_github` is empty.
-12. **Next round** (see The Round Loop): wait for the re-review and the checks, then go back to step 7, or stop.
-13. **Write the result block**: `fix-review.mjs result --remaining <n>`. With `--run-dir`, pipe it into `runs.mjs result <step>` (`fix-review`, or `fix-review-<N>` in internal mode for findings `review-<N>.json`), which records it and prints the final line.
-14. **Report** (see Output Guidance), then the result line as the final output line.
+6. **Start a round**: run `fix-review.mjs round`, with `--max-rounds <n>` when `-m|--max-rounds` is given. If it returns `exhausted: true`, go to step 12.
+7. **Fetch items**: `fix-review.mjs fetch [<pr>] [--reviewers <a,b>]` (the `--pr` value, the reviewer names joined with commas), or `fix-review.mjs internal [<findings>]` (the `--findings` value) with `--internal`. If `pending_github` is not empty, run `fix-review.mjs respond` first: a previous run stopped before replying.
+8. **Classify and resolve** (see Classifying Items): read the code each item points at, decide its class, apply the fixes, and record each resolution. Record noise as `skipped` in one call. The step is done when every fetched item has a recorded resolution.
+9. **Fix CI** (pull request mode, `fix_ci` on, see CI Checks): done when every failing check is recorded `fixed` or `open`.
+10. **Commit, push and respond** (see Committing Fixes): run the full gates, commit, then record the fixed items with their commit. In pull request mode, `git push`, then `fix-review.mjs respond`. In `all` mode, show the recap before pushing. Internal mode never pushes. Done when every fixed item has its commit recorded and, in pull request mode, `pending_github` is empty.
+11. **Next round** (see The Round Loop): wait for the re-review and the checks, then go back to step 6, or stop.
+12. **Write the result block**: `fix-review.mjs result --remaining <n>`. With `--run-dir`, pipe it into `runs.mjs result <step>` (`fix-review`, or `fix-review-<N>` in internal mode for findings `review-<N>.json`), which records it and prints the final line.
+13. **Report** (see Output Guidance), then the result line as the final output line.
 
 ## Output Guidance
 
@@ -227,4 +225,4 @@ A short report per category, then the result block as the final line:
 {"contract_version":1,"status":"done","summary":"Fix-review of PR 42 over 2 rounds: 2 fixed, 1 rejected, 1 deferred, 1 CI fix.","max_risk":"medium","commit":"9b8e7d6","pr":"https://github.com/o/r/pull/42","outputs":{"mode":"pr","pr":42,"rounds":2,"max_rounds":3,"exhausted":false,"remaining":0,"fixed":2,"rejected":1,"deferred":1,"skipped":3,"open":0,"ci_fixed":1,"commits":["4c1d2e3","9b8e7d6"],"pending_github":0,"state_path":"..."},"discovered_items":[{"type":"follow-up","title":"Rename getUser() to fetchUser()","evidence":"https://github.com/o/r/pull/42#discussion_r1"}]}
 ```
 
-`status` is `awaiting-human` when an item is `open` (with a blocking `needs_input` under `--run-dir`), and `halted` when the rounds ran out with items left and `budget` is in `ship.halt_on`.
+`status` is `awaiting-human` when an item is `open` (each open item is a line of `blockers`), and `halted` when the rounds ran out with items left and `budget` is in `ship.halt_on`.

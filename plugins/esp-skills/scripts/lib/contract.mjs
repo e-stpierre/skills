@@ -19,16 +19,7 @@ export const CONTRACT_DIR = resolve(
 );
 
 /** Artifact names, mapped to their schema file (without `.schema.json`). */
-export const ARTIFACTS = [
-  "run",
-  "result",
-  "needs-input",
-  "inbox-message",
-  "amendment",
-  "event",
-  "decision",
-  "summary-frontmatter"
-];
+export const ARTIFACTS = ["run", "result", "decision", "summary-frontmatter"];
 
 export const RISK_ORDER = ["low", "medium", "high"];
 
@@ -48,16 +39,6 @@ export const EXIT_CODES = {
   halted: 20,
   escalate: 30,
   failed: 1
-};
-
-/** run.json status change -> event type emitted for it. */
-export const RUN_STATUS_EVENTS = {
-  paused: "run.paused",
-  canceled: "run.canceled",
-  halted: "run.halted",
-  failed: "run.failed",
-  done: "run.completed",
-  merged: "run.completed"
 };
 
 let cache;

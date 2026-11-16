@@ -1,6 +1,12 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  writeFileSync
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, test } from "node:test";
@@ -361,7 +367,7 @@ describe("CLI", () => {
     assert.equal(cli(["lint", join(dir, "missing.md")]).code, 1);
   });
 
-  test("amendment flow: diff reads state.json, then runs.mjs amend logs it", () => {
+  test("amendment flow: diff reads state.json, then one decision logs it", () => {
     const home = join(dir, "home");
     const env = {
       ESP_SKILLS_HOME: home,
@@ -424,24 +430,32 @@ describe("CLI", () => {
 
     const amended = cli(
       [
-        "amend",
+        "decision",
         "--run-dir",
         runDir,
-        "--text",
-        "M2 needs a session check",
-        "--affects",
-        good.json().affects.join(",")
+        "--json",
+        JSON.stringify({
+          phase: "plan",
+          source: "operator",
+          risk: "medium",
+          decision: "Plan amended as version 2",
+          rationale: "M2 needs a session check",
+          refs: ["plan.v2.md", ...good.json().affects]
+        })
       ],
       RUNS,
       env
     );
     assert.equal(amended.code, 0, amended.stderr);
-    assert.equal(amended.json().plan_version, 2);
     const decisions = readFileSync(join(runDir, "decisions.jsonl"), "utf8")
       .trim()
       .split("\n")
       .map((l) => JSON.parse(l));
-    assert.deepEqual(decisions.at(-1).refs, ["A001", "M2"]);
+    assert.deepEqual(decisions.at(-1).refs, ["plan.v2.md", "M2"]);
+    assert.deepEqual(
+      readdirSync(runDir).filter((f) => f.endsWith(".jsonl")),
+      ["decisions.jsonl"]
+    );
   });
 });
 

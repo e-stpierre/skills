@@ -16,7 +16,7 @@
       "minLength": 1
     },
     "source": {
-      "description": "agent: chosen by the model. operator: a user or overseer message, answer or amendment. policy: applied by a configured rule.",
+      "description": "agent: chosen by the model. operator: a user message, answer or plan amendment. policy: applied by a configured rule.",
       "enum": ["agent", "operator", "policy"]
     },
     "risk": { "$ref": "urn:harness-contract:v1:common#/$defs/risk" },

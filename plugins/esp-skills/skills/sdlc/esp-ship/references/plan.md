@@ -25,4 +25,4 @@ The orchestrated track always ends its plan phase with a plan file in plan forma
 
 ## Amending
 
-An operator message that changes the plan, or feedback at the checkpoint, goes through `esp-plan --amend`: it keeps the completed milestones unchanged. Then run `ship.mjs milestone init` again before the next milestone: it syncs `state.json` with the amended plan and keeps the done milestones.
+A user message that changes the plan, or feedback at the checkpoint, goes through `esp-plan --amend`: it keeps the completed milestones unchanged. Then run `ship.mjs milestone init` again before the next milestone: it syncs `state.json` with the amended plan and keeps the done milestones.

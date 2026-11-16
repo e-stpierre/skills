@@ -4,9 +4,9 @@ The format of `summary.md`, written once per run by the skill that owns the run 
 
 ## Writing Rules
 
-- Write it from the run artifacts, not from memory: `run.json`, `plan.md` (latest version from `runs.mjs plan`), `decisions.jsonl`, `steps/*/result.json`, `amendments.jsonl`, and delivered inbox messages (`runs.mjs messages --all`).
+- Write it from the run artifacts, not from memory: `run.json`, `plan.md` (latest version from `runs.mjs plan`), `decisions.jsonl`, `steps/*/result.json`, the plan versions (`plan.v<N>.md`), and `notes.md` (its operator lines).
 - Keep every section. When a section has nothing to report, write `None.` so readers know it was checked.
-- Reference decisions by ID (`D003`), milestones by ID (`M2`), amendments by ID (`A001`), and messages by ID (`m001`).
+- Reference decisions by ID (`D003`), milestones by ID (`M2`), and plan amendments by version (`plan.v2.md`).
 - The summary answers "what happened and what should I look at", not "how the work was done".
 - Validate after writing: `node "${CLAUDE_PLUGIN_ROOT}/scripts/runs.mjs" validate <run-dir>/summary.md`.
 
@@ -28,17 +28,17 @@ Values are flat scalars (no lists or nested objects), validated by `contract/v1/
 
 ## Sections
 
-| Section                          | Content                                                                                                                                                                                          |
-| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Outcome                          | One paragraph: what was delivered, the track (`inline` or `orchestrated`, and a track switch), the workspace (kind, and for a worktree its path and cleanup), final status, PR, and what is left |
-| Decisions                        | The decisions worth a reviewer's attention (medium and high risk first), one line each with ID and class                                                                                         |
-| Surprises                        | What differed from expectations: unexpected code, flaky gates, wrong assumptions in the plan                                                                                                     |
-| Critical Findings                | 🔴 Critical and high-severity findings, how each was resolved or why it is still open                                                                                                            |
-| Review Comment Resolution        | Per reviewer: comments fixed, rejected (with reason), deferred; rounds used                                                                                                                      |
-| Operator Messages and Amendments | Each delivered message and amendment, and what changed because of it                                                                                                                             |
-| Deviations from Plan             | Milestones changed, skipped, split, or added, and each skipped phase (`outputs.skipped_phases`, the review gate), with the reason                                                                |
-| Follow-ups Created               | Deferred and discovered items (from `discovered_items`), with type and where they were recorded                                                                                                  |
-| Metrics                          | Milestones done, commits, gate retries, final-gates runs and fix rounds, builder reuses, review rounds, duration, models used                                                                    |
+| Section                            | Content                                                                                                                                                                                          |
+| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Outcome                            | One paragraph: what was delivered, the track (`inline` or `orchestrated`, and a track switch), the workspace (kind, and for a worktree its path and cleanup), final status, PR, and what is left |
+| Decisions                          | The decisions worth a reviewer's attention (medium and high risk first), one line each with ID and class                                                                                         |
+| Surprises                          | What differed from expectations: unexpected code, flaky gates, wrong assumptions in the plan                                                                                                     |
+| Critical Findings                  | 🔴 Critical and high-severity findings, how each was resolved or why it is still open                                                                                                            |
+| Review Comment Resolution          | Per reviewer: comments fixed, rejected (with reason), deferred; rounds used                                                                                                                      |
+| Plan Amendments and Operator Notes | Each plan version after the first with its decision, each operator line of `notes.md`, and what changed because of it                                                                            |
+| Deviations from Plan               | Milestones changed, skipped, split, or added, and each skipped phase (`outputs.skipped_phases`, the review gate), with the reason                                                                |
+| Follow-ups Created                 | Deferred and discovered items (from `discovered_items`), with type and where they were recorded                                                                                                  |
+| Metrics                            | Milestones done, commits, gate retries, final-gates runs and fix rounds, builder reuses, review rounds, duration, models used                                                                    |
 
 ## Template
 
@@ -78,13 +78,13 @@ None.
 
 - claude[bot]: 5 comments, 3 fixed, 1 rejected (D006), 1 deferred (follow-up); 2 rounds
 
-## Operator Messages and Amendments
+## Plan Amendments and Operator Notes
 
-- m001 (user): "Keep the old endpoint for one release" -> A001 amended M3 to keep `/auth/renew` as a deprecated alias
+- Operator: "Keep the old endpoint for one release" -> `plan.v2.md` (D007) amended M3 to keep `/auth/renew` as a deprecated alias
 
 ## Deviations from Plan
 
-- M3 kept the deprecated alias (A001).
+- M3 kept the deprecated alias (`plan.v2.md`, D007).
 - No phase was skipped: the review gate ran the internal review (D005: 9 files, 412 lines, M2 is `high`).
 
 ## Follow-ups Created

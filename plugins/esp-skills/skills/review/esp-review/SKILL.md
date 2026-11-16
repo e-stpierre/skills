@@ -70,7 +70,6 @@ The available dimensions are `correctness`, `security`, `plan-conformance`, `tes
 
 - **Resolve target**: `review.mjs target [<target>] --project-dir <repo-root> [--run-dir <path>]` (`<target>`: the `--target` value)
 - **Latest plan**: `runs.mjs plan` (`{ path, version }`, version 0 when there is none)
-- **Pending messages**: `runs.mjs messages`, then `runs.mjs deliver <id>...` once applied
 - **Parse and filter**: `review.mjs parse <review_path> --min-severity <level> --verified <bool> --md-out <review_path> --out <findings_path>`
 - **Result block**: the same `parse` command plus `--result`, piped into `runs.mjs result <step>` with `--run-dir`
 
@@ -85,7 +84,6 @@ Build one self-contained prompt for the reviewer:
 - The dimensions, the focus text, the minimum severity, and whether to verify
 - The plan path and the milestone IDs the diff implements (the `done` milestones in `<run-dir>/state.json`, else every milestone), when there is a plan
 - The convention files to honor: `AGENTS.md` and `CLAUDE.md` at the repo root and in every ancestor directory of a changed file
-- Operator messages, as an `## Operator Messages` section
 
 Then run it in a fresh context. The choice depends only on the runtime, never on the size of the diff: a small diff still goes to the subagent, because the fresh context keeps the review from being anchored on this session. The review itself needs only file reading and search, so the inline branch works on any runtime.
 
@@ -111,12 +109,11 @@ In every other mode the review settles nothing: the fixer applies the classes wi
 3. **Resolve the target**: run `review.mjs target` with the `--target` value. On exit code 2, report the usage error and stop. If `empty` is true, report that there is nothing to review, end with the result block `{"contract_version":1,"status":"done","summary":"Nothing to review: the diff is empty.","max_risk":"low","outputs":{"findings":0}}` (through `runs.mjs result <step>` with `--run-dir`), and stop.
 4. **Resolve the plan**: `--plan`, else with `--run-dir` the path from `runs.mjs plan` when its version is above 0, else none.
 5. **Resolve the dimensions**: when every comma-separated item of `--focus` is a dimension name, use those; otherwise use `review.dimensions` and pass `--focus` as the focus text. Remove `plan-conformance` when there is no plan.
-6. **Read operator messages**: the injected `## Operator Messages` section, plus `runs.mjs messages` with `--run-dir`.
-7. **Run the reviewer** (see Running the Reviewer). Done when its reply is saved verbatim to `review_path` and every inbox message you passed is delivered with `runs.mjs deliver`.
-8. **Parse and filter**: run `review.mjs parse` with `--md-out` and `--out` (see Scripts). If it exits 1, correct only the reported headings and lines in `review_path` to the finding format, without changing what the findings say, and parse again. If it still fails, end with `status: failed` and the errors in the summary.
-9. **Interactive review** (`all` only, see Interactive Review).
-10. **Write the result block**: run the step 8 `parse` command again with `--result`. With `--run-dir`, pipe it into `runs.mjs result <step>` (the `step` from `target`), which records it and prints the final line.
-11. **Report**: print the content of `review_path`, then the result line as the final output line.
+6. **Run the reviewer** (see Running the Reviewer). Done when its reply is saved verbatim to `review_path`.
+7. **Parse and filter**: run `review.mjs parse` with `--md-out` and `--out` (see Scripts). If it exits 1, correct only the reported headings and lines in `review_path` to the finding format, without changing what the findings say, and parse again. If it still fails, end with `status: failed` and the errors in the summary.
+8. **Interactive review** (`all` only, see Interactive Review).
+9. **Write the result block**: run the step 7 `parse` command again with `--result`. With `--run-dir`, pipe it into `runs.mjs result <step>` (the `step` from `target`), which records it and prints the final line.
+10. **Report**: print the content of `review_path`, then the result line as the final output line.
 
 ## Output Guidance
 

@@ -31,7 +31,6 @@ import { fileURLToPath } from "node:url";
 import { ConfigError, findRepoRoot, loadConfig } from "./config.mjs";
 import { classifyChecks, fetchChecks } from "./lib/checks.mjs";
 import { exitCodeFor, validateArtifact } from "./lib/contract.mjs";
-import { appendEvent } from "./runs.mjs";
 
 export class WaitError extends Error {
   constructor(message, exitCode = 1) {
@@ -416,26 +415,9 @@ export function nextInterval(base, factor, idlePolls, cap) {
   return Math.min(cap, Math.round(base * factor ** idlePolls));
 }
 
-function needsInput(pending, minutes) {
-  return {
-    id: "fix-review-wait-timeout",
-    question: `Still waiting for ${pending.join(", ")} on the head commit after ${minutes} minute${minutes === 1 ? "" : "s"}. Wait again or continue without it?`,
-    options: [
-      {
-        id: "wait",
-        label: "Wait again",
-        description: "Run the wait again with the same reviewers and state file"
-      },
-      {
-        id: "skip",
-        label: "Continue without it",
-        description:
-          "Treat the missing reviews and checks as not coming, and fix what arrived"
-      }
-    ],
-    recommended: "wait",
-    blocking: true
-  };
+/** The choice a timeout leaves to the caller, as a blocker line. */
+function timeoutBlocker(pending, minutes) {
+  return `Still waiting for ${pending.join(", ")} on the head commit after ${minutes} minute${minutes === 1 ? "" : "s"}: wait again with the same state file, or continue without it.`;
 }
 
 function checksSummary(checks, pr, short) {
@@ -650,22 +632,6 @@ export async function waitForReview(options, deps) {
         log(
           `${reviewer.name} reviewed ${state.head.slice(0, SHORT_SHA)} (${status.kind})`
         );
-        if (options.runDir) {
-          appendEvent(
-            options.runDir,
-            "review.received",
-            {
-              reviewer: reviewer.name,
-              login: reviewer.login,
-              pr: state.pr,
-              head: state.head,
-              kind: status.kind,
-              state: status.state,
-              url: status.url
-            },
-            env
-          );
-        }
       }
     }
 
@@ -766,7 +732,7 @@ export async function waitForReview(options, deps) {
       return finish(
         "awaiting-human",
         `Timed out after ${options.timeoutMinutes} min waiting for ${pendingNames.join(", ")} on #${state.pr} at ${state.head.slice(0, SHORT_SHA)}.`,
-        { needs_input: needsInput(pendingNames, options.timeoutMinutes) }
+        { blockers: [timeoutBlocker(pendingNames, options.timeoutMinutes)] }
       );
     }
 
@@ -816,7 +782,7 @@ Options:
                              head commit (default: fix-review.wait.checks_grace_seconds)
   --once                     Check once and exit (0 done, 10 still pending)
   --state <file>             Progress file (default: <run-dir>/${DEFAULT_STATE_FILE})
-  --run-dir <path>           Run directory: state file location and review.received events
+  --run-dir <path>           Run directory: state file location
   --project-dir <dir>        Repository (default: nearest git root, else cwd)
   --help                     Show this help
 

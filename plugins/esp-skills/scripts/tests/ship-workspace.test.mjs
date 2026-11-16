@@ -234,7 +234,10 @@ describe("ship.mjs workspace", () => {
     const s = state();
     assert.equal(s.branch, "feature/oauth");
     assert.equal(s.workspace.kind, "checkout");
-    assert.ok(jsonl("events.jsonl").some((e) => e.type === "branch.created"));
+    assert.equal(
+      JSON.parse(readFileSync(join(runDir, "run.json"), "utf8")).branch,
+      "feature/oauth"
+    );
     // A second call returns the recorded workspace.
     const again = workspace();
     assert.equal(again.action, "use");

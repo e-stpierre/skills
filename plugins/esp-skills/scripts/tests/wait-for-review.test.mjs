@@ -4,6 +4,7 @@ import {
   existsSync,
   mkdtempSync,
   readFileSync,
+  readdirSync,
   rmSync,
   writeFileSync
 } from "node:fs";
@@ -354,7 +355,7 @@ describe("waitForReview", () => {
     assert.deepEqual(clock.sleeps, [60_000, 90_000, 60_000]);
   });
 
-  test("times out to awaiting-human with a needs_input request", async () => {
+  test("times out to awaiting-human with the choice as a blocker", async () => {
     const client = fakeClient([{ reviews: [codexReview(OLD)] }]);
     const clock = fakeClock();
     const { result } = await waitForReview(baseOptions({ timeoutMinutes: 5 }), {
@@ -363,7 +364,7 @@ describe("waitForReview", () => {
     });
     assert.equal(result.status, "awaiting-human");
     assert.match(result.summary, /Timed out after 5 min/);
-    assert.equal(result.needs_input.recommended, "wait");
+    assert.match(result.blockers[0], /wait again/);
     assert.deepEqual(validateArtifact("result", result).errors, []);
     assert.deepEqual(result.outputs.pending, ["codex"]);
     const waited = clock.sleeps.reduce((a, b) => a + b, 0);
@@ -407,7 +408,7 @@ describe("waitForReview", () => {
     assert.equal(result.status, "awaiting-human");
     assert.deepEqual(result.outputs.completed, ["codex"]);
     assert.deepEqual(result.outputs.pending, ["claude"]);
-    assert.match(result.needs_input.question, /claude/);
+    assert.match(result.blockers[0], /claude/);
   });
 
   test("posts the trigger once per head, never on the first poll", async () => {
@@ -484,7 +485,6 @@ describe("waitForReview", () => {
       ...clock
     });
     assert.equal(result.status, "awaiting-human");
-    assert.equal(result.needs_input, undefined);
     assert.equal(clock.sleeps.length, 0);
   });
 
@@ -509,7 +509,7 @@ describe("waitForReview", () => {
     assert.equal(result.outputs.waited_seconds, 30 * 60);
   });
 
-  test("records review.received events in the run dir", async () => {
+  test("writes only its state file in the run dir", async () => {
     const runDir = join(dir, "run");
     const runs = spawnSync(
       process.execPath,
@@ -530,18 +530,15 @@ describe("waitForReview", () => {
     );
     assert.equal(runs.status, 0, runs.stderr);
     const client = fakeClient([{ reviews: [codexReview(HEAD)] }]);
-    await waitForReview(
+    const { result } = await waitForReview(
       baseOptions({ runDir, statePath: join(runDir, "fix-review-wait.json") }),
       { client, ...fakeClock() }
     );
-    const events = readFileSync(join(runDir, "events.jsonl"), "utf8")
-      .trim()
-      .split("\n")
-      .map((l) => JSON.parse(l));
-    const received = events.filter((e) => e.type === "review.received");
-    assert.equal(received.length, 1);
-    assert.equal(received[0].data.reviewer, "codex");
-    assert.equal(received[0].data.head, HEAD);
+    assert.equal(result.status, "done");
+    assert.deepEqual(readdirSync(runDir).sort(), [
+      "fix-review-wait.json",
+      "run.json"
+    ]);
   });
 });
 
@@ -659,8 +656,7 @@ describe("waiting for checks", () => {
       { client, ...fakeClock() }
     );
     assert.equal(result.status, "awaiting-human");
-    assert.equal(result.needs_input.id, "fix-review-wait-timeout");
-    assert.match(result.needs_input.question, /checks \(ci\)/);
+    assert.match(result.blockers[0], /checks \(ci\)/);
     assert.deepEqual(result.outputs.checks.pending, ["ci"]);
   });
 

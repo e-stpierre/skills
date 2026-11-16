@@ -14,17 +14,13 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/runs.mjs" <command> --run-dir <path> [option
 | ------------------- | --------------------------------- | -------------------------------- |
 | Run metadata        | `run.schema.json`                 | `run.json`                       |
 | Step result block   | `result.schema.json`              | `steps/<NN-step>/result.json`    |
-| Decision request    | `needs-input.schema.json`         | `needs_input` field of a result  |
-| Operator message    | `inbox-message.schema.json`       | `inbox/<timestamp>-<id>.json`    |
-| Amendment           | `amendment.schema.json`           | one line of `amendments.jsonl`   |
-| Event envelope      | `event.schema.json`               | one line of `events.jsonl`       |
 | Decision            | `decision.schema.json`            | one line of `decisions.jsonl`    |
 | Summary frontmatter | `summary-frontmatter.schema.json` | YAML frontmatter of `summary.md` |
 | Shared definitions  | `common.schema.json`              | none (referenced by the others)  |
 
 Schemas use `urn:harness-contract:v1:<artifact>` as `$id` and reference each other by that URN, so they can be copied unchanged into another repository. Each artifact has `fixtures/<artifact>/valid/` and `fixtures/<artifact>/invalid/` examples. Fixtures named `*-by-runs-mjs.json` are golden files: the tests check that `runs.mjs` produces exactly them.
 
-Extension fields are allowed on most artifacts when they start with `x-` (for example `x-esp-class` on a decision). Any other unknown field is invalid. The event envelope accepts no extension fields; event-specific data goes in `data`.
+Extension fields are allowed on most artifacts when they start with `x-` (for example `x-esp-class` on a decision). Any other unknown field is invalid.
 
 ## Requirements and Where They Are Met
 
@@ -37,25 +33,19 @@ Extension fields are allowed on most artifacts when they start with `x-` (for ex
 | `max_risk` is the highest recorded risk                                                                                                                                           | `runs.mjs decision`, `result` and `update --max-risk` raise it                                                                                                                                                              |
 | Result block on the final output line and in `steps/<n>/`                                                                                                                         | `runs.mjs result <step>`: writes the file, prints one line                                                                                                                                                                  |
 | Exit codes `0` done, `10` awaiting-human, `20` halted, `30` escalate, `1` failure                                                                                                 | `runs.mjs exit-code <status>`                                                                                                                                                                                               |
-| `needs_input` only with `status: awaiting-human`                                                                                                                                  | `result.schema.json`, checked by `runs.mjs result`                                                                                                                                                                          |
-| `events.jsonl` append-only, `seq` = line number                                                                                                                                   | `runs.mjs event <type>` and the events emitted by other commands                                                                                                                                                            |
 | `decisions.jsonl` appended when the decision is made                                                                                                                              | `runs.mjs decision` (fills `id` as `D001`... and `at`)                                                                                                                                                                      |
-| Operator messages read at step boundaries                                                                                                                                         | `runs.mjs messages` (pending), `runs.mjs deliver <id>`                                                                                                                                                                      |
-| Delivered messages and amendments logged as operator decisions                                                                                                                    | `runs.mjs deliver`, `runs.mjs amend`                                                                                                                                                                                        |
-| Amendments in `amendments.jsonl`, plans as `plan.vN.md`                                                                                                                           | `runs.mjs amend`, `runs.mjs plan` (latest version)                                                                                                                                                                          |
+| Amendments as `plan.vN.md`, each logged as one decision                                                                                                                           | `runs.mjs decision`, `runs.mjs plan` (latest version)                                                                                                                                                                       |
 | Later steps read the latest plan version                                                                                                                                          | `runs.mjs plan`                                                                                                                                                                                                             |
 | Plans parse without a model; amendments keep completed milestones                                                                                                                 | `plan.mjs parse`, `plan.mjs lint`, `plan.mjs diff` (`references/plan-format.md`)                                                                                                                                            |
-| Milestone loop state (`state.json`, reserved name)                                                                                                                                | `ship.mjs milestone init`, `next`, `start`, `finish` (emits `iteration.*`, `commit.created`)                                                                                                                                |
+| Milestone loop state (`state.json`, reserved name)                                                                                                                                | `ship.mjs milestone init`, `next`, `start`, `finish`                                                                                                                                                                        |
 | Review result block built from the findings, not by hand                                                                                                                          | `review.mjs parse --result` piped into `runs.mjs result review-<N>` (esp-review)                                                                                                                                            |
-| Waiting costs no tokens; reviews and checks matched on the head SHA                                                                                                               | `wait-for-review.mjs --checks` in the background (emits `review.received`), piped into `runs.mjs result fix-review-wait` (esp-ship); esp-fix-review `--wait` keeps the wait inside its `fix-review` step                    |
+| Waiting costs no tokens; reviews and checks matched on the head SHA                                                                                                               | `wait-for-review.mjs --checks` in the background, piped into `runs.mjs result fix-review-wait` (esp-ship); esp-fix-review `--wait` keeps the wait inside its `fix-review` step                                              |
 | Every review comment resolution logged; handled comments never reprocessed                                                                                                        | `fix-review.mjs record` (decision + `fix-review.json` handled IDs), `fix-review.mjs result` piped into `runs.mjs result fix-review` (esp-fix-review)                                                                        |
-| Merge only under objective conditions; method and reason logged; checked again right before the merge                                                                             | `merge-ready.mjs check` (conditions), `merge-ready.mjs merge` (checks again, emits `merge.completed`, logs the decision), piped into `runs.mjs result merge` (esp-merge)                                                    |
+| Merge only under objective conditions; method and reason logged; checked again right before the merge                                                                             | `merge-ready.mjs check` (conditions), `merge-ready.mjs merge` (checks again, logs the decision), piped into `runs.mjs result merge` (esp-merge)                                                                             |
 | A task owns its run: triage, inline or orchestrated track, phase dispatch with subagents, bounded internal review and PR rounds, resume, track switch, PR body from run artifacts | `ship.mjs triage --record`, `init`, `next`, `phase`, `review-gate`, `final-gates`, `pr-loop`, `switch-track`, `stop`, `halt`, `pr-body`, `result` piped into `runs.mjs result ship` (esp-ship); `runs.mjs pr-body` (esp-pr) |
 | `summary.md` frontmatter per the schema                                                                                                                                           | `references/summary-template.md`, `runs.mjs validate summary.md`                                                                                                                                                            |
 | Date filtering without file reads, other filters from `run.json`                                                                                                                  | `runs.mjs index --since --until --last --repo --status --risk`                                                                                                                                                              |
 | Any contract file can be checked                                                                                                                                                  | `runs.mjs validate <file>`                                                                                                                                                                                                  |
-
-`runs.mjs` also writes these events: `run.started` (create), `run.paused`, `run.resumed`, `run.canceled`, `run.halted`, `run.failed`, `run.completed` (update), `step.completed` or `step.failed` and `needs_input` (result), `message.queued` (send), `message.delivered` (deliver), `amendment.applied` (amend).
 
 ## esp-ship Run Files
 
@@ -64,27 +54,27 @@ Besides the contract artifacts, an esp-ship run dir holds files that only esp-sk
 - **`ship.json`**: the esp-ship state (track, phases, workspace, review gate, final gates), written only by `ship.mjs`
 - **`state.json`**: the milestone loop state of the orchestrated track (reserved name), written only by `ship.mjs milestone`
 - **Triage step**: `ship.mjs triage --record` writes the first step result (`01-triage` on a fresh run) with the detected input kind, plan source and track in `outputs`, and logs one decision per choice (`source`: `operator` for a flag, `policy` for a rule, `agent` for the model's judgment)
-- **`notes.md`**: shared run notes. Builders read them with `runs.mjs notes --show` and append facts with `runs.mjs notes --append <text> --milestone <id>`, under the append lock. Verifiers never read them. The file is never committed, and `runs.mjs notes` emits no event
+- **`notes.md`**: shared run notes. Builders read them with `runs.mjs notes --show` and append facts with `runs.mjs notes --append <text> --milestone <id>`, under the append lock. A user correction is appended with `--from operator` (marked `(operator)` on the line), and a line without `--milestone` applies to the whole run. Verifiers never read them. The file is never committed
 - **Decision extensions**: `x-esp-estimate` (triage file estimate), `x-esp-review-gate` (diff numbers of the review gate), `x-esp-builder-reuse` (agent ID, model, used and limit tokens of a builder reuse decision), `x-esp-escalation` (track switch or escalation trigger)
 
 ## Append Protocol
 
-Writers of `events.jsonl`, `decisions.jsonl`, `amendments.jsonl` and `run.json` hold a lock file next to the target (`<file>.lock`, created with exclusive create, removed after the write; a lock older than 30 seconds is stale). Under the lock, the writer reads the line count, builds the entry (`seq` or the next ID), validates it and appends one line. This keeps lines whole and `seq` gap-free when several processes write to the same run. A harness that writes to the same files must follow the same protocol. Inbox messages need no lock: each is its own file. In a jsonl file, `seq` equals the physical line number and blank lines are only allowed at the end; `runs.mjs validate` reports any other blank line.
+Writers of `decisions.jsonl`, `notes.md` and `run.json` hold a lock file next to the target (`<file>.lock`, created with exclusive create, removed after the write; a lock older than 30 seconds is stale). Under the lock, the writer reads the line count, builds the entry (the next ID), validates it and appends one line. This keeps lines whole and IDs unique when several processes write to the same run. In a jsonl file, blank lines are only allowed at the end; `runs.mjs validate` reports any other blank line.
 
 ## Standalone and Harness Runs
 
 - **Standalone**: the top-level skill (for example `esp-ship`) runs `runs.mjs create <slug>` and owns the run. It passes `--run-dir` to the skills it calls, which then write steps, decisions and results into the same directory.
-- **Harness**: the harness creates the run dir and passes `--run-dir <path>`. `runs.mjs create --run-dir` finds the existing `run.json` and leaves it alone. Injected operator messages arrive as an `## Operator Messages` section in the prompt; skills treat it like messages from `runs.mjs messages`.
+- **Harness**: the harness creates the run dir and passes `--run-dir <path>`. `runs.mjs create --run-dir` finds the existing `run.json` and leaves it alone.
 - Skills never assume which of the two they are in.
 
 ## Compliance Levels
 
-| Level      | Requirements                                                    |
-| ---------- | --------------------------------------------------------------- |
-| Plain      | None. Runs as a step, exit code only                            |
-| Reporting  | Writes the result block and `run.json` fields                   |
-| Steerable  | Reporting, plus reads operator messages and emits `needs_input` |
-| Recappable | Steerable, plus writes `decisions.jsonl` and `summary.md`       |
+| Level      | Requirements                                              |
+| ---------- | --------------------------------------------------------- |
+| Plain      | None. Runs as a step, exit code only                      |
+| Reporting  | Writes the result block and `run.json` fields             |
+| Steerable  | Reporting, plus reads the operator lines of `notes.md`    |
+| Recappable | Steerable, plus writes `decisions.jsonl` and `summary.md` |
 
 Skills no longer declare a level in their frontmatter.
 

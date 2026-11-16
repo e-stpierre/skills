@@ -5,6 +5,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  readdirSync,
   rmSync,
   writeFileSync
 } from "node:fs";
@@ -36,7 +37,6 @@ import { reviewLoop } from "../lib/ship/review-loop.mjs";
 import { ShipError, shipSettings } from "../lib/ship/state.mjs";
 import { prLoopAction, prOptions } from "../lib/ship/tail.mjs";
 import { completedFromState } from "../plan.mjs";
-import { validateFile } from "../runs.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const SCRIPT = join(HERE, "..", "ship.mjs");
@@ -631,15 +631,14 @@ describe("next and phase", () => {
     assert.equal(s.summary, "Adds hello()");
     assert.equal(s.commit, c);
     assert.deepEqual(s.gates, { test: "pass", lint: "skipped" });
-    const types = jsonl("events.jsonl").map((e) => e.type);
-    assert.deepEqual(types.slice(1), [
-      "branch.created",
-      "commit.created",
-      "pr.opened"
-    ]);
     assert.equal(runJson().branch, "feature/oauth");
     assert.equal(runJson().pr, PR);
-    assert.equal(cli(RUNS, ["validate", join(runDir, "events.jsonl")]).code, 0);
+    // The run dir holds only the files esp-skills reads.
+    assert.deepEqual(readdirSync(runDir).sort(), [
+      "config.snapshot.json",
+      "run.json",
+      "ship.json"
+    ]);
   });
 
   test("rejects unknown phases, statuses and values", () => {
@@ -1229,7 +1228,6 @@ describe("stop, halt and resume", () => {
     assert.equal(next.action, "run");
     assert.equal(next.phase, "branch");
     assert.equal(next.resumed, true);
-    assert.ok(jsonl("events.jsonl").some((e) => e.type === "run.resumed"));
   });
 
   test("a resume leaves a failed stop and a halt in place", () => {
@@ -1372,23 +1370,16 @@ describe("result", () => {
     assert.match(block.summary, /squash/);
   });
 
-  test("passes an awaiting-human step through with its needs_input", () => {
+  test("passes an awaiting-human step through with its blockers", () => {
     initInline();
-    const needs = {
-      id: "fix-review-wait-timeout",
-      question: "Keep waiting?",
-      options: [{ id: "wait", label: "Wait" }],
-      recommended: "wait",
-      blocking: true
-    };
     writeStep("fix-review-wait", {
       status: "awaiting-human",
       summary: "Timed out.",
-      needs_input: needs
+      blockers: ["Keep waiting?"]
     });
     const r = ship("result");
     assert.equal(r.code, 10);
-    assert.deepEqual(r.json().needs_input, needs);
+    assert.deepEqual(r.json().blockers, ["Keep waiting?"]);
     assert.equal(
       ship("result", "--status", "failed", "--summary", "Gave up.").json()
         .summary,
@@ -1400,27 +1391,17 @@ describe("result", () => {
   test("passes the question of a milestone builder that stopped", () => {
     init();
     writeStep("plan", done());
-    const needs = {
-      id: "m2-storage",
-      question: "SQL or KV?",
-      options: [
-        { id: "sql", label: "SQL" },
-        { id: "kv", label: "KV" }
-      ],
-      recommended: "sql",
-      blocking: true
-    };
     writeStep("build-M1", done({ milestone: "M1" }));
     writeStep("build-M2", {
       status: "awaiting-human",
       summary: "M2 needs a storage choice.",
-      needs_input: needs
+      blockers: ["SQL or KV?"]
     });
     ship("stop", "--status", "awaiting-human", "--reason", "SQL or KV?");
     const r = ship("result");
     assert.equal(r.code, 10);
     assert.equal(r.json().status, "awaiting-human");
-    assert.deepEqual(r.json().needs_input, needs);
+    assert.deepEqual(r.json().blockers, ["SQL or KV?"]);
   });
 });
 
@@ -1734,13 +1715,15 @@ describe("milestone loop", () => {
     }
     assert.deepEqual(seen, ["M1", "M2", "M3"]);
     assert.deepEqual(completedFromState(runDir).sort(), ["M1", "M2", "M3"]);
-    assert.deepEqual(
-      jsonl("events.jsonl")
-        .filter((e) => e.type === "commit.created")
-        .map((e) => e.data.milestone),
-      ["M1", "M2", "M3"]
-    );
-    assert.equal(validateFile(join(runDir, "events.jsonl")).valid, true);
+    const milestones = ship("milestone", "show").json().milestones;
+    for (const id of ["M1", "M2", "M3"])
+      assert.equal(milestones[id].commit, commits[id]);
+    assert.deepEqual(readdirSync(runDir).sort(), [
+      "config.snapshot.json",
+      "plan.md",
+      "run.json",
+      "state.json"
+    ]);
     assert.equal(ship("milestone", "show").json().milestones.M3.status, "done");
   });
 

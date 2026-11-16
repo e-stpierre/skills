@@ -18,7 +18,7 @@
 import { mkdirSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { expandHome } from "../../config.mjs";
-import { appendDecision, appendEvent, cmdUpdate } from "../../runs.mjs";
+import { appendDecision, cmdUpdate } from "../../runs.mjs";
 import {
   configOf,
   git,
@@ -291,17 +291,6 @@ function mergeBase(cwd, ref) {
 }
 
 function recordBranch(dir, updated, env) {
-  appendEvent(
-    dir,
-    "branch.created",
-    {
-      branch: updated.branch,
-      base: updated.base,
-      base_sha: updated.base_sha,
-      worktree: updated.worktree
-    },
-    env
-  );
   cmdUpdate({ "run-dir": dir, branch: updated.branch }, env);
 }
 

@@ -5,6 +5,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  readdirSync,
   rmSync,
   writeFileSync
 } from "node:fs";
@@ -478,10 +479,10 @@ describe("merge", () => {
     assert.equal(block.outputs.merged, true);
     assert.equal(block.outputs.cleanup.remote_branch, "deleted");
     assert.equal(block.pr, URL);
-    const events = jsonl("events.jsonl").map((e) => e.type);
-    assert.ok(events.includes("merge.completed"));
-    assert.ok(!events.includes("merge.locked"));
-    assert.equal(validateFile(join(runDir, "events.jsonl")).valid, true);
+    assert.deepEqual(
+      readdirSync(runDir).filter((f) => f.endsWith(".jsonl")),
+      ["decisions.jsonl"]
+    );
     assert.equal(validateFile(join(runDir, "decisions.jsonl")).valid, true);
   });
 
@@ -522,8 +523,7 @@ describe("merge", () => {
     const block = await cmdMerge(ctx(client), "9");
     assert.equal(block.status, "awaiting-human");
     assert.equal(block.outputs.outcome, "protected");
-    assert.equal(block.needs_input.id, "merge-protected");
-    assert.equal(block.needs_input.blocking, true);
+    assert.match(block.blockers.join(" "), /review/i);
     assert.equal(client.calls.merge.length, 0);
     assert.equal(validateArtifact("result", block).valid, true);
     const [decision] = jsonl("decisions.jsonl");

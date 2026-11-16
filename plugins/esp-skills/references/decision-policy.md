@@ -31,47 +31,16 @@ Classify every item before acting on it. When an item fits several classes, take
 | `all`  | Plan approval, review findings (A and B groups), fix-review recap, merge | Interactive     |
 
 - In standalone interactive mode, "Ask" uses the session's question tool (for example `AskUserQuestion`) with the recommended option listed first.
-- Headless sessions (`claude -p`, harness steps, subagents) are always `off`, whatever the flag says. Subagents never ask: they return the question to their caller.
+- Headless sessions (`claude -p`) and subagents are always `off`, whatever the flag says. Subagents never ask: they return the question to their caller (see Asking Outside an Interactive Session).
 
-## Asking Under a Harness
+## Asking Outside an Interactive Session
 
-When a skill runs with `--run-dir` and is headless, "Ask" becomes a `needs_input` request in the result block. The step ends with `status: awaiting-human` and exit code 10:
+Only the main interactive session asks the user. Everywhere else, "Ask" becomes one of two moves:
 
-```json
-{
-  "status": "awaiting-human",
-  "summary": "Review found a public API change that needs a decision.",
-  "needs_input": {
-    "id": "Q1",
-    "question": "Rename getUser() to fetchUser() as the reviewer suggests?",
-    "options": [
-      {
-        "id": "keep",
-        "label": "Keep getUser()",
-        "description": "No API change"
-      },
-      {
-        "id": "rename",
-        "label": "Rename",
-        "description": "Breaking for callers"
-      }
-    ],
-    "recommended": "keep",
-    "context": "Comment https://github.com/o/r/pull/12#discussion_r1; 3 call sites",
-    "blocking": true,
-    "kind": "decision",
-    "risk": "medium"
-  }
-}
-```
+- **Apply the autonomous column**: B-Decide applies the recommended option, B-Scope defers, Halt stops. This is the default for headless sessions (`claude -p`) and for every subagent.
+- **Stop and hand the question back**: when no safe default exists (a Halt, or a B-Scope item that cannot be deferred), finish every item that does not depend on the answer, log those decisions, then end with `Status: needs-decision`, the question and its options with the recommended one first. A script step ends with `status: awaiting-human` and the question in `blockers`.
 
-- **B-Decide** requests set `blocking: false` and always set `recommended`: the harness may apply it after its timeout.
-- **B-Scope** and **Halt** requests set `blocking: true`.
-- Set `kind` (`question` for missing information, `permission` to approve an action, `decision` for a choice the step may not take alone) and `risk`, the decision's risk. A harness applies `recommended` on its own only to a `risk: low` request: leave `risk` out, or set it higher, when a wrong default would hurt.
-- Before ending with `needs_input`, finish every item that does not depend on the answer, and log those decisions.
-- The answer comes back as an operator message. Log it with `source: operator` (`runs.mjs deliver` does this) and continue.
-
-Without `--run-dir`, a headless skill that would ask applies the autonomous column instead.
+The main session then asks with `AskUserQuestion`, logs the answer with `source: operator`, and passes it to the next subagent, or to the same one when it continues.
 
 ## Stop Conditions
 
@@ -90,7 +59,7 @@ When a condition is met and its key is in `ship.halt_on`:
 1. Stop starting new work. Do not merge, and do not push anything the halt is about.
 2. Log a decision with `source: policy`, `risk: high`, and the key in `rationale`.
 3. Write `summary.md` (see `summary-template.md`) when the skill owns the run.
-4. End with `status: halted` (exit 20), or `awaiting-human` with a blocking `needs_input` when a single answer would unblock the task.
+4. End with `status: halted` (exit 20), or hand the question back (see Asking Outside an Interactive Session) when a single answer would unblock the task.
 
 A condition whose key is not in `ship.halt_on` becomes a B-Scope item: deferred and logged, never applied.
 
@@ -122,7 +91,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/runs.mjs" decision --run-dir <path> --json '
 }'
 ```
 
-- `source`: `agent` for choices the model made, `policy` for rules applied from config (stop conditions, deferrals), `operator` for answers and messages.
+- `source`: `agent` for choices the model made, `policy` for rules applied from config (stop conditions, deferrals), `operator` for the user's answers and corrections, and plan amendments.
 - `x-esp-class`: the class from this policy (`A-Fix`, `B-Decide`, `B-Scope`, `Reject`, `Halt`).
 - `rationale` starts with the class, then the reason.
 - Without `--run-dir`, report the same information in the skill output instead.

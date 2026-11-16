@@ -737,14 +737,14 @@ describe("result", () => {
     assert.equal(validateArtifact("result", block).valid, true);
   });
 
-  test("open items end awaiting-human, with a blocking needs_input under a run", () => {
+  test("open items end awaiting-human, with each open item as a blocker", () => {
     const s = handledState({
       "inline:1": { resolution: "open", risk: "high", decision: "Pick a name" }
     });
-    assert.equal(buildResult(s).needs_input, undefined);
-    const block = buildResult(s, { runDir: "/x" });
+    const block = buildResult(s);
     assert.equal(block.status, "awaiting-human");
-    assert.equal(block.needs_input.blocking, true);
+    assert.equal(block.blockers.length, 1);
+    assert.match(block.blockers[0], /Pick a name/);
     assert.equal(validateArtifact("result", block).valid, true);
   });
 

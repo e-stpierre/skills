@@ -23,11 +23,10 @@ The spawn prompt provides:
 - **Plan path** (optional): when absent and a run dir is given, read the latest plan with `node "${CLAUDE_PLUGIN_ROOT}/scripts/runs.mjs" plan --run-dir <path>`
 - **Gates** (optional): the gate commands of this work item, keyed by name. For a milestone, these are its scoped checks (`validate-1`, `validate-2`, ... from the milestone validation, plus gates like `typecheck` that always run), or the full gates (`test`, `lint`, `typecheck`, `build`). A fix round may get both: scoped checks while fixing, and full gates once before the commit. When absent, fall back as described in Gates
 - **Retry context** (optional): the commit to amend and the verifier's failure report from the previous attempt
-- **Operator messages** (optional): an `## Operator Messages` section. Apply each message to this work item; messages override the plan where they conflict
 
 ### Steps
 
-1. **Orient**: read `AGENTS.md` or `CLAUDE.md` at the repo root, then the run notes when a run dir is given (`node "${CLAUDE_PLUGIN_ROOT}/scripts/runs.mjs" notes --show --run-dir <path>`: facts earlier builders left for you), then the files the work item names. Check `git status`: start from a clean tree (on a retry, the only expected change is the commit to amend).
+1. **Orient**: read `AGENTS.md` or `CLAUDE.md` at the repo root, then the run notes when a run dir is given (`node "${CLAUDE_PLUGIN_ROOT}/scripts/runs.mjs" notes --show --run-dir <path>`: facts earlier builders left for you; a line marked `(operator)` is a correction from the user and overrides the plan where they conflict), then the files the work item names. Check `git status`: start from a clean tree (on a retry, the only expected change is the commit to amend).
 2. **Scope**: list the changes the work item requires. Anything else you notice (unrelated bugs, debt, missing docs) becomes a `discovered_items` entry, not a change.
 3. **Implement**: make the changes and add or update tests for the behavior you changed. Follow the repo conventions over your own preferences.
 4. **Decide**: classify every choice you meet with `${CLAUDE_PLUGIN_ROOT}/references/decision-policy.md` and act on its Autonomous column, except B-Scope: leave it unapplied, return it as a `discovered_items` entry and log it (deferral and PR replies belong to the caller). On Halt, stop at once with `status: halted` (see Output Guidance): the caller writes the summary.
@@ -49,7 +48,7 @@ Report the commands you ran so the verifier can run the same ones.
 
 ### Run Notes
 
-`<run-dir>/notes.md` carries what one builder learns to the fresh builders of later milestones, across resumes and under a harness. It is a run artifact: change it only through `runs.mjs notes`, and keep it out of every commit.
+`<run-dir>/notes.md` carries what one builder learns to the fresh builders of later milestones, across resumes, and carries the corrections the user sends during the run. It is a run artifact: change it only through `runs.mjs notes`, and keep it out of every commit.
 
 - **Append**: `node "${CLAUDE_PLUGIN_ROOT}/scripts/runs.mjs" notes --append "<fact>" --milestone <id> --run-dir <path>`, one call per fact. Fix rounds use their step name (`fix-review-1`) as the ID
 - **What to write**: facts, not a diary. A pattern the code follows, a gotcha, a command that works (for example `pnpm test -- auth` runs only the auth tests). At most three notes per work item, one line each (500 characters at most)
@@ -90,7 +89,7 @@ Write details to the run dir, and keep the reply short: the caller keeps only th
 
 1. **Decisions**: when a run dir is given, log each decision as it is made with `node "${CLAUDE_PLUGIN_ROOT}/scripts/runs.mjs" decision --run-dir <path> --json '<entry>'`, using `phase: build` (or `fix-review`) and the milestone ID in `refs`.
 2. **Result block**: build it with these fields:
-   - `status`: `done` when the commit exists and every gate passes; `failed` when a gate still fails or a blocker stopped the work; `halted` when a stop condition was met; `awaiting-human` with a `needs_input` request when a B-Scope or Halt item needs an answer to continue
+   - `status`: `done` when the commit exists and every gate passes; `failed` when a gate still fails or a blocker stopped the work; `halted` when a stop condition was met; `awaiting-human` with the question and its options in `blockers` when a B-Scope or Halt item needs an answer to continue
    - `summary`: one or two sentences
    - `files_changed`, `commit` (full SHA from `git rev-parse HEAD`), `gates` (`pass`, `fail` or `skipped` per gate), `max_risk`
    - `outputs`: `{ "milestone": "M2", "gate_commands": { "test": "pnpm test" }, "attempt": 1 }`

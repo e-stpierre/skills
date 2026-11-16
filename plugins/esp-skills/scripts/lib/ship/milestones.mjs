@@ -15,7 +15,7 @@ import { dirname, join, resolve } from "node:path";
 import { expandHome } from "../../config.mjs";
 import { withLock } from "../lock.mjs";
 import { filesOverlap, planBatches, readPlan, wholeRepo } from "../../plan.mjs";
-import { appendDecision, appendEvent, latestPlan, now } from "../../runs.mjs";
+import { appendDecision, latestPlan, now } from "../../runs.mjs";
 import { gatesFor } from "./gates.mjs";
 import {
   configOf,
@@ -444,12 +444,6 @@ export function cmdStart(id, options, env = process.env) {
     },
     env
   );
-  appendEvent(
-    dir,
-    "iteration.started",
-    { milestone: id, attempt: entry.attempt },
-    env
-  );
   return entry;
 }
 
@@ -491,19 +485,6 @@ export function cmdFinish(id, options, env = process.env) {
         attempts_left: Math.max(0, 1 + state.max_retries - m.attempts)
       };
     },
-    env
-  );
-  if (status === "done")
-    appendEvent(
-      dir,
-      "commit.created",
-      { milestone: id, sha: entry.commit },
-      env
-    );
-  appendEvent(
-    dir,
-    "iteration.completed",
-    { milestone: id, attempt: entry.attempt, status },
     env
   );
   return entry;

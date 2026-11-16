@@ -102,7 +102,7 @@ Commands:
                        amended plan; uses the run's frozen config
     next               What to run now: { action: run|retry|halt|done|blocked, milestone, batch }
                        (--parallel for a batch)
-    start <id>         Begin an attempt of a milestone (emits iteration.started)
+    start <id>         Begin an attempt of a milestone
     finish <id>        End the attempt: --status done|failed|halted [--commit <sha>] [--reason <text>]
     models <id>        Builder and verifier { model, effort } (--model <alias> [--effort <level>])
     reuse <id>         Continue the last builder with a milestone or spawn a fresh one:

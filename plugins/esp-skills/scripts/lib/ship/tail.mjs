@@ -283,7 +283,7 @@ function orderedSteps(steps) {
   const named = (n) => latestNamed(steps, n);
   if (named("plan")) ordered.push({ name: "plan", result: named("plan") });
   // The build phase ends with the aggregate build step, or with the last
-  // milestone step when the loop stopped on one (it carries its needs_input).
+  // milestone step when the loop stopped on one (it carries its blockers).
   const build = steps.filter((s) => /^build(-.+)?$/.test(s.name)).at(-1);
   if (build) ordered.push({ name: build.name, result: build.result });
   const fixes = stepsByRound(steps, "fix-review");
@@ -419,8 +419,6 @@ export function buildResult(
     }
   };
   if (discovered.length > 0) block.discovered_items = discovered;
-  if (finalStatus === "awaiting-human" && carrier?.result.needs_input)
-    block.needs_input = carrier.result.needs_input;
   if (!FINISHED.has(finalStatus)) {
     const blockers = [...(carrier?.result.blockers ?? [])];
     if (state.stop) blockers.unshift(state.stop.reason);

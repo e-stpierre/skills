@@ -6,7 +6,9 @@
   "type": "object",
   "required": ["status", "summary"],
   "additionalProperties": false,
-  "patternProperties": { "^x-": true },
+  "patternProperties": {
+    "^x-": true
+  },
   "properties": {
     "contract_version": {
       "$ref": "urn:harness-contract:v1:common#/$defs/contract_version"
@@ -25,8 +27,13 @@
     "commit": {
       "description": "SHA of the last commit the step created.",
       "anyOf": [
-        { "type": "string", "pattern": "^[0-9a-f]{7,64}$" },
-        { "type": "null" }
+        {
+          "type": "string",
+          "pattern": "^[0-9a-f]{7,64}$"
+        },
+        {
+          "type": "null"
+        }
       ]
     },
     "pr": {
@@ -36,12 +43,18 @@
     "gates": {
       "description": "Gate outcome by name (tests, lint, typecheck, build, ...).",
       "type": "object",
-      "additionalProperties": { "enum": ["pass", "fail", "skipped"] }
+      "additionalProperties": {
+        "enum": ["pass", "fail", "skipped"]
+      }
     },
     "max_risk": {
       "anyOf": [
-        { "$ref": "urn:harness-contract:v1:common#/$defs/risk" },
-        { "type": "null" }
+        {
+          "$ref": "urn:harness-contract:v1:common#/$defs/risk"
+        },
+        {
+          "type": "null"
+        }
       ]
     },
     "outputs": {
@@ -55,7 +68,9 @@
         "type": "object",
         "required": ["type", "title"],
         "additionalProperties": false,
-        "patternProperties": { "^x-": true },
+        "patternProperties": {
+          "^x-": true
+        },
         "properties": {
           "type": {
             "enum": [
@@ -68,34 +83,25 @@
               "other"
             ]
           },
-          "title": { "type": "string", "minLength": 1 },
-          "evidence": { "type": "string" },
-          "severity": { "enum": ["low", "medium", "high", "critical"] },
+          "title": {
+            "type": "string",
+            "minLength": 1
+          },
+          "evidence": {
+            "type": "string"
+          },
+          "severity": {
+            "enum": ["low", "medium", "high", "critical"]
+          },
           "files": {
             "$ref": "urn:harness-contract:v1:common#/$defs/string_list"
           }
         }
       }
     },
-    "needs_input": {
-      "anyOf": [
-        { "$ref": "urn:harness-contract:v1:needs-input" },
-        { "type": "null" }
-      ]
-    },
     "blockers": {
       "description": "Reasons the step could not finish.",
       "$ref": "urn:harness-contract:v1:common#/$defs/string_list"
     }
-  },
-  "anyOf": [
-    {
-      "description": "needs_input is absent or null.",
-      "properties": { "needs_input": { "type": "null" } }
-    },
-    {
-      "description": "A needs_input request requires status awaiting-human.",
-      "properties": { "status": { "const": "awaiting-human" } }
-    }
-  ]
+  }
 }

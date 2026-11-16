@@ -6,7 +6,7 @@ import { existsSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { expandHome } from "../../config.mjs";
 import { readPlan } from "../../plan.mjs";
-import { appendEvent, cmdUpdate, latestPlan, now } from "../../runs.mjs";
+import { cmdUpdate, latestPlan, now } from "../../runs.mjs";
 import { finalGatesState, gatesFor } from "./gates.mjs";
 import {
   modeOf,
@@ -315,13 +315,6 @@ export function resumeRun(dir, env = process.env) {
     },
     env
   );
-  if (resumed)
-    appendEvent(
-      dir,
-      "run.resumed",
-      { by: "esp-ship", from: "awaiting-human", reason: resumed.reason },
-      env
-    );
   return {
     state_path: path,
     created: false,
@@ -582,7 +575,6 @@ export function cmdPhase(name, options, env = process.env) {
       ? null
       : parseJsonOption(options.gates, "gates");
   const plan = planFacts(dir, current, name, status, options);
-  const events = [];
   const state = updateState(
     dir,
     (s) => {
@@ -602,31 +594,16 @@ export function cmdPhase(name, options, env = process.env) {
       }
       if (stringOption(options.branch) && options.branch !== s.branch) {
         s.branch = options.branch;
-        events.push([
-          "branch.created",
-          {
-            branch: s.branch,
-            base: s.base,
-            base_sha: s.base_sha,
-            worktree: s.worktree
-          }
-        ]);
       }
-      if (options.commit && options.commit !== s.commit) {
+      if (options.commit && options.commit !== s.commit)
         s.commit = options.commit;
-        events.push(["commit.created", { commit: s.commit, phase: name }]);
-      }
-      if (stringOption(options.pr) && options.pr !== s.pr) {
-        s.pr = options.pr;
-        events.push(["pr.opened", { pr: s.pr, branch: s.branch }]);
-      }
+      if (stringOption(options.pr) && options.pr !== s.pr) s.pr = options.pr;
       if (stringOption(options.summary))
         s.summary = String(options.summary).trim();
       if (gates) s.gates = { ...s.gates, ...gates };
     },
     env
   );
-  for (const [type, data] of events) appendEvent(dir, type, data, env);
   const runFields = {};
   for (const key of ["branch", "base", "pr"])
     if (stringOption(options[key])) runFields[key] = options[key];

@@ -28,7 +28,7 @@ import {
 } from "./config.mjs";
 import { classifyChecks, fetchChecks } from "./lib/checks.mjs";
 import { exitCodeFor, validateArtifact } from "./lib/contract.mjs";
-import { appendDecision, appendEvent } from "./runs.mjs";
+import { appendDecision } from "./runs.mjs";
 import { prArgument, repoFromUrl } from "./wait-for-review.mjs";
 
 export class MergeError extends Error {
@@ -808,27 +808,6 @@ const STATUS_BY_OUTCOME = {
   error: "failed"
 };
 
-function needsInput(outcome, reasons) {
-  return {
-    id: `merge-${outcome}`,
-    question: `The pull request cannot merge yet: ${reasons.join("; ")}. Check again after fixing it, or leave it open?`,
-    options: [
-      {
-        id: "retry",
-        label: "Check again",
-        description: "Run esp-merge again once the condition is met"
-      },
-      {
-        id: "leave-open",
-        label: "Leave the pull request open",
-        description: "Stop here and merge by hand later"
-      }
-    ],
-    recommended: "retry",
-    blocking: true
-  };
-}
-
 function failingReasons(rep) {
   const reasons = rep.conditions
     .filter((c) => c.status !== "pass")
@@ -844,7 +823,6 @@ export function buildResult(
     outcome,
     summary,
     extra = {},
-    runDir = null,
     decision = null,
     cleanup = null,
     blockers = []
@@ -876,8 +854,6 @@ export function buildResult(
       ...extra
     }
   };
-  if (status === "awaiting-human" && reasons.length > 0 && runDir)
-    block.needs_input = needsInput(outcome, reasons);
   if (status !== "done" && status !== "merged" && reasons.length > 0)
     block.blockers = reasons;
   const check = validateArtifact("result", block);
@@ -935,7 +911,6 @@ export async function cmdMerge(ctx, target, options = {}) {
     return buildResult(rep, {
       outcome: "halted",
       summary: `Halted, not merged: ${options.halt}.`,
-      runDir: ctx.runDir,
       decision,
       blockers: [options.halt]
     });
@@ -945,8 +920,7 @@ export async function cmdMerge(ctx, target, options = {}) {
     const rep = safeReport(ctx, target);
     return buildResult(rep, {
       outcome: "disabled",
-      summary: summaryFor(rep, "disabled"),
-      runDir: ctx.runDir
+      summary: summaryFor(rep, "disabled")
     });
   }
 
@@ -961,7 +935,6 @@ export async function cmdMerge(ctx, target, options = {}) {
     return buildResult(rep, {
       outcome,
       summary: `#${rep.pr} was already merged.`,
-      runDir: ctx.runDir,
       extra: { already_merged: true }
     });
   }
@@ -969,7 +942,6 @@ export async function cmdMerge(ctx, target, options = {}) {
     return buildResult(rep, {
       outcome: "queued",
       summary: `#${rep.pr} is already ${rep.policy.in_merge_queue ? "in the merge queue" : "set to auto-merge"}.`,
-      runDir: ctx.runDir,
       extra: { already_queued: true }
     });
   }
@@ -992,7 +964,6 @@ export async function cmdMerge(ctx, target, options = {}) {
     return buildResult(rep, {
       outcome,
       summary: summaryFor(rep, outcome),
-      runDir: ctx.runDir,
       decision
     });
   }
@@ -1038,25 +1009,9 @@ export async function cmdMerge(ctx, target, options = {}) {
   } else {
     cleanup.remote_branch = "pending (GitHub merges later)";
   }
-  if (ctx.runDir) {
-    appendEvent(
-      ctx.runDir,
-      "merge.completed",
-      {
-        pr: rep.pr,
-        url: rep.url,
-        outcome,
-        method: rep.method.method,
-        head: rep.head,
-        branch_cleanup: cleanup.remote_branch
-      },
-      ctx.env
-    );
-  }
   return buildResult(rep, {
     outcome,
     summary: summaryFor(rep, outcome),
-    runDir: ctx.runDir,
     decision,
     cleanup
   });
@@ -1092,7 +1047,7 @@ Options:
   --poll-seconds <n>      check --wait interval (default 30)
   --dry-run               merge: evaluate only, never merge
   --halt <reason>         merge: record a Halt and report halted, never merge
-  --run-dir <path>        Run directory: halt signals, decisions and merge events
+  --run-dir <path>        Run directory: halt signals and decisions
   --project-dir <dir>     Repository root (default: nearest git root)
 
 Exit codes: check and method 0 when they ran; merge exits with the contract code of its

@@ -132,7 +132,7 @@ Work in <cwd>. You are a subagent: never ask questions (interactive mode off); w
 End with the result line printed by runs.mjs result, copied exactly, as your final line.
 ```
 
-`<plugin-root>` is the value of `${CLAUDE_PLUGIN_ROOT}` in this session (`echo "${CLAUDE_PLUGIN_ROOT}"`). `<arguments>` uses long option names. Every phase skill that takes it also gets `--run-dir <run-dir>`. Pending operator messages go in `<extra context>` as an `## Operator Messages` section.
+`<plugin-root>` is the value of `${CLAUDE_PLUGIN_ROOT}` in this session (`echo "${CLAUDE_PLUGIN_ROOT}"`). `<arguments>` uses long option names. Every phase skill that takes it also gets `--run-dir <run-dir>`. User messages received since the last phase go in `<extra context>` (see User Messages).
 
 Before spawning a phase, record `phase <name> --status started`. After it returns, act on its result status: `done` (or `merged` for the merge) records `phase <name> --status done`. `halted` runs `ship.mjs stop --status halted --reason <summary>` (the phase logged its Halt decision). `awaiting-human` or `failed` runs `ship.mjs stop` with that status, unless Waiting and Open Items says otherwise. A subagent that returns no valid result line counts as `failed` with reason `no result block`.
 
@@ -145,16 +145,16 @@ The milestone builders and verifiers are not phase subagents: this session spawn
 
 ### Interactive Checkpoints
 
-Only in `plan` or `all` mode, standalone and not headless. This session does the asking, logs each answer with `runs.mjs decision` (`source: operator`), and passes it to the next subagent as an operator message:
+Only in `plan` or `all` mode, standalone and not headless. This session does the asking, logs each answer with `runs.mjs decision` (`source: operator`), and passes it to the next subagent in its prompt:
 
 - **After the plan, or after the inline context phase** (`plan`, `all`): approve the plan (title, milestones, risks, open questions) or the approach and the files, or give feedback. Feedback runs the plan again with `--amend`
 - **Before each internal fix** (`all`): the findings by class (`by_class` from the review result, details in `findings_path`). Fix as recommended, or choose for the B items
 - **After each pull request round** (`all`): the round recap (fixed, rejected, deferred). Continue, or stop with the pull request open
 - **Before the merge** (`all`): merge now, or stop with the pull request open
 
-### Operator Messages
+### User Messages
 
-At each phase boundary, read the injected `## Operator Messages` section (first boundary only) and `runs.mjs messages`. Pass the pending messages to the next subagent (or apply them in this session on the inline track), then deliver them with `runs.mjs deliver <id>`. A message that says to stop is `ship.mjs halt --key scope-change` (or `destructive-action` when it names one). A message that changes the plan runs the plan phase again with `--amend` and the message before the next milestone. On the inline track, a message that widens the task is a `design` escalation (see inline.md).
+A message the user sends while the task runs is read at the next phase or milestone boundary. Record it with `runs.mjs notes --append <text> --from operator` (add `--milestone <id>` when it concerns one milestone only): every later builder reads it from `notes.md` at the start of its milestone. Pass it also to the next phase subagent in `<extra context>`, or apply it in this session on the inline track. A message that says to stop is `ship.mjs halt --key scope-change` (or `destructive-action` when it names one). A message that changes the plan runs the plan phase again with `--amend` and the message before the next milestone. On the inline track, a message that widens the task is a `design` escalation (see inline.md).
 
 ## Instructions
 
@@ -164,7 +164,7 @@ At each phase boundary, read the injected `## Operator Messages` section (first 
 4. **Resolve the run**: with `--run-dir`, use it (`runs.mjs create --run-dir <path>` is a no-op on an existing run). Otherwise `runs.mjs create <slug> --title <task title> --workflow esp-ship --repo <owner/name or repo path>`. Resolve the base: `pr.base`, else the repository default branch.
 5. **Triage** (new runs only): run `ship.mjs triage` on the request, with `--plan-mode <mode>` when `-L` or `--plan-mode` was given, and pick the track and the plan source (see [triage.md](references/triage.md)). Done when `ship.mjs triage --record` has logged the choices. With `nothing_to_do`, skip to step 9 with the triage result.
 6. **Initialize**: `ship.mjs init --request <request text> --track <track> --base <base> --project-dir <repo-root>`, with `--plan-source <source>` from triage, `--plan-mode` and `--review-mode` when given, and the long form of each other flag that was given (`--no-pr`, `--no-merge`, `--worktree`, `--max-rounds`, `--interactive`, `--reviewers`). For a resume, run `ship.mjs init --resume` without `--request`. Done when `init` prints the state.
-7. **Loop**: run `ship.mjs next` and act on `action` (see Task State and Phase Map). Before each phase, handle operator messages and the interactive checkpoints. Done when `next` returns `result`.
+7. **Loop**: run `ship.mjs next` and act on `action` (see Task State and Phase Map). Before each phase, handle user messages and the interactive checkpoints. Done when `next` returns `result`.
 8. **Result**: `ship.mjs result` piped into `runs.mjs result ship --run-dir <run-dir>`. Pass `--summary` when the default one does not say enough. Done when it prints the result line.
 9. **Summary and run status**: write `<run-dir>/summary.md` per the summary template (`workflow: esp-ship`, the track in the outcome, `status` is the result status), from the result block and `decisions.jsonl`, naming each skipped phase with its reason (`outputs.skipped_phases`), until `runs.mjs validate` passes on it. Set `runs.mjs update --status` to the result status (`merged`, `done`, `awaiting-human`, `halted`, `failed`).
 10. **Report** (see Output Guidance), ending with the line printed by `runs.mjs result` as the final output line, copied verbatim.
