@@ -4,7 +4,7 @@ The orchestrated track always ends its plan phase with a plan file in plan forma
 
 ## Plan Modes
 
-`--plan` (config `ship.plan_mode`, default `auto`) reaches triage as `ship.mjs triage --plan-mode <mode>` and `init` as `--plan-mode <mode>`. It changes the plan source of a prompt or an issue only. A plan file is reused and a task list or a document is imported in every mode:
+`--plan-mode` (config `ship.plan_mode`, default `auto`) reaches triage as `ship.mjs triage --plan-mode <mode>` and `init` as `--plan-mode <mode>`. It changes the plan source of a prompt or an issue only. A plan file is reused and a task list or a document is imported in every mode:
 
 - **`auto`**: triage judges the track. The orchestrated track generates a plan
 - **`skip`**: no planning model. Triage still judges the track: a small request runs inline, a larger one gets `plan_source: synthesize`

@@ -34,13 +34,13 @@ Arguments: $ARGUMENTS
 
 ## Additional Resources
 
-- For the reviewer's method, finding format and severity scale, see [esp-reviewer.md](../../../agents/esp-reviewer.md)
-- For the finding classes, see [decision-policy.md](../../../references/decision-policy.md)
-- For the reviewer model and effort, see [model-selection.md](../../../references/model-selection.md)
+- For the reviewer's method, finding format and severity scale, see [esp-reviewer.md](../../../agents/esp-reviewer.md): read it in step 7 when the reviewer runs inline
+- For the finding classes, see [decision-policy.md](../../../references/decision-policy.md): read it before classifying findings or for a discovered item
+- For the reviewer model and effort, see [model-selection.md](../../../references/model-selection.md): read it when `defaults.models.reviewer` is not set
 
 ## Core Principles
 
-- Review only the diff. Pre-existing issues outside the changed lines are not findings; a serious one becomes a discovered item
+- Review only the diff. Pre-existing issues outside the changed lines are not findings; a serious one becomes a discovered item (see decision-policy.md)
 - High signal only: the review holds verified findings and rejected candidates, nothing else
 - Read-only and routes nothing: the skill writes only into the run or temporary directory, and the caller decides where the review goes (terminal, PR comment, file, CI log)
 - Run every script with Bash, with the literal `"${CLAUDE_PLUGIN_ROOT}/scripts/..."` path. Counts, result files and the result block always come from `review.mjs` and `runs.mjs`
@@ -108,7 +108,7 @@ In every other mode the review settles nothing: the fixer applies the classes wi
 
 ## Instructions
 
-1. **Parse arguments**: read every option by its short or long name. Resolve the interactive mode (`-i|--interactive`, else `defaults.interactive`, `off` when headless).
+1. **Parse arguments**: read every option by its short or long name, and resolve the interactive mode per its Definition.
 2. **Load configuration** (see Configuration).
 3. **Resolve the target**: run `review.mjs target` with the `--target` value. On exit code 2, report the usage error and stop. If `empty` is true, report that there is nothing to review, end with the result block `{"contract_version":1,"status":"done","summary":"Nothing to review: the diff is empty.","max_risk":"low","outputs":{"findings":0}}` (through `runs.mjs result <step>` with `--run-dir`), and stop.
 4. **Resolve the plan**: `--plan`, else with `--run-dir` the path from `runs.mjs plan` when its version is above 0, else none.

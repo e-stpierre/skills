@@ -519,7 +519,7 @@ describe("triage plan modes", () => {
     assert.equal(out.track, "orchestrated");
     assert.equal(out.track_source, "operator");
     assert.equal(out.plan_source, "generate");
-    assert.match(choice(out, "plan").rationale, /--plan always/);
+    assert.match(choice(out, "plan").rationale, /--plan-mode always/);
     const policy = decide(prompt, {
       planMode: "always",
       planModeSource: "policy"

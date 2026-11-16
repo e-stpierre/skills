@@ -23,6 +23,7 @@ Agent Skills Standard Fields:
   Must not start/end with hyphen or contain consecutive hyphens (--).
 - description (required): max 1024 chars. Describes what the skill does and when to use it.
   Model-invoked: front-load what it is, then one trigger per distinct case. User-invoked: a one-line summary.
+  The skill listing truncates it at 250 chars.
 - license (optional): license name or reference to a bundled license file (e.g., `Apache-2.0`, `LICENSE.txt`).
 - compatibility (optional): max 500 chars. Environment requirements (system packages, network access, etc.).
 - metadata (optional): arbitrary key-value mapping for additional properties (author, version, etc.).
@@ -34,7 +35,7 @@ All optional:
 - disable-model-invocation: set `true` to prevent Claude from auto-loading. Use for side-effect skills. Default: false.
 - user-invocable: set `false` to hide from / menu. Use for background knowledge. Default: true.
 - model: model to use when this skill is active.
-- effort: effort level when active. Overrides session level. Options: low, medium, high, max.
+- effort: effort level when active. Overrides session level. Options: low, medium, high, xhigh, max.
 - context: set to `fork` to run in a forked subagent context (no conversation history).
 - agent: which subagent type to use when `context: fork` is set.
 - hooks: hooks scoped to this skill's lifecycle.
@@ -74,6 +75,7 @@ OPTIONAL SECTIONS (insert in order shown):
 - Templates - After Output Guidance, for structured output templates
 
 SECTION ORDER MUST BE RESPECTED - Follow the order defined above.
+Drop the "(optional)" marker from the heading of each optional section you keep.
 
 VALIDATION RULES:
 - Arguments section and argument-hint frontmatter are REQUIRED only when the skill takes arguments
@@ -116,7 +118,7 @@ Instructions:
 - Replace {{argument_definitions}} with a bullet-point list defining each argument
 - Format: **`-t|--type <type>`** (required): Description, with the valid values
 - Format: **`[-b|--base <branch>]`** (optional): Description. Defaults to `value`.
-- Format: **`[-w|--draft]`** (optional): What the flag turns on
+- Format: **`[-D|--draft]`** (optional): What the flag turns on
 - Format: **`[context]`** (optional): The free text, always last
 - List them in argument-hint order
 - Omit this section entirely if the skill takes no arguments

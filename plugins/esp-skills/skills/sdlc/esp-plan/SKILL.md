@@ -15,8 +15,8 @@ Explore the codebase and write an implementation plan that `esp-ship` and a harn
 
 ### Definitions
 
-- **`[-a|--amend]`** (optional): Amend the latest plan in the run directory instead of writing a new one. `[context]` is then the amendment, as text or a file path. Requires `--run-dir`.
-- **`[-I|--import <path>]`** (optional): Convert a task list (a checkbox progress list plus one heading per package) or a design document into a plan, with no codebase exploration: one milestone per unchecked package, checked packages listed in `## Out of Scope`, the source path in the `source` frontmatter key. Cannot be combined with `--amend`.
+- **`[-a|--amend]`** (optional): Amend the latest plan in the run directory instead of writing a new one. `[context]` is then the amendment, as text or a file path. Requires `--run-dir` and excludes `--import` (step 1).
+- **`[-I|--import <path>]`** (optional): Convert a task list (a checkbox progress list plus one heading per package) or a design document into a plan, with no codebase exploration: one milestone per unchecked package, checked packages listed in `## Out of Scope`, the source path in the `source` frontmatter key.
 - **`[-t|--type <type>]`** (optional): Plan type: `feature`, `bug`, `chore` or `auto`. Defaults to `plan.default_type` (`auto`).
 - **`[-i|--interactive <mode>]`** (optional): When to stop and ask: `off` (never), `plan` or `all` (ask for open choices and approve the plan before finishing). Defaults to `defaults.interactive` (`off`). Headless sessions always use `off`.
 - **`[-d|--run-dir <path>]`** (optional): Run directory owned by a harness or a parent skill. Without it, the skill creates its own run under `runs.root`.
@@ -29,12 +29,10 @@ Arguments: $ARGUMENTS
 
 ## Additional Resources
 
-- For the plan format, the parser and the amendment rules, see [plan-format.md](../../../references/plan-format.md)
-- For feature plans, see [references/feature.md](references/feature.md)
-- For bug fix plans, see [references/bug.md](references/bug.md)
-- For chore plans, see [references/chore.md](references/chore.md)
-- For classifying choices and when to ask, see [decision-policy.md](../../../references/decision-policy.md)
-- For the explorer model, see [model-selection.md](../../../references/model-selection.md)
+- For the plan format, the parser and the amendment rules, see [plan-format.md](../../../references/plan-format.md): read it in step 8, or in step 12 when amending
+- For the plan of each type, see [references/feature.md](references/feature.md), [references/bug.md](references/bug.md) and [references/chore.md](references/chore.md): read the one matching the type in step 8
+- For classifying choices and when to ask, see [decision-policy.md](../../../references/decision-policy.md): read it before asking or deciding (see Asking and Deciding)
+- For the explorer model, see [model-selection.md](../../../references/model-selection.md): read it when `defaults.models.explorer` is not set
 
 ## Core Principles
 
@@ -43,7 +41,7 @@ Arguments: $ARGUMENTS
 - Write plans to the run directory only, never inside the repository, and never commit them
 - Run every script with Bash, with the literal `"${CLAUDE_PLUGIN_ROOT}/scripts/..."` path. `run.json`, `decisions.jsonl` and result files are written by `runs.mjs` only
 - A plan is done only when plan-lint passes
-- Plans carry no time estimates, deadlines or scheduling
+- Plans size the work only as milestones and their complexity, with no time estimates or deadlines
 
 ## Skill-Specific Guidelines
 
@@ -101,7 +99,7 @@ Classify every open choice with the decision policy:
 
 1. **Parse arguments**: read each option by its short or long name (`-a` or `--amend`, `-t` or `--type`, and so on; `--type=<value>` works too) and `[context]`. Fail with a usage message if `--amend` is given without `--run-dir`, or together with `--import`. When `[context]` is an existing file path, read it; when it is an issue URL, fetch it with `gh issue view` if available.
 2. **Load configuration** (see Configuration) and resolve the interactive mode: the option, else `defaults.interactive`, and always `off` in headless sessions.
-3. **Resolve the run directory**: use `--run-dir` when given. Otherwise derive a short title from the task and run `runs.mjs create`, and use the printed `run_dir`.
+3. **Resolve the run directory**: use `--run-dir` when given. Otherwise derive a short title from the task and run `runs.mjs create`, and use the printed `run_dir`. Done when the run directory exists.
 4. **Read operator messages** (see Operator Messages) and apply them before exploring.
 5. **Amend mode** (`--amend`): skip to step 12.
 6. **Import mode** (`--import <path>`): convert the source without exploring the codebase (no Explore subagent), log the import as a decision (`source: policy`, the source path in the rationale), then continue at step 13.

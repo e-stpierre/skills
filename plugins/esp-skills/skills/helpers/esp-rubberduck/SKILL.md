@@ -1,7 +1,7 @@
 ---
 name: esp-rubberduck
 description: Rubber duck discussion that sharpens the user's own thinking. Use to think through a plan, bug, or design decision.
-argument-hint: "<context>"
+argument-hint: "[context]"
 ---
 
 # Rubber Duck
@@ -14,7 +14,7 @@ Help the user think through a plan, bug, architecture decision, or any other con
 
 ### Definitions
 
-- **`<context>`** (required): What the user wants to clarify (plan, bug, architecture decision, etc.): all the free text.
+- **`[context]`** (optional): What the user wants to clarify (plan, bug, architecture decision, etc.): all the free text. Defaults to the topic of the conversation.
 
 ### Values
 
@@ -27,8 +27,8 @@ Arguments: $ARGUMENTS
 
 ## Instructions
 
-1. Pin down, in one sentence, what the user wants to clarify, from the context and the conversation.
-2. When the topic involves code, launch Explore agents to gather the relevant codebase context.
+1. Pin down, in one sentence, what the user wants to clarify, from the context and the conversation. When neither names a topic, ask for it and stop. Done when the sentence names the topic.
+2. When the topic involves code, gather the relevant codebase context read-only, with Explore subagents when the session has them. Done when you can point to the code each question or concern is about.
 3. Respond with one or more of:
    - Clarifying questions that deepen the understanding
    - New ideas and possible improvements
@@ -37,4 +37,4 @@ Arguments: $ARGUMENTS
 
 ## Output Guidance
 
-Conversational text. When several areas are covered, group them under headings for questions, suggestions, and concerns.
+Conversational text. When the reply covers more than one of questions, suggestions and concerns, group it under a heading for each one it covers.

@@ -15,9 +15,9 @@ Create and check out a new branch whose name follows the configured pattern and 
 ### Definitions
 
 - **`[-s|--slug <slug>]`** (optional): Read from `-s` or `--slug`. Defaults to a slug derived from the task in the conversation.
-- **`[-t|--type <type>]`** (optional): Read from `-t` or `--type`. Branch type (the `{category}` of the pattern). Common values: `poc`, `feature`, `fix`, `chore`, `doc`, `refactor`; any value is accepted. Defaults to the type inferred from the work, else `branch.default_category` (`feature`).
-- **`[-g|--issue <id>]`** (optional): Read from `-g` or `--issue`. GitHub issue number of this work. Defaults to an issue referenced in the conversation (`#123`, `issue 123`), else none.
-- **`[-b|--base <branch>]`** (optional): Read from `-b` or `--base`. Branch to create from. Defaults to the current location.
+- **`[-t|--type <type>]`** (optional): Read from `-t` or `--type`. Branch type (the `{category}` of the pattern), one of `branch.categories` or any other value. Defaults to the type inferred from the work, else `branch.default_category` (`feature`).
+- **`[-g|--issue <id>]`** (optional): Read from `-g` or `--issue`. GitHub issue number of this work, without `#`. Defaults to an issue referenced in the conversation (`#123`, `issue 123`), else none.
+- **`[-b|--base <branch>]`** (optional): Read from `-b` or `--base`. Branch to create from. Defaults to the current HEAD.
 
 ### Values
 
@@ -48,7 +48,7 @@ If the command exits with code 1 (invalid config), report its error and stop. If
 ## Instructions
 
 1. Load the `branch` configuration (see Configuration).
-2. Resolve the slug, type, issue and base from the options, filling each missing one per its Definition (pick an inferred type from `branch.categories`).
+2. Resolve the slug, type, issue and base from the options, filling each missing one per its Definition. Done when each has a value or, for the issue and base, is known to be absent.
 3. Build the name: replace `{category}` with the type, `{issue}` with the issue and `{name}` with the slug in `branch.pattern` when an issue is known, else in `branch.pattern_without_issue`.
 4. Create it: with a base, `git checkout -b <name> <base>`; otherwise `git checkout -b <name>`. Done when `git branch --show-current` prints the new name.
 5. Report the created branch name.

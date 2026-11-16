@@ -8,7 +8,7 @@ argument-hint: "<question>"
 
 ## Overview
 
-Answer a question with a clear, concise response. The skill is read-only: it gathers context when the answer needs it and leaves the codebase, the files and the environment exactly as they were.
+Answer a question directly. The skill is read-only: it gathers context when the answer needs it and leaves the codebase, the files and the environment exactly as they were.
 
 ## Arguments
 
@@ -28,7 +28,7 @@ Arguments: $ARGUMENTS
 ## Instructions
 
 1. When the answer depends on the code, gather context read-only until every claim in the answer is backed by a file or line you read.
-2. Answer the question.
+2. Answer the question. Done when the first sentence answers it and each claim about the code names the file it comes from.
 
 ## Output Guidance
 

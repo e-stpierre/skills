@@ -28,13 +28,7 @@ Arguments: $ARGUMENTS
 
 ## Additional Resources
 
-Load the one reference that matches `--type`:
-
-- For bug analysis, see [references/bug.md](references/bug.md)
-- For debt analysis, see [references/debt.md](references/debt.md)
-- For doc analysis, see [references/doc.md](references/doc.md)
-- For security analysis, see [references/security.md](references/security.md)
-- For style analysis, see [references/style.md](references/style.md)
+- For the method and report template of each type, see [bug.md](references/bug.md), [debt.md](references/debt.md), [doc.md](references/doc.md), [security.md](references/security.md) and [style.md](references/style.md): read only the one matching `--type`
 
 ## Core Principles
 
@@ -87,7 +81,7 @@ In the instructions below, `{output_dir}` is the resolved `analyze.output_dir`.
 
 6. **Categorize findings**: rate each one with the severity guidelines of the type reference. Done when every kept finding has exactly one severity.
 
-7. **Generate the report**: save it to `{output_dir}/{type}.md` with the report template of the type reference: the date in the header, findings grouped by severity, each with its location and fix. Done when every kept finding appears under its severity with every template field filled, and the summary counts match the findings.
+7. **Generate the report**: save it to `{output_dir}/{type}.md`, creating `{output_dir}` when it is missing and replacing an earlier report of the same type, with the report template of the type reference: the date in the header, findings grouped by severity, each with its location and fix. Done when every kept finding appears under its severity with every template field filled, and the summary counts match the findings.
 
 8. **Present results**: the severity counts and the report path (see Output Guidance).
 

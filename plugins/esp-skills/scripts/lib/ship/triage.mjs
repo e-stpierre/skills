@@ -247,12 +247,12 @@ export function decide(detected, input = {}) {
   // prompt or issue
   const modeRationale =
     planModeSource === "operator"
-      ? `--plan ${planMode}`
+      ? `--plan-mode ${planMode}`
       : `ship.plan_mode ${planMode}`;
   if (planMode === "always") {
     if (operatorTrack === "inline")
       throw new ShipError(
-        "--plan always generates a plan, which runs on the orchestrated track: drop --track inline",
+        "--plan-mode always generates a plan, which runs on the orchestrated track: drop --track inline",
         2
       );
     result.track = "orchestrated";

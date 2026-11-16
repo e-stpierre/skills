@@ -17,8 +17,7 @@ Keep every markdown file the agent creates, edits, or reviews within the project
 
 ## Core Principles
 
-- The formatter settles spacing, blank lines around headings, table alignment and trailing whitespace. In a project without one, write them that way: a blank line after every heading, table pipes aligned
-- Every rule under Skill-Specific Guidelines, and any other lint rule the formatter cannot fix, holds in the file as written
+- The formatter settles spacing, blank lines around headings, table alignment and trailing whitespace; every other rule below holds in the file as written. In a project without a formatter, write those too: a blank line after every heading, table pipes aligned
 
 ## Skill-Specific Guidelines
 
@@ -208,15 +207,15 @@ A section title is a heading, which provides semantic structure and navigation; 
 - Start with a top-level heading (`# Title`)
 - Use hierarchical headings (`##`, `###`, `####`) for sections
 - Separate sections with a single blank line
-- Use a table only for a true grid: several attributes compared across many rows. In skill and agent files, prefer a `**Key**: effect` list (see esp-create-skill)
-- Place references and links at the end of the document
+- Use a table only for a true grid: several attributes compared across many rows. Skill and agent files follow the table rule of esp-create-skill
+- Place references and links at the end of the document, except in skill and agent files, whose template places them
 
 ## Instructions
 
 1. **Creating a file**: read [example.md](references/example.md), then write the file following the document structure and every rule above.
 2. **Editing a file**: read the file first, then apply the changes, preserving its existing style and every rule above.
-3. **Reviewing a file**: run the formatter on the file first (step 4), then check the file against every rule above and fix or flag each violation.
-4. **Format**: after creating or editing, run the project's formatter on the file (e.g., `pnpm exec prettier --write <file>`). Done when the formatter has run and no rule above is violated in the file.
+3. **Reviewing a file**: check the file against every rule above and fix or flag each violation.
+4. **Format**: in every mode, run the project's formatter on the file (e.g., `pnpm exec prettier --write <file>`). Done when the formatter has run and no rule above is violated in the file.
 
 ## Output Guidance
 
