@@ -1,16 +1,16 @@
 #!/usr/bin/env node
-// esp-skills run directories (harness contract v1, owned by agentic-forge).
+// esp-skills run directories (layout: references/run-directory.md).
 //
-// Creates and updates contract-compliant run directories so no skill writes
-// the JSON layouts by hand. Every artifact is validated against the schemas in
-// references/contract/v1/ before it is written.
+// Creates and updates run directories so no skill writes the JSON layouts by
+// hand. run.json and every decision are checked (lib/run-files.mjs) before
+// they are written.
 //
 // Run location: --run-dir <path> when given (a parent skill owns the run),
 // otherwise <runs.root>/<YYYY-MM-DD>-<slug> from the resolved config.
 // Appends to *.jsonl files and run.json updates hold `<file>.lock`.
 // ESP_RUNS_NOW (ISO date-time) fixes the clock, for tests.
 //
-// Exit codes: 0 success, 1 invalid artifact or failed operation, 2 usage error.
+// Exit codes: 0 success, 1 invalid file or failed operation, 2 usage error.
 
 import {
   appendFileSync,
@@ -25,15 +25,10 @@ import {
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { expandHome, loadConfig } from "./config.mjs";
-import {
-  CONTRACT_VERSION,
-  RISK_ORDER,
-  TERMINAL_RUN_STATUSES,
-  maxRisk,
-  parseFrontmatter,
-  validateArtifact
-} from "./lib/contract.mjs";
+import { parseFrontmatter } from "./lib/frontmatter.mjs";
 import { withLock } from "./lib/lock.mjs";
+import { RISK_ORDER, maxRisk } from "./lib/risk.mjs";
+import { CHECKS, TERMINAL_RUN_STATUSES } from "./lib/run-files.mjs";
 import {
   ATTRIBUTION,
   BODY_SECTIONS,
@@ -114,13 +109,11 @@ function writeJsonAtomic(path, data) {
   renameSync(tmp, path);
 }
 
-function assertArtifact(artifact, value, source) {
-  const result = validateArtifact(artifact, value);
-  if (!result.valid) {
-    const lines = result.errors.map((e) => `  ${e.path}: ${e.message}`);
-    throw new RunsError(
-      `Invalid ${artifact} (${source}):\n${lines.join("\n")}`
-    );
+function assertValid(kind, value, source) {
+  const errors = CHECKS[kind](value);
+  if (errors.length > 0) {
+    const lines = errors.map((e) => `  ${e.path}: ${e.message}`);
+    throw new RunsError(`Invalid ${kind} (${source}):\n${lines.join("\n")}`);
   }
 }
 
@@ -141,11 +134,11 @@ function countLines(path) {
  * Append one entry to a jsonl file under its lock. `build(lineNumber)` returns
  * the entry; it receives the 1-based number the new line will have.
  */
-function appendJsonl(path, artifact, build) {
+function appendJsonl(path, kind, build) {
   mkdirSync(dirname(path), { recursive: true });
   return withLock(path, () => {
     const entry = build(countLines(path) + 1);
-    assertArtifact(artifact, entry, path);
+    assertValid(kind, entry, path);
     appendFileSync(path, `${JSON.stringify(entry)}\n`, "utf8");
     return entry;
   });
@@ -220,7 +213,7 @@ export function raiseRunRisk(dir, risk, env) {
     if (next === run.max_risk) return;
     run.max_risk = next;
     run.updated_at = now(env).toISOString();
-    assertArtifact("run", run, path);
+    assertValid("run", run, path);
     writeJsonAtomic(path, run);
   });
 }
@@ -258,7 +251,6 @@ export function cmdCreate(slugArg, options, env = process.env) {
   if (!ID_PATTERN.test(id))
     throw new RunsError(`Invalid run directory name: ${id}`, 2);
   const run = {
-    contract_version: CONTRACT_VERSION,
     id,
     type: options.type ?? "skill"
   };
@@ -272,7 +264,7 @@ export function cmdCreate(slugArg, options, env = process.env) {
     models: {},
     budgets_used: {}
   });
-  assertArtifact("run", run, runPath);
+  assertValid("run", run, runPath);
   mkdirSync(dir, { recursive: true });
   writeJsonAtomic(runPath, run);
   return { run_dir: dir, id, created: true };
@@ -331,7 +323,7 @@ export function cmdUpdate(options, env = process.env) {
         : null;
     }
     next.updated_at = at;
-    assertArtifact("run", next, path);
+    assertValid("run", next, path);
     writeJsonAtomic(path, next);
     return next;
   });
@@ -611,33 +603,34 @@ export function cmdIndex(options, env = process.env) {
 }
 
 // ---------------------------------------------------------------------------
-// Validation and exit codes
+// File checks
 // ---------------------------------------------------------------------------
 
-const JSONL_ARTIFACTS = { "decisions.jsonl": "decision" };
-
-/** Guess the artifact of a contract file from its name and location. */
-export function artifactFor(file) {
+/** The kind of a run file from its name: run.json, decisions.jsonl or summary.md. */
+export function kindFor(file) {
   const name = basename(file);
   if (name === "run.json") return "run";
-  if (name === "summary.md") return "summary-frontmatter";
-  if (JSONL_ARTIFACTS[name]) return JSONL_ARTIFACTS[name];
+  if (name === "decisions.jsonl") return "decision";
+  if (name === "summary.md") return "summary";
   return null;
 }
 
-export function validateFile(file, schemaName) {
+/** Run the writers' field checks on a run.json, decisions.jsonl or summary.md. */
+export function checkFile(file, kindName) {
   const path = resolve(file);
   if (!existsSync(path)) throw new RunsError(`File not found: ${path}`);
-  const artifact = schemaName ?? artifactFor(path);
-  if (!artifact)
+  const kind = kindName ?? kindFor(path);
+  if (!Object.hasOwn(CHECKS, kind ?? ""))
     throw new RunsError(
-      `Cannot infer the artifact of ${path}; pass --schema <name>`,
+      kindName
+        ? `Unknown --kind ${kindName}; expected run, decision or summary`
+        : `Cannot infer the kind of ${path}; pass --kind run|decision|summary`,
       2
     );
   const errors = [];
   const text = readFileSync(path, "utf8").replace(/^\uFEFF/, "");
   const check = (value, line) => {
-    for (const e of validateArtifact(artifact, value).errors) {
+    for (const e of CHECKS[kind](value)) {
       errors.push(line ? { line, ...e } : e);
     }
   };
@@ -669,7 +662,7 @@ export function validateFile(file, schemaName) {
       }
       check(value, line);
     }
-  } else if (artifact === "summary-frontmatter" && path.endsWith(".md")) {
+  } else if (kind === "summary" && path.endsWith(".md")) {
     let data;
     try {
       data = parseFrontmatter(text);
@@ -686,7 +679,7 @@ export function validateFile(file, schemaName) {
       errors.push({ path: "(root)", message: `invalid JSON (${err.message})` });
     }
   }
-  return { file: path, artifact, valid: errors.length === 0, errors };
+  return { file: path, kind, valid: errors.length === 0, errors };
 }
 
 // ---------------------------------------------------------------------------
@@ -740,10 +733,11 @@ Commands:
                          (one line, under the lock), or --show [--milestone <id>] (includes run-wide lines)
   index                  List runs (--root, --since, --until, --last 7d, --repo, --status, --risk, --limit)
   pr-body                Pull request body from the run artifacts (--summary <text>, --out <file>)
-  validate <file>        Validate a contract file (--schema <artifact> when it cannot be inferred)
+  check <file>           Check a run.json, decisions.jsonl or summary.md with the writers' field
+                         checks (--kind run|decision|summary when the file name does not tell)
 
 Options:
-  --run-dir <path>          Run directory (required by every command except create, index, validate)
+  --run-dir <path>          Run directory (required by every command except create, index, check)
   --root <dir>              Runs root for create, or a root to index (repeatable)
   --project-dir <dir>       Project root for config resolution
   --help                    Show this help`;
@@ -801,10 +795,13 @@ export function run(argv, env = process.env) {
       return { output: cmdIndex(options, env) };
     case "pr-body":
       return { output: cmdPrBody(options) };
-    case "validate": {
+    case "check": {
       if (!args[0])
-        throw new RunsError("Usage: validate <file> [--schema <artifact>]", 2);
-      const out = validateFile(args[0], options.schema);
+        throw new RunsError(
+          "Usage: check <file> [--kind run|decision|summary]",
+          2
+        );
+      const out = checkFile(args[0], options.kind);
       return { output: out, exitCode: out.valid ? 0 : 1 };
     }
     default:

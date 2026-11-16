@@ -6,7 +6,7 @@
 
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { basename, isAbsolute, join, resolve } from "node:path";
-import { parseFrontmatter } from "../contract.mjs";
+import { parseFrontmatter } from "../frontmatter.mjs";
 import { lintPlan, parseTaskList } from "../../plan.mjs";
 import { appendDecision, latestPlan, now, raiseRunRisk } from "../../runs.mjs";
 import { loadConfig } from "../../config.mjs";

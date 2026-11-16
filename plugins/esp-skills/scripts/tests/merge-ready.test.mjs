@@ -26,7 +26,7 @@ import {
   run,
   waitForChecks
 } from "../merge-ready.mjs";
-import { appendDecision, validateFile } from "../runs.mjs";
+import { appendDecision, checkFile } from "../runs.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const SCRIPT = join(HERE, "..", "merge-ready.mjs");
@@ -468,7 +468,6 @@ describe("merge", () => {
     const client = fakeClient();
     const block = await cmdMerge(ctx(client), "9");
     assert.equal(block.status, "merged");
-    assert.equal("contract_version" in block, false);
     assert.deepEqual(client.calls.merge, [
       { number: 9, method: "squash", head: HEAD, auto: false }
     ]);
@@ -482,7 +481,7 @@ describe("merge", () => {
       readdirSync(runDir).filter((f) => f.endsWith(".jsonl")),
       ["decisions.jsonl"]
     );
-    assert.equal(validateFile(join(runDir, "decisions.jsonl")).valid, true);
+    assert.equal(checkFile(join(runDir, "decisions.jsonl")).valid, true);
   });
 
   test("the branch is kept for forks, with delete_branch false, and left to GitHub when it deletes on merge", async () => {
@@ -524,7 +523,6 @@ describe("merge", () => {
     assert.equal(block.outputs.outcome, "protected");
     assert.match(block.blockers.join(" "), /review/i);
     assert.equal(client.calls.merge.length, 0);
-    assert.equal("contract_version" in block, false);
     const [decision] = jsonl("decisions.jsonl");
     assert.match(decision.decision, /Did not merge #9: protected/);
   });

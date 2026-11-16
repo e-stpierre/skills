@@ -17,7 +17,8 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { basename, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { expandHome, loadConfig } from "./config.mjs";
-import { RISK_ORDER, parseFrontmatter } from "./lib/contract.mjs";
+import { parseFrontmatter } from "./lib/frontmatter.mjs";
+import { RISK_ORDER } from "./lib/risk.mjs";
 import { readStepResults } from "./lib/pr-body.mjs";
 import {
   RunsError,
@@ -249,7 +250,7 @@ export function selectRuns(options, env = process.env) {
  * Track of an esp-ship run from its ship.json: the current track and the
  * tracks it started on (an inline run escalated to orchestrated reports
  * `{ current: "orchestrated", history: ["inline", "orchestrated"] }`). Null
- * for runs without ship.json (runs from before 0.8.0, harness
+ * for runs without ship.json (runs from before 0.8.0, other
  * runs), which keep their recorded workflow names.
  */
 export function readTrack(dir) {

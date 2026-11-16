@@ -48,10 +48,10 @@ Arguments: $ARGUMENTS
   - For the pull request, the review wait, the fix rounds and the merge, see [pr-tail.md](references/pr-tail.md)
   - For the branch, the worktree and the preflight of the tree, see [workspace.md](references/workspace.md)
   - For the gate commands, the scoped checks and the final gates, see [gates.md](references/gates.md)
-- For the classes, the stop conditions and asking under a harness, see [decision-policy.md](../../../references/decision-policy.md): read it before asking or halting
+- For the classes, the stop conditions and asking outside an interactive session, see [decision-policy.md](../../../references/decision-policy.md): read it before asking or halting
 - For the subagent models, see [model-selection.md](../../../references/model-selection.md): read it when `next` gives no model
 - For `summary.md`, see [summary-template.md](../../../references/summary-template.md): read it in step 9
-- For the run directory commands, see [contract-notes.md](../../../references/contract-notes.md): read it when a `runs.mjs` call fails
+- For the run directory commands, see [run-directory.md](../../../references/run-directory.md): read it when a `runs.mjs` call fails
 - For the reply every subagent ends with, see Replies in [decision-policy.md](../../../references/decision-policy.md): read it before acting on a subagent reply
 
 ## Core Principles
@@ -168,7 +168,7 @@ A message the user sends while the task runs is read at the next phase or milest
 6. **Initialize**: `ship.mjs init --request <request text> --track <track> --base <base> --project-dir <repo-root>`, with `--plan-source <source>` from triage, `--plan-mode` and `--review-mode` when given, and the long form of each other flag that was given (`--no-pr`, `--no-merge`, `--worktree`, `--max-rounds`, `--interactive`, `--reviewers`). For a resume, run `ship.mjs init --resume` without `--request`. Done when `init` prints the state.
 7. **Loop**: run `ship.mjs next` and act on `action` (see Task State and Phase Map). Before each phase, handle user messages and the interactive checkpoints. Done when `next` returns `finish`.
 8. **Outcome**: `ship.mjs outcome`. Pass `--summary` when the default one does not say enough. Done when it prints the outcome JSON.
-9. **Summary and run status**: write `<run-dir>/summary.md` per the summary template (`workflow: esp-ship`, the track in the outcome, `status` is the outcome status), from the outcome and `decisions.jsonl`, naming each skipped phase with its reason (`outputs.skipped_phases`), until `runs.mjs validate` passes on it. Set `runs.mjs update --status` to the outcome status (`merged`, `done`, `awaiting-human`, `halted`, `failed`).
+9. **Summary and run status**: write `<run-dir>/summary.md` per the summary template (`workflow: esp-ship`, the track in the outcome, `status` is the outcome status), from the outcome and `decisions.jsonl`, naming each skipped phase with its reason (`outputs.skipped_phases`), until `runs.mjs check` passes on it. Set `runs.mjs update --status` to the outcome status (`merged`, `done`, `awaiting-human`, `halted`, `failed`).
 10. **Report** (see Output Guidance), ending with the reply.
 
 ## Output Guidance

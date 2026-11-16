@@ -321,18 +321,18 @@ node scripts/merge-ready.mjs merge 42 --run-dir <run>
 
 ### Run Directories
 
-Workflow skills record their work in a run directory that follows harness contract v1: `run.json`, `decisions.jsonl`, `ship.json` (the esp-ship state and its step records), `notes.md` (builder facts and operator corrections) and plan versions. Standalone runs go to `<runs.root>/<YYYY-MM-DD>-<slug>`; a parent skill (esp-ship) passes `--run-dir <path>` instead. Skills never write these files by hand: `scripts/runs.mjs` creates, updates, validates and indexes them. The schemas and fixtures are in `references/contract/v1/`, and `references/contract-notes.md` maps each contract requirement to the command that meets it.
+Workflow skills record their work in a run directory: `run.json`, `decisions.jsonl`, `ship.json` (the esp-ship state and its step records), `notes.md` (builder facts and operator corrections) and plan versions. Standalone runs go to `<runs.root>/<YYYY-MM-DD>-<slug>`; a parent skill (esp-ship) passes `--run-dir <path>` instead. Skills never write these files by hand: `scripts/runs.mjs` creates, updates, checks and indexes them. `references/run-directory.md` describes each file, who writes it, its field checks and the append lock.
 
 ```bash
 node scripts/runs.mjs create fix-login-timeout --workflow esp-ship
 node scripts/runs.mjs index --last 7d --status merged,done --risk medium
 node scripts/runs.mjs notes --append "Keep the public API unchanged" --from operator --run-dir ~/.esp-skills/runs/2026-11-10-fix-login-timeout
-node scripts/runs.mjs validate ~/.esp-skills/runs/2026-11-10-fix-login-timeout/decisions.jsonl
+node scripts/runs.mjs check ~/.esp-skills/runs/2026-11-10-fix-login-timeout/decisions.jsonl
 ```
 
 ### Recaps
 
-`esp-recap` reads the run directories of every root in `recap.roots` and `runs.root`, standalone and harness runs alike, and cites a source for each statement. `scripts/recap.mjs` selects the runs through the `runs.mjs index` filters and returns compact JSON: `collect` (one digest per run, and fan-out batches above `recap.fan_out_threshold`), `show` (one run in full), `risks` (high-risk decisions, critical findings, stopped runs) and `sources` (Q&A candidates in the order decisions -> summaries -> git log and blame -> PR descriptions and comments):
+`esp-recap` reads the run directories of every root in `recap.roots` and `runs.root`, and cites a source for each statement. `scripts/recap.mjs` selects the runs through the `runs.mjs index` filters and returns compact JSON: `collect` (one digest per run, and fan-out batches above `recap.fan_out_threshold`), `show` (one run in full), `risks` (high-risk decisions, critical findings, stopped runs) and `sources` (Q&A candidates in the order decisions -> summaries -> git log and blame -> PR descriptions and comments):
 
 ```bash
 node scripts/recap.mjs collect --last 7d --repo api

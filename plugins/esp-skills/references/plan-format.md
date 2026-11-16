@@ -1,6 +1,6 @@
 # Plan Format
 
-Plan format 1 is the machine-consumable plan that `esp-plan` writes and that `esp-ship` and a harness read. A plan is a markdown file with flat YAML frontmatter and a fixed section and milestone layout, so `scripts/plan.mjs` can parse it into JSON without a model.
+Plan format 1 is the machine-consumable plan that `esp-plan` writes and that `esp-ship` reads. A plan is a markdown file with flat YAML frontmatter and a fixed section and milestone layout, so `scripts/plan.mjs` can parse it into JSON without a model.
 
 ```bash
 node "${CLAUDE_PLUGIN_ROOT}/scripts/plan.mjs" parse <run-dir>/plan.md   # plan as JSON

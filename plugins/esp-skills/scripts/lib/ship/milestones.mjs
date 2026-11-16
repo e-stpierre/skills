@@ -6,7 +6,7 @@
 // `ship.mjs milestone <cmd>` between builder and verifier spawns, so no
 // SKILL.md writes state.json by hand.
 //
-// state.json is not a contract artifact: the contract only reserves its name.
+// state.json belongs to esp-ship (see references/run-directory.md).
 // Its `milestones.<id>.status` values are read by plan.mjs (`completedFromState`)
 // and by esp-plan --amend, so `done` must keep its meaning.
 

@@ -29,7 +29,7 @@ import {
   quoteReply,
   summarizeChecks
 } from "../fix-review.mjs";
-import { validateFile } from "../runs.mjs";
+import { checkFile } from "../runs.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const SCRIPT = join(HERE, "..", "fix-review.mjs");
@@ -392,7 +392,7 @@ describe("fetch, record and rounds", () => {
     assert.equal(d["x-esp-class"], "Reject");
     assert.equal(d.rationale, "Reject: the name matches AGENTS.md");
     assert.deepEqual(d.refs, [`${URL}#discussion_r103`]);
-    assert.equal(validateFile(join(runDir, "decisions.jsonl")).valid, true);
+    assert.equal(checkFile(join(runDir, "decisions.jsonl")).valid, true);
     assert.equal(state().handled["inline:103"].github.reply, true);
   });
 
@@ -733,7 +733,6 @@ describe("outcome", () => {
     ]);
     assert.equal(block.outputs.fixed, 1);
     assert.equal(block.outputs.rejected, 1);
-    assert.equal("contract_version" in block, false);
   });
 
   test("open items end awaiting-human, with each open item as a blocker", () => {
@@ -744,7 +743,6 @@ describe("outcome", () => {
     assert.equal(block.status, "awaiting-human");
     assert.equal(block.blockers.length, 1);
     assert.match(block.blockers[0], /Pick a name/);
-    assert.equal("contract_version" in block, false);
   });
 
   test("exhausted rounds with items left halt on budget, else add a follow-up", () => {

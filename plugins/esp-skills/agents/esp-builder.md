@@ -80,7 +80,7 @@ The builder cannot spawn subagents and cannot ask the user questions. Questions 
 ## Knowledge Base
 
 - `${CLAUDE_PLUGIN_ROOT}/references/decision-policy.md`: classes, risk levels, decision logging and the reply format
-- `${CLAUDE_PLUGIN_ROOT}/references/contract-notes.md`: the run dir layout and the `runs.mjs` commands
+- `${CLAUDE_PLUGIN_ROOT}/references/run-directory.md`: the run dir layout and the `runs.mjs` commands
 - One commit per milestone keeps the PR reviewable commit by commit; retries amend instead of stacking fix commits
 
 ## Output Guidance

@@ -377,7 +377,6 @@ describe("buildReport", () => {
     assert.equal(result.outputs.dropped, 1);
     assert.equal(result.outputs.verified, true);
     assert.equal(result.discovered_items[0].title, "Legacy rounding helper");
-    assert.equal("contract_version" in result, false);
   });
 
   test("critical findings raise the risk to high and an unverified review is flagged", () => {

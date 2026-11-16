@@ -322,7 +322,6 @@ describe("waitForReview", () => {
       ...clock
     });
     assert.equal(result.status, "done");
-    assert.equal("contract_version" in result, false);
     assert.deepEqual(clock.sleeps, [60_000, 90_000, 135_000]);
     assert.deepEqual(result.outputs.completed, ["codex"]);
     assert.equal(result.outputs.polls, 4);
@@ -364,7 +363,6 @@ describe("waitForReview", () => {
     assert.equal(result.status, "awaiting-human");
     assert.match(result.summary, /Timed out after 5 min/);
     assert.match(result.blockers[0], /wait again/);
-    assert.equal("contract_version" in result, false);
     assert.deepEqual(result.outputs.pending, ["codex"]);
     const waited = clock.sleeps.reduce((a, b) => a + b, 0);
     assert.equal(waited, 5 * 60_000);
@@ -612,7 +610,6 @@ describe("waiting for checks", () => {
     assert.deepEqual(result.outputs.checks.failing, ["ci"]);
     assert.deepEqual(result.outputs.checks.passing, ["lint"]);
     assert.match(result.summary, /1 failing \(ci\)/);
-    assert.equal("contract_version" in result, false);
   });
 
   test("an empty check list is pending inside the grace period", async () => {
@@ -745,7 +742,6 @@ if (args[0] === "pr" && args[1] === "view") {
     assert.equal(res.status, 0, res.stderr);
     const result = JSON.parse(res.stdout.trim().split("\n").pop());
     assert.equal(result.status, "done");
-    assert.equal("contract_version" in result, false);
   });
 
   test("exits 0 with awaiting-human while still pending with --once", () => {

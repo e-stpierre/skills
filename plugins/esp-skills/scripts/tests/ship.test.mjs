@@ -1369,7 +1369,6 @@ describe("outcome", () => {
     const r = ship("outcome");
     assert.equal(r.code, 0, r.stderr);
     const block = r.json();
-    assert.equal(block.contract_version, undefined);
     assert.equal(block.status, "done");
     assert.equal(block.commit, c);
     assert.equal(block.pr, PR);

@@ -31,7 +31,7 @@ import {
   loadConfig
 } from "./config.mjs";
 import { checkBucket, fetchChecks } from "./lib/checks.mjs";
-import { maxRisk } from "./lib/contract.mjs";
+import { maxRisk } from "./lib/risk.mjs";
 import { withLock } from "./lib/lock.mjs";
 import { appendDecision, now } from "./runs.mjs";
 import {

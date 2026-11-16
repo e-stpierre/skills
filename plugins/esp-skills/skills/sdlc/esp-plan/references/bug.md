@@ -30,7 +30,7 @@ Common root causes:
 - **Logic errors**: incorrect conditions, off-by-one errors, wrong operators
 - **State management**: race conditions, stale data, incorrect state transitions
 - **Error handling**: unhandled exceptions, silent failures, missing edge cases
-- **Integration issues**: API contract violations, data format mismatches
+- **Integration issues**: API signature mismatches, data format mismatches
 - **Configuration**: environment-specific issues, missing settings
 - **Resource management**: memory leaks, connection exhaustion, deadlocks
 

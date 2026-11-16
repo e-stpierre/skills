@@ -16,7 +16,7 @@ const NOW = "2026-11-10T12:00:00.000Z";
 let tmp;
 let home;
 let standalone;
-let harness;
+let secondRoot;
 
 function cli(script, args, { now = NOW, project = tmp } = {}) {
   const r = spawnSync(
@@ -47,7 +47,7 @@ function runs(args, now) {
     : null;
 }
 
-/** A run built with the contract tooling, like esp-go and esp-go-light leave it. */
+/** A run built with the runs.mjs tooling, like esp-go and esp-go-light leave it. */
 function makeRun(
   root,
   {
@@ -231,7 +231,7 @@ function seed() {
     })
   });
   // An esp-go-light run that escalated and was taken over by esp-go.
-  makeRun(harness, {
+  makeRun(secondRoot, {
     date: "2026-11-09",
     slug: "fix-typo",
     title: "Fix login typo",
@@ -265,7 +265,7 @@ beforeEach(() => {
   tmp = mkdtempSync(join(tmpdir(), "esp-recap-"));
   home = join(tmp, "home");
   standalone = join(tmp, "runs");
-  harness = join(tmp, "af-runs");
+  secondRoot = join(tmp, "other-runs");
   mkdirSync(home, { recursive: true });
   writeFileSync(
     join(home, "config.json"),
@@ -273,7 +273,7 @@ beforeEach(() => {
       version: 1,
       runs: { root: standalone },
       recap: {
-        roots: [standalone, harness],
+        roots: [standalone, secondRoot],
         default_range_days: 7,
         fan_out_threshold: 5
       }

@@ -8,11 +8,11 @@ The format of `summary.md`, written once per run by the skill that owns the run 
 - Keep every section. When a section has nothing to report, write `None.` so readers know it was checked.
 - Reference decisions by ID (`D003`), milestones by ID (`M2`), and plan amendments by version (`plan.v2.md`).
 - The summary answers "what happened and what should I look at", not "how the work was done".
-- Validate after writing: `node "${CLAUDE_PLUGIN_ROOT}/scripts/runs.mjs" validate <run-dir>/summary.md`.
+- Check after writing: `node "${CLAUDE_PLUGIN_ROOT}/scripts/runs.mjs" check <run-dir>/summary.md`.
 
 ## Frontmatter
 
-Values are flat scalars (no lists or nested objects), validated by `contract/v1/summary-frontmatter.schema.json`.
+Values are flat scalars (no lists or nested objects), checked by `runs.mjs check`.
 
 | Field               | Required | Value                                                                             |
 | ------------------- | -------- | --------------------------------------------------------------------------------- |

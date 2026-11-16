@@ -12,7 +12,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, test } from "node:test";
 import { fileURLToPath } from "node:url";
-import { validateArtifact } from "../lib/contract.mjs";
+import { checkDecision } from "../lib/run-files.mjs";
 import { decide, detectRequest } from "../lib/ship/triage.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -426,8 +426,7 @@ describe("ship.mjs triage", () => {
         ["triage", "policy", "Orchestrated track"]
       ]
     );
-    for (const d of logged)
-      assert.deepEqual(validateArtifact("decision", d).errors, []);
+    for (const d of logged) assert.deepEqual(checkDecision(d), []);
     assert.deepEqual(block.outputs.decisions, ["D001", "D002"]);
 
     const again = triage("--request", path, "--run-dir", runDir, "--record");

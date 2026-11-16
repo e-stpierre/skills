@@ -1,6 +1,6 @@
 ---
 name: esp-recap
-description: Sourced recap of past esp-skills and harness runs. Use to summarize what runs did, to report their risky decisions and critical findings, or to answer why a past run did something.
+description: Sourced recap of past esp-skills runs. Use to summarize what runs did, to report their risky decisions and critical findings, or to answer why a past run did something.
 argument-hint: "[-k|--risks] [-a|--all] [-s|--since <date>] [-e|--until <date>] [-l|--last <span>] [-g|--repo <name>] [-t|--status <status>...] [-x|--run-risk <level>] [context]"
 ---
 
@@ -8,7 +8,7 @@ argument-hint: "[-k|--risks] [-a|--all] [-s|--since <date>] [-e|--until <date>] 
 
 ## Overview
 
-Tell the user what happened across their runs, what was risky, or why a decision was made, with a source for every statement. The skill reads the run directories (`run.json`, `summary.md`, `decisions.jsonl`, the step records of `ship.json`, review findings) that `esp-ship` and a harness leave behind, older `esp-go`, `esp-go-light` and `esp-build` runs included, under every root in `recap.roots`. It has three modes: recap (the default), risk report (`--risks`), and Q&A when `[context]` is a question. `scripts/recap.mjs` selects the runs and returns compact JSON with the path of each artifact, so the skill reads only what it needs.
+Tell the user what happened across their runs, what was risky, or why a decision was made, with a source for every statement. The skill reads the run directories (`run.json`, `summary.md`, `decisions.jsonl`, the step records of `ship.json`, review findings) that `esp-ship` and the other workflow skills leave behind, older `esp-go`, `esp-go-light` and `esp-build` runs included, under every root in `recap.roots`. It has three modes: recap (the default), risk report (`--risks`), and Q&A when `[context]` is a question. `scripts/recap.mjs` selects the runs and returns compact JSON with the path of each artifact, so the skill reads only what it needs.
 
 ## Arguments
 
@@ -30,7 +30,7 @@ Arguments: $ARGUMENTS
 
 ## Additional Resources
 
-- For the run directory layout and the artifacts, see [contract-notes.md](../../../references/contract-notes.md): read it when a Q&A answer needs a file the script output does not cover
+- For the run directory layout and the artifacts, see [run-directory.md](../../../references/run-directory.md): read it when a Q&A answer needs a file the script output does not cover
 - For `summary.md`, see [summary-template.md](../../../references/summary-template.md): read it when quoting or explaining a run summary
 - For decision classes and risk levels, see [decision-policy.md](../../../references/decision-policy.md): read it when explaining a class or a risk level
 
