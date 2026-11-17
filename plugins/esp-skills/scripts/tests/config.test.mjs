@@ -180,6 +180,20 @@ describe("schema and defaults", () => {
     );
   });
 
+  test("review.second_opinion defaults to none and accepts only codex", () => {
+    const { review } = readJson(DEFAULTS_PATH);
+    assert.equal(review.second_opinion, "none");
+    const schema = readJson(SCHEMA_PATH);
+    assert.deepEqual(
+      validate(schema, { review: { second_opinion: "codex" } }).errors,
+      []
+    );
+    assert.notDeepEqual(
+      validate(schema, { review: { second_opinion: "gemini" } }).errors,
+      []
+    );
+  });
+
   test("the replaced sections are gone and await-review is not a ship phase", () => {
     const schema = readJson(SCHEMA_PATH);
     for (const key of ["go", "go-light", "build", "await-review"])

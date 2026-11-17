@@ -16,12 +16,16 @@ import {
   classifyTarget,
   cmdParse,
   cmdTarget,
+  dedupeFindings,
   diffFiles,
   nextRound,
+  parseLocation,
   parseReview,
   renderReview,
-  ReviewError
+  ReviewError,
+  sameLocation
 } from "../review.mjs";
+import { cmdReview } from "../codex.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REVIEW = join(HERE, "..", "review.mjs");
@@ -490,5 +494,225 @@ describe("renderReview and the parse command", () => {
       encoding: "utf8"
     });
     assert.equal(usage.status, 2);
+  });
+});
+
+describe("Codex second opinion", () => {
+  let dir;
+  let repo;
+  const FAKE = join(HERE, "helpers", "fake-codex.mjs");
+  const CODEX_REPLY = {
+    summary: "Two issues",
+    findings: [
+      {
+        severity: "high",
+        dimension: "correctness",
+        class: "A",
+        file: "src/math.js",
+        line: 5,
+        title: "Off-by-one in sum",
+        evidence: "the loop stops one element early",
+        fix: "loop to xs.length",
+        options: null,
+        recommended: null
+      },
+      {
+        severity: "medium",
+        dimension: "security",
+        class: "A",
+        file: "src/io.js",
+        line: 3,
+        title: "Path traversal in readUser",
+        evidence: "the name is joined unchecked",
+        fix: "reject names with a separator",
+        options: null,
+        recommended: null
+      }
+    ]
+  };
+  // The reviewer verified both Codex candidates: C1 repeats F2 at
+  // src/math.js:4-6 and keeps its Source line; C2 is new.
+  const MERGED_MD = REVIEW_MD.replace(
+    "#### Rejected Candidates",
+    `#### F4 - high - correctness - A
+
+\`src/math.js:5\`: Off-by-one in sum.
+
+- Evidence: the loop stops one element early
+- Fix: loop to xs.length
+- Source: codex
+
+#### F5 - medium - security - A
+
+\`src/io.js:3\`: Path traversal in readUser.
+
+- Evidence: the name is joined unchecked
+- Fix: reject names with a separator
+- Source: codex
+
+#### Rejected Candidates`
+  );
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), "esp-review-codex-"));
+    repo = join(dir, "repo");
+    for (const args of [
+      ["init", "-q", "-b", "main", repo],
+      ["-C", repo, "config", "user.email", "t@example.com"],
+      ["-C", repo, "config", "user.name", "T"]
+    ])
+      assert.equal(spawnSync("git", args).status, 0);
+    writeFileSync(join(repo, "a.js"), "export const a = 1;\n");
+    spawnSync("git", ["-C", repo, "add", "."]);
+    spawnSync("git", ["-C", repo, "commit", "-q", "-m", "init"]);
+    writeFileSync(join(repo, "a.js"), "export const a = 2;\n");
+  });
+  afterEach(() => rmSync(dir, { recursive: true, force: true }));
+
+  /** Run codex.mjs review on the fake Codex and save its JSON like the skill. */
+  async function codexReview(exec) {
+    const scenario = join(dir, "scenario.json");
+    writeFileSync(scenario, JSON.stringify({ exec }));
+    const env = {
+      ...process.env,
+      ESP_CODEX_CMD: JSON.stringify([process.execPath, FAKE]),
+      ESP_FAKE_CODEX: scenario
+    };
+    const result = await cmdReview(
+      "",
+      { cwd: repo, out: join(dir, "review-1.codex.md") },
+      env
+    );
+    const path = join(dir, "review-1.codex.json");
+    writeFileSync(path, JSON.stringify(result));
+    return { result, path };
+  }
+
+  test("locations match on the same file and overlapping lines", () => {
+    assert.deepEqual(parseLocation("./src\\a.js:4-6"), {
+      file: "src/a.js",
+      start: 4,
+      end: 6
+    });
+    assert.ok(sameLocation("src/a.js:4-6", "src/a.js:5"));
+    assert.ok(sameLocation("src/a.js", "src/a.js"));
+    assert.ok(!sameLocation("src/a.js:4-6", "src/a.js:7"));
+    assert.ok(!sameLocation("src/a.js:4", "src/b.js:4"));
+    assert.ok(!sameLocation("src/a.js", "src/a.js:4"));
+  });
+
+  test("only second-opinion findings are dropped as duplicates", () => {
+    const parsed = parseReview(MERGED_MD);
+    assert.equal(parsed.findings.find((f) => f.id === "F4").source, "codex");
+    assert.equal("source" in parsed.findings[0], false);
+    const { kept, duplicates } = dedupeFindings(parsed.findings);
+    assert.deepEqual(
+      kept.map((f) => f.id),
+      ["F1", "F2", "F3", "F5"]
+    );
+    assert.deepEqual(duplicates, [
+      {
+        id: "F4",
+        of: "F2",
+        source: "codex",
+        location: "src/math.js:5",
+        title: "Off-by-one in sum."
+      }
+    ]);
+  });
+
+  test("Codex findings are merged, tagged and deduplicated by file and line", async () => {
+    const { result, path } = await codexReview({
+      last_message: JSON.stringify(CODEX_REPLY)
+    });
+    assert.equal(result.status, "done");
+    assert.equal(result.findings.length, 2);
+    const md = join(dir, "review-1.md");
+    const json = join(dir, "review-1.json");
+    writeFileSync(md, MERGED_MD);
+    const { output } = cmdParse(md, {
+      "min-severity": "medium",
+      "md-out": md,
+      out: json,
+      codex: path
+    });
+    assert.deepEqual(
+      output.findings.map((f) => [f.id, f.source ?? "claude"]),
+      [
+        ["F2", "claude"],
+        ["F1", "claude"],
+        ["F5", "codex"]
+      ]
+    );
+    assert.deepEqual(
+      output.duplicates.map((d) => [d.id, d.of]),
+      [["F4", "F2"]]
+    );
+    assert.deepEqual(output.outcome.outputs.second_opinion, {
+      tool: "codex",
+      status: "done",
+      summary: "Two issues",
+      candidates: 2,
+      kept: 1,
+      duplicates: 1
+    });
+    assert.match(
+      output.outcome.summary,
+      /Codex second opinion: 1 kept, 1 duplicate\.$/
+    );
+    const rendered = readFileSync(md, "utf8");
+    assert.doesNotMatch(rendered, /#### F4/);
+    assert.match(rendered, /#### F5/);
+    assert.match(
+      rendered,
+      /^- `src\/math\.js:5` Off-by-one in sum: duplicate of F2 \(codex\)$/m
+    );
+    const saved = JSON.parse(readFileSync(json, "utf8"));
+    assert.equal(saved.second_opinion.kept, 1);
+    assert.equal(saved.findings.find((f) => f.id === "F5").source, "codex");
+    // Parsing the rewritten review again (esp-review step 9) is stable.
+    const again = cmdParse(md, { "min-severity": "medium", codex: path });
+    assert.deepEqual(
+      again.output.findings.map((f) => f.id),
+      ["F2", "F1", "F5"]
+    );
+    assert.deepEqual(again.output.duplicates, []);
+  });
+
+  test("a Codex failure degrades to a Claude-only review", async () => {
+    const { result, path } = await codexReview({
+      exit_code: 1,
+      stderr: "error: not logged in"
+    });
+    assert.equal(result.status, "failed");
+    const md = join(dir, "review-1.md");
+    writeFileSync(md, REVIEW_MD);
+    const { output } = cmdParse(md, { "min-severity": "medium", codex: path });
+    assert.equal(output.outcome.status, "done");
+    assert.equal(output.findings.length, 2);
+    assert.equal(output.outcome.outputs.second_opinion.status, "failed");
+    assert.equal(output.outcome.outputs.second_opinion.candidates, 0);
+    assert.match(
+      output.outcome.summary,
+      /Codex second opinion failed \(.+\): Claude-only review\.$/
+    );
+    const missing = cmdParse(md, { codex: join(dir, "none.json") });
+    assert.equal(
+      missing.output.outcome.outputs.second_opinion.status,
+      "failed"
+    );
+  });
+
+  test("without --codex the outcome is unchanged", () => {
+    const md = join(dir, "review-1.md");
+    writeFileSync(md, REVIEW_MD);
+    const { output } = cmdParse(md, { "min-severity": "medium" });
+    assert.equal("second_opinion" in output.outcome.outputs, false);
+    assert.equal("duplicates" in output.outcome.outputs, false);
+    assert.equal(
+      output.outcome.summary,
+      "2 findings (1 high, 1 medium), 3 candidates rejected."
+    );
+    assert.ok(output.findings.every((f) => !("source" in f)));
   });
 });

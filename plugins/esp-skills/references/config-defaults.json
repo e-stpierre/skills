@@ -59,7 +59,8 @@
       "plan-conformance"
     ],
     "min_severity": "medium",
-    "verify_findings": true
+    "verify_findings": true,
+    "second_opinion": "none"
   },
   "fix-review": {
     "max_rounds": 3,

@@ -194,7 +194,7 @@
       }
     },
     "review": {
-      "description": "esp-review: review dimensions, minimum severity and finding verification.",
+      "description": "esp-review: review dimensions, minimum severity, finding verification and the second opinion.",
       "type": "object",
       "additionalProperties": false,
       "properties": {
@@ -214,7 +214,11 @@
           "uniqueItems": true
         },
         "min_severity": { "$ref": "#/$defs/severity" },
-        "verify_findings": { "type": "boolean" }
+        "verify_findings": { "type": "boolean" },
+        "second_opinion": {
+          "description": "none: Claude review only. codex: also run codex.mjs review on the same target and verify its findings with the Claude ones.",
+          "enum": ["none", "codex"]
+        }
       }
     },
     "fix-review": {
