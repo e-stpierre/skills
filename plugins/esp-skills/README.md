@@ -20,10 +20,16 @@ Arguments work like a standard CLI: discrete values are named options with a sho
 - `/esp-skills:esp-ship https://github.com/o/r/issues/31` - Ship an issue: triage picks the inline track or a generated plan from its size
 - `/esp-skills:esp-ship ~/.esp-skills/runs/2026-11-10-add-oauth-login/plan.md` - Ship a plan: one verified commit per milestone, internal review, bot review and CI fixes, merge
 - `/esp-skills:esp-ship docs/backlog.md` - Ship the unchecked packages of a task list (checkbox list plus one heading per package), imported as a plan and built in parallel batches where their files do not overlap
+- `/esp-skills:esp-ralph ~/.esp-skills/runs/2026-11-10-add-oauth-login/plan.md` - Build a ralph loop prompt from a plan, review it, and run the loop as a background workflow: one fresh agent and one commit per milestone, steered by a message in the same session
+- `/esp-skills:esp-codex Explain why the export test is flaky` - Delegate a task to Codex in a read-only sandbox and report its answer; `--review` runs a Codex review instead
 - `/esp-skills:esp-recap --last 7d` - Recap the runs of the last week; `--risks` lists high-risk decisions and critical findings, and a question gets an answer with sources
 - `/esp-skills:esp-analyze --type security` - Analyze the codebase for security issues
 - `/esp-skills:esp-qna How does OAuth 2.0 work?` - Get a concise answer without code changes
 - `/esp-skills:esp-config set --key pr.draft true` - Change a configuration default
+
+## Documentation
+
+- **[Cost and Tokens](../../docs/cost-and-tokens.md)** - Where the tokens of a long run go, and the patterns that keep them low
 
 ## Agents
 
@@ -32,6 +38,7 @@ Subagents spawned by the workflow skills. Each ends with a short markdown reply 
 | Agent                     | Description                                                                         |
 | ------------------------- | ----------------------------------------------------------------------------------- |
 | `esp-skills:esp-builder`  | Implements one milestone or one set of review fixes as exactly one commit           |
+| `esp-skills:esp-codex`    | Relays one task or review to Codex with `codex.mjs` and returns Codex's result      |
 | `esp-skills:esp-iterator` | Runs one ralph loop iteration: one unit of a task, one commit, a structured status  |
 | `esp-skills:esp-reviewer` | Read-only, fresh-context review with a find and verify pass and classified findings |
 | `esp-skills:esp-verifier` | Re-runs gates and checks acceptance criteria without changing code                  |
@@ -67,12 +74,27 @@ Subagents spawned by the workflow skills. Each ends with a short markdown reply 
 
 ### SDLC
 
-| Skill                     | Description                                                          |
-| ------------------------- | -------------------------------------------------------------------- |
-| `/esp-skills:esp-plan`    | **Beta** - Create or amend a machine-readable implementation plan    |
-| `/esp-skills:esp-ship`    | **Beta** - Any task to merged PR: inline, or as verified milestones  |
-| `/esp-skills:esp-recap`   | **Beta** - Recap runs, report their risks, or answer with sources    |
-| `/esp-skills:esp-analyze` | **Beta** - Analyze codebase for bugs, debt, docs, security, or style |
+| Skill                     | Description                                                           |
+| ------------------------- | --------------------------------------------------------------------- |
+| `/esp-skills:esp-plan`    | **Beta** - Create or amend a machine-readable implementation plan     |
+| `/esp-skills:esp-ship`    | **Beta** - Any task to merged PR: inline, or as verified milestones   |
+| `/esp-skills:esp-ralph`   | **Beta** - Build a ralph loop prompt, then run the loop as a workflow |
+| `/esp-skills:esp-recap`   | **Beta** - Recap runs, report their risks, or answer with sources     |
+| `/esp-skills:esp-analyze` | **Beta** - Analyze codebase for bugs, debt, docs, security, or style  |
+
+### Runtime
+
+| Skill                   | Description                                                                |
+| ----------------------- | -------------------------------------------------------------------------- |
+| `/esp-skills:esp-codex` | **Beta** - Run a task or a read-only review on Codex and report its answer |
+
+### Workflows
+
+Saved Workflow scripts in `workflows/`, run with the Workflow tool and listed as `esp-skills:<name>`. A skill launches them; you rarely call one directly.
+
+| Workflow                    | Description                                                                                           |
+| --------------------------- | ----------------------------------------------------------------------------------------------------- |
+| `esp-skills:esp-ralph-loop` | One fresh `esp-iterator` agent per iteration until the task is complete, blocked or out of iterations |
 
 ### Helpers
 
@@ -186,6 +208,12 @@ Keys read by the current skills:
 | `ship.reuse.cost`                            | `low: 40000, medium: 70000, high: 120000`                       | `esp-ship`                                | Estimated context per milestone complexity, for builder reuse                      |
 | `pr.body_from_run`                           | `true`                                                          | `esp-ship`, `esp-pr`                      | Build the PR body from the run artifacts                                           |
 | `pr.body_sections`                           | `summary, milestones, decisions, review-resolution, follow-ups` | `esp-ship`, `esp-pr`                      | Sections of that body, in order                                                    |
+| `ralph.max_iterations`                       | `25`                                                            | `esp-ralph`                               | Iterations of one loop launch when `--max-iterations` is not given                 |
+| `ralph.no_progress_limit`                    | `2`                                                             | `esp-ralph`                               | Consecutive iterations with no commit and no progress note before the loop stops   |
+| `ralph.allow_subagents`                      | `false`                                                         | `esp-ralph`                               | Run iterations as `general-purpose` agents, which may spawn subagents              |
+| `codex.model`                                | `null`                                                          | `esp-codex`, `esp-review`                 | Codex model, `null` uses the Codex config                                          |
+| `codex.sandbox`                              | `read-only`                                                     | `esp-codex`                               | Sandbox of a Codex task: `read-only` or `workspace-write`                          |
+| `codex.timeout_minutes`                      | `30`                                                            | `esp-codex`, `esp-review`                 | Minutes before the Codex process tree is killed                                    |
 | `recap.roots`                                | `["~/.esp-skills/runs"]`                                        | `esp-recap`                               | Runs roots read by the recap, besides `runs.root` (add any other runs root)        |
 | `recap.default_range_days`                   | `7`                                                             | `esp-recap`                               | Days covered when no date option is given                                          |
 | `recap.fan_out_threshold`                    | `5`                                                             | `esp-recap`                               | Above this many runs, digest them in parallel subagents                            |
@@ -340,6 +368,71 @@ node scripts/runs.mjs check ~/.esp-skills/runs/2026-11-10-fix-login-timeout/deci
 node scripts/recap.mjs collect --last 7d --repo api
 node scripts/recap.mjs risks --since 2026-11-01 --min-risk medium
 node scripts/recap.mjs sources --question "Why do refresh tokens rotate?"
+```
+
+### Long Work
+
+Long work runs on native Claude Code features, with no external harness. It needs Claude Code 2.1.326 or later (saved workflows shipped in a plugin, `agentType` for plugin agents, and the Workflow `schema` option).
+
+- **esp-ship**: the main session drives the milestones and stops for sign-off where `--interactive` asks it to (see Shipping)
+- **esp-ralph**: a ralph loop, one fresh agent and one commit per unit of work, run as the `esp-ralph-loop` workflow in the background: `detect -> build -> review -> launch -> (steer) -> report`
+- **`/goal`**: a single-session loop, for work that fits one context and needs no fresh agent per unit
+
+`esp-ralph` builds the loop prompt from `references/ralph-prompt-template.md` (in the skill directory): source, tracker, unit, pick rule, required reading, procedure, verify commands, commit convention, conventions, where questions go, completion and finish step. The generic loop rules (one unit per iteration, resume an in-progress unit, split a unit that does not fit, never leave the branch broken, blocked handling, never merge or force-push) live in the `esp-iterator` agent, so a prompt holds only what is specific to its task. The skill detects one of three presets:
+
+- **`plan`**: an esp-plan plan (`plan.mjs parse` succeeds). One milestone per iteration; its Progress Tracking checklist, or `Done: M<n>` run notes, track the progress
+- **`tracker`**: a document that tracks its own work (a checklist, a task list, a findings document with one status line per item). One item per iteration, marked in the document
+- **`task`**: free text. The skill splits it into a short list of units, tracked in the run notes
+
+It fills every slot it can from the source, `AGENTS.md`, `CLAUDE.md` and the package scripts, asks at most four questions for the rest, writes `<run-dir>/prompt.md` and shows a five-line summary to launch, edit or cancel. `--prompt <file>` launches a hand-written prompt unchanged. The workflow takes these `args`:
+
+- `task` (required): the task text, or the path of a prompt file
+- `max_iterations` (default `25`), `no_progress_limit` (default `2`), `run_dir`, `model`, `effort`
+- `allow_subagents` (default `false`): `true` runs `general-purpose` iterations, which may spawn subagents; `esp-iterator` cannot
+
+Each iteration returns a structured status (`continue`, `complete` or `blocked`, its commits and a progress note) through the workflow `schema`, and the loop ends on `complete`, `blocked`, `max_iterations`, the no-progress limit or two failed iterations in a row. The skill then reports every iteration with its commits.
+
+- **Steering**: while the loop runs, send a plain message in the session that launched it. The session appends it to the run's `notes.md` as an operator line (`runs.mjs notes --append <text> --from operator`), and the next iteration applies it. A stop request ends the loop at the next iteration; stopping the workflow task ends it at once. From another session, `runs.mjs index --status running --workflow esp-ralph` finds the run
+- **Resume**: relaunch with `/esp-skills:esp-ralph --run-dir <run-dir>`: its `prompt.md` and `notes.md` carry over, and the next iteration picks up the unit in progress. Relaunched in the same session, a workflow replays its completed agents from cache
+- **Durability**: a workflow pauses at a usage limit and continues on its own in an interactive terminal or the Desktop Code tab, not in a background session. For long loops away from the terminal, use `claude --bg` and agent view to keep sessions alive, Remote Control to steer from another device, and `PushNotification` to be told when the loop ends or blocks
+- **Cost**: `/usage` breaks usage down by skill, subagent and workflow; a workflow `budget` (for example `+500k` in the prompt) is a hard token ceiling, and `--max-budget-usd` bounds a headless session. See [Cost and Tokens](../../docs/cost-and-tokens.md)
+
+### Codex
+
+Claude can hand a declared task or a review to the Codex CLI and read the result back. Codex is a one-shot delegate: it gets the task once, is never steered mid-run, and bills the ChatGPT/Codex plan, not the Claude plan. It needs Codex CLI 0.128.0 or later, logged in.
+
+- **`esp-codex` skill**: from a session or a subagent, run a task (`/esp-skills:esp-codex <task>`) or a read-only review (`--review [target]`), and report Codex's answer
+- **`esp-codex` agent**: the relay for workflows, `agent(prompt, { agentType: 'esp-skills:esp-codex', schema })`. It runs `codex.mjs` on Haiku and returns the result; it never does the task itself
+- **Review second opinion**: `esp-review --second-opinion codex` (or `review.second_opinion: codex`) runs a Codex review of the same target first. The reviewer verifies its findings like its own, merges duplicates by file and line, and tags the rest `Source: codex`. A Codex failure degrades to a Claude-only review, logged as a decision
+- **Sandbox**: `read-only` by default, `workspace-write` on request (changes are left uncommitted). `codex exec` never asks for approval, and `codex.mjs` sets `approval_policy="never"`, so a command outside the sandbox fails instead of waiting
+- **Waiting**: a run up to 9 minutes runs in one Bash call; a longer one is detached and waited on with `codex.mjs wait` calls of at most 9 minutes
+
+`scripts/codex.mjs` prints its result as JSON (`status`, `summary`, `out`, `usage`, `failure` and `fix` on failure). Run `doctor` first: it checks the install, the version, the login and a one-word smoke prompt, and reports a model or login failure in one line with the fix to try:
+
+```bash
+node scripts/codex.mjs doctor
+node scripts/codex.mjs run --prompt @task.md --sandbox read-only --timeout-minutes 20
+node scripts/codex.mjs run --prompt @task.md --detach
+node scripts/codex.mjs wait --status-path <out>.status.json --max-minutes 9
+node scripts/codex.mjs review main --cwd .
+```
+
+### Unattended Runs
+
+A permission prompt stalls a loop nobody is watching. Allow these rules (in `.claude/settings.json` or `~/.claude/settings.json`) before a long run, plus the repository's own gate commands (`Bash(pnpm test *)`, `Bash(pnpm check)`, ...):
+
+```json
+{
+  "permissions": {
+    "allow": [
+      "Workflow(esp-skills:esp-ralph-loop)",
+      "Bash(node *esp-skills*)",
+      "Bash(git *)",
+      "Bash(gh *)",
+      "Bash(codex *)"
+    ]
+  }
+}
 ```
 
 ### Shared References
@@ -528,6 +621,7 @@ Arguments follow CLI conventions: every discrete value is a named option with a 
 - `[-p|--plan <path>]` - Plan the diff implements, for `plan-conformance` (default with `--run-dir`: the run's latest plan)
 - `[-t|--target <target>]` - What to review. Omit for local changes (or the branch against the default branch when the tree is clean). Accepts `staged`, `unstaged`, a ref (`main`, `origin/main`), a range (`main..HEAD`), or a PR (`"PR 123"`, `#123`, a PR URL)
 - `[-i|--interactive <mode>]` - `off`, `plan` or `all`; `all` settles B-Decide and B-Scope findings with you (default: `defaults.interactive`)
+- `[-s|--second-opinion <tool>]` - `none` or `codex`; `codex` adds a read-only Codex review whose findings the reviewer verifies with its own (default: `review.second_opinion`)
 - `[-d|--run-dir <path>]` - Save `review-<N>.diff`, `.md` and `.json` in a run and record step `review-<N>` (default: a temporary directory, no run)
 
 **Examples:**
@@ -556,6 +650,41 @@ Arguments follow CLI conventions: every discrete value is a named option with a 
 
 # Settle B-Decide and B-Scope findings interactively
 /esp-skills:esp-review --interactive all
+
+# Add a Codex second opinion, verified with the Claude findings
+/esp-skills:esp-review --second-opinion codex --target "PR 123"
+```
+
+### /esp-skills:esp-codex
+
+**Arguments:**
+
+- `[-R|--review]` - Run a read-only Codex review instead of a task; `[task]` is then the target: empty for local changes, a ref, a range, `#<n>` or a PR URL
+- `[-s|--sandbox <mode>]` - `read-only` or `workspace-write` (default: `codex.sandbox`); ignored with `--review`
+- `[-a|--model <model>]` - Codex model (default: `codex.model`, `null` uses the Codex config)
+- `[-t|--timeout <minutes>]` - Minutes before the Codex process tree is killed (default: `codex.timeout_minutes`)
+- `[-S|--schema <file>]` - JSON Schema for Codex's final answer; not used with `--review`
+- `[-d|--run-dir <path>]` - Run directory of a parent skill: log one decision and one notes line, keep the answer under `<run-dir>/codex/`
+- `[task]` - The task for Codex in full, or the review target with `--review`
+
+**Examples:**
+
+```bash
+# Ask Codex a read-only question about the code
+/esp-skills:esp-codex List the public functions of scripts/lib/codex.mjs and what each returns
+
+# Let Codex write files, with a longer timeout (waits past 10 minutes in 9-minute calls)
+/esp-skills:esp-codex --sandbox workspace-write --timeout 45 Add unit tests for the CSV escaping in src/export.ts
+
+# A Codex review of the local changes, or of a pull request
+/esp-skills:esp-codex --review
+/esp-skills:esp-codex -R "#123"
+
+# A structured answer with a given model
+/esp-skills:esp-codex --model gpt-5-codex --schema answer.schema.json Rate each module in src/ by test coverage
+
+# Check the Codex install, version, login and model
+node scripts/codex.mjs doctor
 ```
 
 ### /esp-skills:esp-plan
@@ -641,6 +770,47 @@ Arguments follow CLI conventions: every discrete value is a named option with a 
 # Continue an interrupted run
 /esp-skills:esp-ship --resume --run-dir ~/.esp-skills/runs/2026-11-10-add-oauth-login
 
+```
+
+### /esp-skills:esp-ralph
+
+**Arguments:**
+
+- `[-y|--yes]` - Launch without the review step (always on in a headless session)
+- `[-s|--allow-subagents]` - Run iterations as `general-purpose` agents, which may spawn subagents (default: `ralph.allow_subagents`)
+- `[-P|--prompt <file>]` - Launch this prompt file as it is: no detection, no building, no review
+- `[-m|--max-iterations <n>]` - Most iterations of this launch (default: `ralph.max_iterations`)
+- `[-a|--model <alias>]` - Model of every iteration (`opus`, `sonnet`, `haiku`, `fable`; default: the session model)
+- `[-e|--effort <level>]` - Reasoning effort of every iteration (`low` to `max`)
+- `[-d|--run-dir <path>]` - Reuse a run and its `prompt.md` and `notes.md`, to relaunch after a stop
+- `[source]` - An esp-plan plan, a document that tracks its own work, or a free-text task
+
+**Examples:**
+
+```bash
+# A plan: one milestone per iteration, finishing with the PR
+/esp-skills:esp-ralph ~/.esp-skills/runs/2026-11-10-add-oauth-login/plan.md
+
+# A findings document with one status line per item, at most 10 iterations on sonnet
+/esp-skills:esp-ralph --max-iterations 10 --model sonnet docs/audit-findings.md
+
+# A free-text task: the skill splits it into units and asks only for what it cannot infer
+/esp-skills:esp-ralph Migrate every route in src/routes from callbacks to async/await
+
+# Launch a hand-written prompt unchanged, without the review step
+/esp-skills:esp-ralph --prompt prompts/ralph.md --yes
+
+# Relaunch a stopped loop where it left off
+/esp-skills:esp-ralph --run-dir ~/.esp-skills/runs/2026-11-16-csv-export
+
+# While it runs, steer it with a plain message in the same session
+Skip the docs milestone, the README is already up to date
+```
+
+The `esp-ralph-loop` workflow can also run without the skill, for example from another workflow or a session that already has a prompt:
+
+```text
+Workflow(esp-skills:esp-ralph-loop, args: { task: "<run-dir>/prompt.md", run_dir: "<run-dir>", max_iterations: 5 })
 ```
 
 ### /esp-skills:esp-recap

@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.10.0
+
+- **Breaking, standalone plugin**: esp-skills no longer depends on an external harness. Long work runs on native Claude Code features (saved workflows, background sessions, Monitor, Remote Control). Resuming a run created before 0.10.0 is not supported
+- **Breaking removals**:
+  - The agentic-forge workflow pack (`af-workflows/`) and its documentation
+  - The harness contract: `references/contract/` (JSON Schemas and fixtures), `contract-notes.md` (replaced by `references/run-directory.md`) and `lib/contract.mjs`. `runs.mjs validate` is now `runs.mjs check <file>`, which runs the field checks the writers use
+  - JSON result blocks, `steps/<NN-step>/result.json` and the exit codes `10`, `20` and `30`: skills and agents reply in short markdown (`Status:`, `Commit:`, `Summary:`, ...; see Replies in `decision-policy.md`), and esp-ship records step facts with `ship.mjs record`. `ship.mjs result` is now `ship.mjs outcome`, `fix-review.mjs result` is `fix-review.mjs outcome`, and `runs.mjs result` and `exit-code` are gone
+  - The inbox, `needs_input`, `amendments.jsonl` and `events.jsonl`, with `runs.mjs send`, `messages`, `deliver`, `amend` and `event`. Questions surface in the main session, plan amendments are logged as a decision, and a user message during a run is recorded in `notes.md` as an operator line (`runs.mjs notes --append <text> --from operator`; `--milestone` is now optional)
+  - `esp-ship --milestone` and `--stop-before-wait`, `ship.mjs escalate` and caller-owned runs, and `--config-snapshot` on every skill and script
+  - `AF_MERGE_LOCK` and the merge lock: `merge-ready.mjs merge` still re-checks the pull request right before merging, so a base that moved ends `behind`
+  - The `af-contract` and `af-level` skill metadata
+- Added the `esp-ralph` skill: builds a ralph loop prompt from an esp-plan plan, a tracker document or a free-text task with `references/ralph-prompt-template.md`, asks only for what it cannot fill, writes it to the run for review, launches the loop and steers it from the same session (`ralph` config section)
+- Added the `esp-ralph-loop` saved workflow and the `esp-iterator` agent: one fresh agent per iteration, a schema-validated status, and stops on complete, blocked, the iteration limit, no progress or repeated agent failures. `runs.mjs index` gains `--workflow`
+- Added `scripts/codex.mjs` (`run`, `run --detach`, `wait`, `review`, `doctor`) on `codex exec` 0.128.0 or later, the `esp-codex` skill and the `esp-codex` relay agent (Haiku, `relay` role), and the `codex` config section
+- `esp-review` gains `-s|--second-opinion codex` (`review.second_opinion`): a read-only Codex review whose findings the reviewer verifies, deduplicated by file and line and tagged `Source: codex`
+- Added a workflow test harness (`scripts/tests/helpers/fake-workflow.mjs`) and workflow script checks in `pnpm validate`
+- Documented long native runs, Codex delegation and the allow rules for unattended runs in the README, and token costs in `docs/cost-and-tokens.md`
+
 ## 0.9.1
 
 - **Renamed options**: `esp-ship` `-p|--plan <mode>` is now `-L|--plan-mode <mode>` (`-p` is reserved for a PR or a plan path), and `esp-fix-review` `-m|--rounds` is now `-m|--max-rounds`, matching `esp-ship` and `fix-review.max_rounds`. `esp-pr` `-w|--draft` is now `-D|--draft`, and `esp-recap` `-x|--risk` is now `-x|--run-risk`, apart from the risk report's `--min-risk`
