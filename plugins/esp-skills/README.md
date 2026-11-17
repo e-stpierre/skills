@@ -32,6 +32,7 @@ Subagents spawned by the workflow skills. Each ends with a short markdown reply 
 | Agent                     | Description                                                                         |
 | ------------------------- | ----------------------------------------------------------------------------------- |
 | `esp-skills:esp-builder`  | Implements one milestone or one set of review fixes as exactly one commit           |
+| `esp-skills:esp-iterator` | Runs one ralph loop iteration: one unit of a task, one commit, a structured status  |
 | `esp-skills:esp-reviewer` | Read-only, fresh-context review with a find and verify pass and classified findings |
 | `esp-skills:esp-verifier` | Re-runs gates and checks acceptance criteria without changing code                  |
 

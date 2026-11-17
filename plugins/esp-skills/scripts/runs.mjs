@@ -510,6 +510,7 @@ function matchesRepo(repo, wanted) {
  */
 export function indexRuns(roots, filters = {}, fs = DEFAULT_FS) {
   const statuses = splitList(filters.status);
+  const workflows = splitList(filters.workflow);
   const minRisk = filters.risk ? RISK_ORDER.indexOf(filters.risk) : -1;
   if (filters.risk && minRisk === -1)
     throw new RunsError(`--risk expects one of ${RISK_ORDER.join(", ")}`, 2);
@@ -535,6 +536,7 @@ export function indexRuns(roots, filters = {}, fs = DEFAULT_FS) {
     }
     const keep =
       (statuses.length === 0 || statuses.includes(run.status)) &&
+      (workflows.length === 0 || workflows.includes(run.workflow)) &&
       (!filters.repo || matchesRepo(run.repo, filters.repo)) &&
       (minRisk === -1 || RISK_ORDER.indexOf(run.max_risk) >= minRisk);
     if (keep) {
@@ -595,6 +597,7 @@ export function cmdIndex(options, env = process.env) {
     until: options.until,
     repo: options.repo,
     status: options.status,
+    workflow: options.workflow,
     risk: options.risk,
     limit: options.limit
   };
@@ -731,7 +734,8 @@ Commands:
   plan                   Print the latest plan version (plan.md = 1, plan.v<N>.md = N)
   notes                  Run notes in notes.md: --append <text> [--milestone <id>] [--from operator|agent]
                          (one line, under the lock), or --show [--milestone <id>] (includes run-wide lines)
-  index                  List runs (--root, --since, --until, --last 7d, --repo, --status, --risk, --limit)
+  index                  List runs (--root, --since, --until, --last 7d, --repo, --status, --workflow,
+                         --risk, --limit)
   pr-body                Pull request body from the run artifacts (--summary <text>, --out <file>)
   check <file>           Check a run.json, decisions.jsonl or summary.md with the writers' field
                          checks (--kind run|decision|summary when the file name does not tell)
