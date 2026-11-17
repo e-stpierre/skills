@@ -17,6 +17,7 @@ import {
   cmdReview,
   cmdRun,
   cmdWait,
+  defaultOut,
   normalizeFindings,
   readPrompt,
   reviewSchema
@@ -246,6 +247,37 @@ describe("run", () => {
     assert.ok(call.argv.includes(APPROVAL_OVERRIDE));
     // dir is not a git repository
     assert.ok(call.argv.includes("--skip-git-repo-check"));
+  });
+
+  test("each output path in a run directory is reserved once", () => {
+    const codexDir = join(dir, "codex");
+    mkdirSync(codexDir, { recursive: true });
+    writeFileSync(join(codexDir, "run-1.md.status.json"), "{}");
+    writeFileSync(join(codexDir, "run-2.md.prompt.md"), "in flight");
+    const first = defaultOut("run", dir);
+    const second = defaultOut("run", dir);
+    assert.equal(first, join(codexDir, "run-3.md"));
+    assert.equal(second, join(codexDir, "run-4.md"));
+    assert.equal(readFileSync(first, "utf8"), "");
+    assert.equal(defaultOut("review", dir), join(codexDir, "review-1.md"));
+  });
+
+  test("an empty reserved output falls back to the last event message", async () => {
+    const env = scenario({
+      exec: {
+        events: [
+          {
+            type: "item.completed",
+            item: { type: "agent_message", text: "From events" }
+          }
+        ]
+      }
+    });
+    const out = join(dir, "reserved.md");
+    writeFileSync(out, "");
+    const result = await cmdRun({ prompt: "t", cwd: dir, out }, env);
+    assert.equal(result.status, "done");
+    assert.equal(readFileSync(out, "utf8"), "From events");
   });
 
   test("the prompt can come from a file", async () => {

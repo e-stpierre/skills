@@ -20,9 +20,11 @@
 
 import { spawn, spawnSync } from "node:child_process";
 import {
+  closeSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
+  openSync,
   readFileSync,
   readdirSync,
   renameSync,
@@ -145,7 +147,10 @@ export function readPrompt(value, readStdin = () => readFileSync(0, "utf8")) {
 
 /**
  * Where the last message goes: --out, else `<run-dir>/codex/<kind>-<N>.md`,
- * else a new temporary directory.
+ * else a new temporary directory. In a run directory the path is reserved by
+ * creating the file exclusively, and every `<kind>-<N>.md*` file (an in-flight
+ * prompt or status file included) counts as taken, so two concurrent tasks
+ * never share an output, prompt or status path.
  */
 export function defaultOut(kind, runDir) {
   if (!runDir)
@@ -154,10 +159,18 @@ export function defaultOut(kind, runDir) {
   mkdirSync(dir, { recursive: true });
   let max = 0;
   for (const name of readdirSync(dir)) {
-    const m = new RegExp(`^${kind}-(\\d+)\\.md$`).exec(name);
+    const m = new RegExp(`^${kind}-(\\d+)\\.md(\\..*)?$`).exec(name);
     if (m) max = Math.max(max, Number(m[1]));
   }
-  return join(dir, `${kind}-${max + 1}.md`);
+  for (let n = max + 1; ; n++) {
+    const out = join(dir, `${kind}-${n}.md`);
+    try {
+      closeSync(openSync(out, "wx"));
+      return out;
+    } catch (err) {
+      if (err.code !== "EEXIST") throw err;
+    }
+  }
 }
 
 function logToRun(runDir, { decision, rationale, out, status, summary }, env) {
@@ -234,7 +247,8 @@ export async function runCodex(
     onSpawn
   });
   const events = parseEvents(res.stdout);
-  let last = existsSync(out) ? readFileSync(out, "utf8") : null;
+  // An empty file is the reservation of defaultOut, not a last message.
+  let last = existsSync(out) ? readFileSync(out, "utf8") || null : null;
   if (last === null && events.lastMessage) {
     last = events.lastMessage;
     writeFileSync(out, last, "utf8");
