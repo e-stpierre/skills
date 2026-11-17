@@ -121,6 +121,32 @@ describe("schema and defaults", () => {
     assert.equal(fixReview.wait.checks_grace_seconds, 120);
   });
 
+  test("ralph declares the loop defaults and rejects invalid values", () => {
+    const { ralph } = readJson(DEFAULTS_PATH);
+    assert.deepEqual(ralph, {
+      max_iterations: 25,
+      no_progress_limit: 2,
+      allow_subagents: false
+    });
+    const schema = readJson(SCHEMA_PATH);
+    for (const config of [
+      { ralph: { max_iterations: 0 } },
+      { ralph: { no_progress_limit: 1.5 } },
+      { ralph: { allow_subagents: "yes" } },
+      { ralph: { model: "opus" } }
+    ])
+      assert.notDeepEqual(
+        validate(schema, config).errors,
+        [],
+        JSON.stringify(config)
+      );
+    assert.deepEqual(
+      validate(schema, { ralph: { max_iterations: 5, allow_subagents: true } })
+        .errors,
+      []
+    );
+  });
+
   test("the replaced sections are gone and await-review is not a ship phase", () => {
     const schema = readJson(SCHEMA_PATH);
     for (const key of ["go", "go-light", "build", "await-review"])

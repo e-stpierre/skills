@@ -473,6 +473,27 @@
         }
       }
     },
+    "ralph": {
+      "description": "esp-ralph: defaults passed to the esp-ralph-loop workflow. The --max-iterations and --allow-subagents arguments override them for one launch.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "max_iterations": {
+          "description": "Most iterations of one launch.",
+          "type": "integer",
+          "minimum": 1
+        },
+        "no_progress_limit": {
+          "description": "Consecutive iterations with no new commit and no progress note before the loop stops.",
+          "type": "integer",
+          "minimum": 1
+        },
+        "allow_subagents": {
+          "description": "Run iterations as general-purpose agents, which may spawn subagents, instead of esp-iterator agents, which cannot.",
+          "type": "boolean"
+        }
+      }
+    },
     "recap": {
       "description": "esp-recap: runs roots to read (runs.root is always read), the default date range, and the fan-out threshold.",
       "type": "object",

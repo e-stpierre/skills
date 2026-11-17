@@ -137,6 +137,11 @@
       "cost": { "low": 40000, "medium": 70000, "high": 120000 }
     }
   },
+  "ralph": {
+    "max_iterations": 25,
+    "no_progress_limit": 2,
+    "allow_subagents": false
+  },
   "recap": {
     "roots": ["~/.esp-skills/runs"],
     "default_range_days": 7,
