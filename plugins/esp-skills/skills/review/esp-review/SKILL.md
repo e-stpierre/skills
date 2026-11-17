@@ -64,7 +64,7 @@ If a command exits with code 1 (invalid config), report its error and stop. If i
 - `review.min_severity` (default `medium`): findings below it are dropped from the review
 - `review.verify_findings` (default `true`): run the verify pass; `false` marks the review unverified
 - `review.second_opinion` (default `none`): `codex` adds the Codex second opinion when `--second-opinion` is not given
-- `codex.model`, `codex.timeout_minutes` (default none, `30`): passed to the Codex review
+- `codex.model`, `codex.timeout_minutes` (default `null`, `30`): passed to the Codex review; a `null` model passes no `--model`
 - `defaults.interactive` (default `off`): interactive mode when `--interactive` is not given
 - `defaults.models.reviewer` (default `opus`, effort `high`): model and effort passed to the `esp-reviewer` subagent
 
@@ -77,7 +77,7 @@ The available dimensions are `correctness`, `security`, `plan-conformance`, `tes
 - **Resolve target**: `review.mjs target [<target>] --project-dir <repo-root> [--run-dir <path>]` (`<target>`: the `--target` value)
 - **Latest plan**: `runs.mjs plan` (`{ path, version }`, version 0 when there is none)
 - **Parse and filter**: `review.mjs parse <review_path> --min-severity <level> --verified <bool> --md-out <review_path> --out <findings_path> [--codex <codex_path>]`
-- **Codex review** (second opinion only): `codex.mjs review [<target>] --cwd <repo-root> --out <codex_out> --status-path <codex_path> --detach [--model <m>] [--timeout-minutes <n>] [--run-dir <path>]`, then `codex.mjs wait --status-path <codex_path> --max-minutes 9` until its `status` is not `running`
+- **Codex review** (second opinion only): `codex.mjs review [<target>] --cwd <repo-root> --out <codex_out> --status-path <codex_path> --detach [--model <m>] [--timeout-minutes <n>] [--run-dir <path>]`, then `codex.mjs wait --status-path <codex_path> --max-minutes 9` with a Bash timeout of 600000 ms, repeated while it prints `status: running`
 - **Record the step** (under esp-ship, whose run dir has `ship.json`): the same `parse` command piped into `ship.mjs record <step> --run-dir <path>`, which stores its `outcome`
 
 `target` prints `{ kind, base, head, files, untracked, pr, empty, step, diff_path, review_path, findings_path }`. With `--run-dir`, the paths are `<run-dir>/review-<N>.diff`, `.md` and `.json`, where N is the next review round. `parse` prints `{ file, valid, findings, rejected, dropped, outcome }`, where `outcome` is `{ status, summary, max_risk, outputs, discovered_items }`, and exits 1 with the list of malformed findings when the review does not follow the finding format. It strips the reviewer's `Status:` line and keeps its `Discovered:` lines. With `--codex`, it drops a `- Source: codex` finding that repeats a finding of the reviewer at the same file and line (overlapping lines), lists it under Rejected Candidates as a duplicate, and reports the pass in `outputs.second_opinion` (`{ tool, status, summary, candidates, kept, duplicates }`).
@@ -91,7 +91,7 @@ Build one self-contained prompt for the reviewer:
 - The dimensions, the focus text, the minimum severity, and whether to verify
 - The plan path and the milestone IDs the diff implements (the `done` milestones in `<run-dir>/state.json`, else every milestone), when there is a plan
 - The convention files to honor: `AGENTS.md` and `CLAUDE.md` at the repo root and in every ancestor directory of a changed file
-- With a Codex result: the path of `codex_path` and the instruction to treat each of its `findings` as a Pass 1 candidate, verified in Pass 2 like its own (see Codex Second Opinion)
+- With a `done` Codex result: `codex_path` as the reviewer's **Second opinion** input (see Codex Second Opinion)
 
 Then run it in a fresh context. The choice depends only on the runtime, never on the size of the diff: a small diff still goes to the subagent, because the fresh context keeps the review from being anchored on this session. The review itself needs only file reading and search, so the inline branch works on any runtime.
 
@@ -105,8 +105,8 @@ Keep only the reviewer's reply. Save it verbatim to `review_path`.
 On with `--second-opinion codex` or `review.second_opinion: codex`. Codex runs before the reviewer, so its findings join the reviewer's verify pass instead of bypassing it.
 
 - **Paths**: next to `review_path`, `codex_out` is `review-<N>.codex.md` and `codex_path` is `review-<N>.codex.json`. `codex.mjs` writes the diff it reviewed and its schema beside `codex_out`, and its final result into `codex_path`
-- **Run**: start `codex.mjs review` detached on the same `--target` (see Scripts), then call `codex.mjs wait` in Bash calls of at most 9 minutes until the status is `done` or `failed`. It always runs read-only, as plain `codex exec` with the esp-review finding schema
-- **Verify**: when the status is `done` with findings, tell the reviewer to read them from `codex_path`, count them as candidates, and verify each one: a disproved one goes to Rejected Candidates with `(codex)` after its location; a candidate that is the same issue as one of its own merges into its own finding; any other kept one becomes a finding in the usual format with a last `- Source: codex` line
+- **Run**: start `codex.mjs review` detached on the same `--target` and wait for it (see Scripts). It always runs read-only, with the esp-review finding schema
+- **Verify**: when the status is `done`, pass `codex_path` to the reviewer as its Second opinion. `esp-reviewer.md` owns the method: each Codex finding is a candidate verified like its own, a disproved one is rejected with `(codex)`, and a kept one that only Codex found ends with `- Source: codex`
 - **Merge**: pass `--codex <codex_path>` to every `review.mjs parse`, which removes the duplicates the reviewer kept and reports the pass
 - **Failure**: when Codex ends `failed` (not installed, login, model, timeout), the review continues Claude-only. With `--run-dir`, log it with `runs.mjs decision` (`phase: review`, `source: agent`, `risk: low`, the decision `Continued with a Claude-only review`, the Codex summary as the rationale, `codex_path` in `refs`). The outcome summary then ends with `Codex second opinion failed (...): Claude-only review.`. Suggest `codex.mjs doctor` in the reply
 

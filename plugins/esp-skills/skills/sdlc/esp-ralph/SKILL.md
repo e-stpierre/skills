@@ -40,8 +40,8 @@ Arguments: $ARGUMENTS
 
 ## Core Principles
 
-- The prompt holds only what is specific to the task. The generic loop rules live in `esp-iterator.md`, and the iteration status comes from the workflow schema: never add a JSON completion or failure block, or a completion promise
-- Fill every slot you can from the source, the repository's `AGENTS.md` and `CLAUDE.md`, and its package scripts before asking. Ask at most four questions, each with a recommended default
+- The prompt holds only what is specific to the task: the generic loop rules live in `esp-iterator.md`, and the iteration status comes from the workflow schema
+- Ask only for what the source and the repository leave open
 - The prompt lives in the run directory (`<run-dir>/prompt.md`), never in the repository
 - The loop runs in the background. This session stays the user's channel to it: it records every correction in `notes.md` and reports the end
 - Run every script with Bash, with the literal `"${CLAUDE_PLUGIN_ROOT}/scripts/..."` path and long option names
@@ -73,7 +73,8 @@ A path that does not exist is an error, not free text: report it and stop.
 
 ### Slot Sources
 
-- **`repo`**, **`branch`**: `git rev-parse --show-toplevel` and the branch the source names; else the current branch when it is not the default branch; else a new name per `branch.pattern`, created by the first iteration with `esp-branch`
+- **`repo`**: `git rev-parse --show-toplevel`
+- **branch** (named in `procedure`): the branch the source names; else the current branch when it is not the default branch; else a new name per `branch.pattern` (`config.mjs get branch`), created by the first iteration with `esp-branch`
 - **`verify`**: the unit's own validation lines first, then the package scripts (`package.json` `scripts`, `Makefile`, `pyproject.toml`, `justfile`) and the gate commands `AGENTS.md` names. Per unit, scope them to the tests of the change
 - **`commit`**, **`conventions`**: `AGENTS.md`, `CLAUDE.md` and the user's global instructions in context (commit skills, naming rules, files never to edit, local references never to name)
 - **`finish`**: the pre-PR checks the repository documents (for example `pnpm check`), then `esp-pr`, when the source or the user expects a pull request
@@ -91,26 +92,26 @@ A request to stop, pause or cancel is recorded the same way (`Stop the loop: <re
 
 ## Instructions
 
-1. **Parse arguments**: read each option by its short or long name (`-y` or `--yes`, `-s` or `--allow-subagents`, `-P` or `--prompt`, `-m` or `--max-iterations`, `-a` or `--model`, `-e` or `--effort`, `-d` or `--run-dir`; `--name=<value>` works too) and `[source]`. Without `[source]`, `--prompt` or `--run-dir`, ask for the source (headless: report the missing source and stop). Done when the source, or the prompt file or run to reuse, is known.
-2. **Load configuration** (see Configuration), and resolve `max_iterations`, `allow_subagents`, `model` and `effort` from the arguments first, then the config.
+1. **Parse arguments**: read each option by its short or long name (`-P` or `--prompt`, `-m` or `--max-iterations`, and so on; `--effort=<level>` works too) and `[source]`. Without `[source]`, `--prompt` or `--run-dir`, ask for the source (headless: report the missing source and stop). Done when the source, or the prompt file or run to reuse, is known.
+2. **Load configuration** (see Configuration), and resolve `max_iterations`, `allow_subagents`, `model` and `effort` from the arguments first, then the config. `no_progress_limit` comes from the config only.
 3. **Reuse a prompt or a run**:
    - With `--prompt <file>`: check that the file exists, take it as the task file unchanged, and go to step 6 (no build, no review).
    - With `--run-dir <path>` and no `[source]`: read the run (`runs.mjs get --run-dir <path>`), take `<path>/prompt.md` as the task file (report and stop when it is missing), and go to step 6. Its `notes.md` carries over, so the next iteration resumes where the last one stopped.
    - Otherwise continue with step 4. Done when the task file is known, or the build is next.
-4. **Detect and build**: pick the preset (see Presets), read the template, the example of the preset, `esp-iterator.md`, the source in full, `AGENTS.md`, `CLAUDE.md` and the package scripts. Fill every slot (see Slot Sources), following the filling rules at the top of the template. For each slot still empty, ask with `AskUserQuestion`: at most four questions in one call, each with a recommended default first. Headless, use the template defaults and log each as a decision. Done when every slot has content and nothing in the draft repeats a rule of `esp-iterator.md`.
+4. **Detect and build**: pick the preset (see Presets), read the template, the example of the preset, `esp-iterator.md`, the source in full, `AGENTS.md`, `CLAUDE.md` and the package scripts. Fill every slot (see Slot Sources), following the filling rules at the top of the template. For each slot still empty, ask with `AskUserQuestion`: at most four questions in one call, each with a recommended default first. Headless, use the slot's template default, or your best reading of the source when it has none, and keep each choice to log as a decision in step 5.1. Done when every slot has content and nothing in the draft repeats a rule of `esp-iterator.md`.
 5. **Review**:
-   1. Create the run, or reuse `--run-dir`: `node "${CLAUDE_PLUGIN_ROOT}/scripts/runs.mjs" create <slug> --workflow esp-ralph --title "<title>" --repo <repo> --branch <branch>` (it prints `run_dir`).
+   1. Create the run, or reuse `--run-dir`: `node "${CLAUDE_PLUGIN_ROOT}/scripts/runs.mjs" create <slug> --workflow esp-ralph --title "<title>" --repo <repo> --branch <branch>` (it prints `run_dir`). Log the headless choices of step 4 as decisions.
    2. Write the prompt to `<run-dir>/prompt.md` with the Write tool. Check that it holds no `{{`, no `<!--` and no `ralph_complete`, `ralph_failed` or `promise` block.
    3. Without `--yes` and in an interactive session, show the path and the summary (see Templates), then ask with `AskUserQuestion`: **Launch** (recommended), **Edit** or **Cancel**. On Edit, apply the user's change to `prompt.md` (or wait for them to edit it), show the summary again and ask again. On Cancel, run `runs.mjs update --status canceled --run-dir <run-dir>`, log the decision, and stop.
    4. Done when the user chose Launch, or `--yes` or a headless session skipped the question.
 6. **Launch**:
-   1. With a reused run, set it running again: `runs.mjs update --status running --run-dir <run-dir>`. With `--prompt` and no run, create one as in step 5.1.
+   1. With a reused run, set it running again: `runs.mjs update --status running --run-dir <run-dir>`. With `--prompt` and no run, create one as in step 5.1, taking the title and the repository from the prompt's `# Ralph Task:` and `**Repository**:` lines (else the file name and the current repository).
    2. Log the launch as a decision (`phase: launch`, the preset, `max_iterations`, the agent type, `refs`: the prompt path).
    3. Call the Workflow tool with `name: "esp-skills:esp-ralph-loop"` and `args: { task: "<prompt path>", run_dir: "<run-dir>", max_iterations: <n>, no_progress_limit: <n>, allow_subagents: <bool> }`, adding `model` and `effort` only when set. It returns at once; the loop runs in the background.
    4. Tell the user it started, with the run directory and how to steer and stop it (see Output Guidance). Done when the Workflow call returned a task ID.
 7. **Steer**: until the workflow ends, record each user message about the loop (see Steering).
 8. **Report**: when the workflow's notification arrives, read its return value (`reason`, `blocker`, `run_dir`, `iterations`, `commits`):
-   1. On `max_iterations`, `no_progress` or `agent_failures`, set the run status: `runs.mjs update --status halted --run-dir <run-dir>`. The iterator already set `done` on `complete` and `blocked` on `blocked`.
+   1. On `max_iterations`, `no_progress` or `agent_failures`, set the run status: `runs.mjs update --status halted --run-dir <run-dir>`. When the workflow itself failed (no return value), use `--status failed` and its error as the blocker. The iterator already set `done` on `complete` and `blocked` on `blocked`.
    2. Log the end reason as a decision (`phase: report`, `source: policy`, the blocker in `rationale` when there is one).
    3. Report the end (see Output Guidance). Done when the run status matches the end reason and the report is sent.
 

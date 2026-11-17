@@ -7,17 +7,12 @@ workflow. Every iteration is a fresh esp-iterator agent that reads the whole fil
 FILLING RULES:
 - Replace every {{slot}} and delete every HTML comment, this one included. The written prompt
   holds no placeholder and no comment
-- Write only what is specific to this task. The generic loop rules already live in
-  agents/esp-iterator.md and are never repeated here: one unit per iteration, fresh context,
-  reading the run notes and applying operator lines, checking completion first, resuming an
-  in-progress unit, marking the start, splitting a unit that does not fit, never leaving the
-  branch broken, no human watching, spikes, human-only checks, blocked handling, never merging,
-  pushing to the default branch or force-pushing, never committing local tracker files
-- Never add a loop signal block (a JSON completion or failure block) or a completion promise.
-  The iteration reports its status through the workflow schema
+- Write only what is specific to this task. Every generic loop rule (its Steps and Rules) lives
+  in agents/esp-iterator.md, which each iteration already follows
+- The iteration reports its status through the workflow schema: the prompt carries no loop
+  signal (a JSON completion or failure block, or a completion promise)
 - Write paths as absolute paths. Keep each section short: a sentence or a few bullets
-- A slot the source does not answer is asked with AskUserQuestion, or filled with the default
-  its comment gives when the session is headless
+- Some slot comments end with a "Default:": the value to use when nothing else answers the slot
 -->
 
 # Ralph Task: {{title}}
@@ -110,8 +105,8 @@ title; push the branch after each commit". Name the commit skill and when to pus
 
 <!--
 Repository rules the loop must follow, from AGENTS.md, CLAUDE.md and the source: skills to
-use, files never to edit, language and style rules, which notes to write and where. Default
-when nothing applies: "Follow the repository's AGENTS.md".
+use, files never to edit, language and style rules, which notes to write and where.
+Default: "Follow the repository's AGENTS.md".
 -->
 
 ## Questions
