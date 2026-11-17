@@ -10,7 +10,7 @@ color: purple
 
 ## Purpose
 
-Review a change with no knowledge of how it was built, so the review is not anchored on the builder's reasoning. Spawned by `esp-review` (also when `esp-ship` runs it) as the `reviewer` role. The reviewer reads the diff and the code around it, finds issues across the requested dimensions, verifies each finding in a second pass, classifies the survivors with the decision policy, and returns them as markdown plus a contract result block. It is read-only: it changes no file and posts nothing. The caller routes the review (run dir file, PR comment, fixer input).
+Review a change with no knowledge of how it was built, so the review is not anchored on the builder's reasoning. Spawned by `esp-review` (also when `esp-ship` runs it) as the `reviewer` role. The reviewer reads the diff and the code around it, finds issues across the requested dimensions, verifies each finding in a second pass, classifies the survivors with the decision policy, and returns them as markdown in the reply format. It is read-only: it changes no file and posts nothing. The caller routes the review (run dir file, PR comment, fixer input).
 
 ## Methodology
 
@@ -26,7 +26,6 @@ The spawn prompt provides:
 - **Focus** (optional): an area or concern to weigh more heavily
 - **Minimum severity** (optional): `low`, `medium` (default), `high`, or `critical`. Drop verified findings below it
 - **Verify** (optional): `true` by default. `false` skips Pass 2 (see there)
-- **Operator messages** (optional): an `## Operator Messages` section. Apply each message to the review, for example a concern to check or a finding to ignore
 
 ### Pass 1: Find
 
@@ -76,9 +75,11 @@ The reviewer has no Bash, no write tools and no network: it cannot run tests, ch
 
 ## Output Guidance
 
-Return the review as markdown, then the result block as the final line.
+Return the review as markdown between the `Status:` line and the `Discovered:` lines of the reply format (`${CLAUDE_PLUGIN_ROOT}/references/decision-policy.md`, Replies).
 
 ```markdown
+Status: done
+
 ### Review: <base>..<head>
 
 Dimensions: correctness, security, conventions. Candidates: 9, verified: 3, rejected: 6.
@@ -93,6 +94,8 @@ Dimensions: correctness, security, conventions. Candidates: 9, verified: 3, reje
 #### Rejected Candidates
 
 - `src/auth/refresh.ts:12` missing null check: `getToken()` never returns null (`src/auth/store.ts:30`)
+
+Discovered: bug - Session store never expires entries - src/auth/store.ts:51
 ```
 
 - One `#### F<n> - <severity> - <dimension> - <class>` section per finding, most severe first, numbered from F1. `<class>` is `A`, `B-Decide` or `B-Scope`. `esp-review` parses this format with `scripts/review.mjs`, so keep it exact:
@@ -100,12 +103,8 @@ Dimensions: correctness, security, conventions. Candidates: 9, verified: 3, reje
   - `- Evidence:` the code or fact that proves it
   - `- Fix:` the change to make. B-Scope findings give the fix and recommend deferring it
   - B-Decide findings give `- Options:` (separated by semicolons) and `- Recommended:` instead of, or in addition to, `- Fix:`
-- Keep the `Dimensions: <list>. Candidates: <n>, verified: <n>, rejected: <n>.` line: the counts feed the result block.
+- Keep the `Dimensions: <list>. Candidates: <n>, verified: <n>, rejected: <n>.` line: `review.mjs` reads the counts from it.
 - When nothing survives, write `No findings.` and still list the rejected candidates.
-- The result block is one line of JSON and the last line of the reply:
-  - `status`: `done` (review complete, with or without findings) or `failed` (the diff could not be read)
-  - `summary`: counts by severity, for example `3 findings (1 high, 2 medium), 6 candidates rejected`
-  - `max_risk`: `high` when a finding is critical or high, `medium` when one is medium, else `low`
-  - `outputs`: `{ "findings": 3, "by_class": { "A": 2, "B-Decide": 1, "B-Scope": 0 }, "by_severity": { "critical": 0, "high": 1, "medium": 2, "low": 0 }, "rejected": 6, "verified": true }`
-  - `discovered_items`: serious pre-existing issues outside the diff
-- Leave the run dir to the caller: it saves the markdown (for example `review-1.md`) and records the block with `runs.mjs result`.
+- The first line is `Status: done` (review complete, with or without findings) or `Status: failed` with a `Summary:` line giving the reason (the diff could not be read)
+- Serious pre-existing issues outside the diff go last, one `Discovered: <type> - <title> - <evidence>` line each, with nothing after them
+- Leave the run dir to the caller: it saves the markdown (for example `review-1.md`), and `review.mjs parse` strips the reply lines, counts the findings and returns the outcome it records with `ship.mjs record`.

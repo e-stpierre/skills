@@ -4,7 +4,6 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
-  readdirSync,
   readFileSync,
   rmSync,
   writeFileSync
@@ -13,7 +12,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, test } from "node:test";
 import { fileURLToPath } from "node:url";
-import { validateArtifact } from "../lib/contract.mjs";
+import { checkDecision } from "../lib/run-files.mjs";
 import { decide, detectRequest } from "../lib/ship/triage.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -406,17 +405,16 @@ describe("decide", () => {
 });
 
 describe("ship.mjs triage", () => {
-  test("--record logs one decision per choice and writes the triage step", () => {
+  test("--record logs one decision per choice and writes triage.json", () => {
     const path = file("backlog.md", FRC_BACKLOG);
     const r = triage("--request", path, "--run-dir", runDir, "--record");
     assert.equal(r.code, 0, r.stderr);
     const out = r.json();
     assert.equal(out.recorded, true);
-    assert.equal(out.step, "01-triage");
-    const block = JSON.parse(
-      readFileSync(join(runDir, "steps", "01-triage", "result.json"), "utf8")
-    );
-    assert.deepEqual(validateArtifact("result", block).errors, []);
+    assert.equal(out.path, join(runDir, "triage.json"));
+    const block = JSON.parse(readFileSync(out.path, "utf8"));
+    assert.equal(block.status, "done");
+    assert.equal(typeof block.at, "string");
     assert.equal(block.outputs.input_kind, "task-list");
     assert.equal(block.outputs.plan_source, "import");
     assert.equal(block.outputs.track, "orchestrated");
@@ -428,8 +426,7 @@ describe("ship.mjs triage", () => {
         ["triage", "policy", "Orchestrated track"]
       ]
     );
-    for (const d of logged)
-      assert.deepEqual(validateArtifact("decision", d).errors, []);
+    for (const d of logged) assert.deepEqual(checkDecision(d), []);
     assert.deepEqual(block.outputs.decisions, ["D001", "D002"]);
 
     const again = triage("--request", path, "--run-dir", runDir, "--record");
@@ -450,7 +447,7 @@ describe("ship.mjs triage", () => {
     assert.equal(decisions()[0].decision, "Nothing to do");
     assert.equal(existsSync(join(runDir, "ship.json")), false);
     assert.equal(git("branch", "--list"), branches);
-    assert.deepEqual(readdirSync(join(runDir, "steps")), ["01-triage"]);
+    assert.equal(existsSync(join(runDir, "triage.json")), true);
   });
 
   test("a prompt is recorded with the judged track as an agent decision", () => {

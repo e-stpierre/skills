@@ -11,16 +11,15 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, test } from "node:test";
 import { fileURLToPath } from "node:url";
-import { validateArtifact } from "../lib/contract.mjs";
 import {
   buildContext,
-  buildResult,
+  buildOutcome,
   cmdChecks,
   cmdFetch,
   cmdInternal,
   cmdRecord,
   cmdRespond,
-  cmdResult,
+  cmdOutcome,
   cmdRound,
   collectItems,
   excerpt,
@@ -30,7 +29,7 @@ import {
   quoteReply,
   summarizeChecks
 } from "../fix-review.mjs";
-import { validateFile } from "../runs.mjs";
+import { checkFile } from "../runs.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const SCRIPT = join(HERE, "..", "fix-review.mjs");
@@ -375,7 +374,7 @@ describe("fetch, record and rounds", () => {
     assert.deepEqual(second.pending_github, ["inline:101"]);
   });
 
-  test("record logs a contract decision with the class, refs and commit", () => {
+  test("record logs a decision with the class, refs and commit", () => {
     cmdFetch(ctx(), null);
     const out = cmdRecord(ctx(), {
       items: ["inline:103"],
@@ -393,7 +392,7 @@ describe("fetch, record and rounds", () => {
     assert.equal(d["x-esp-class"], "Reject");
     assert.equal(d.rationale, "Reject: the name matches AGENTS.md");
     assert.deepEqual(d.refs, [`${URL}#discussion_r103`]);
-    assert.equal(validateFile(join(runDir, "decisions.jsonl")).valid, true);
+    assert.equal(checkFile(join(runDir, "decisions.jsonl")).valid, true);
     assert.equal(state().handled["inline:103"].github.reply, true);
   });
 
@@ -684,13 +683,13 @@ describe("checks", () => {
       commit: "def5678"
     });
     assert.equal(cmdChecks(ctx({}, client), null).failing[0].handled, true);
-    const block = cmdResult(ctx({}, client), {});
+    const block = cmdOutcome(ctx({}, client), {});
     assert.equal(block.outputs.ci_fixed, 1);
     assert.equal(block.outputs.fixed, 0);
   });
 });
 
-describe("result", () => {
+describe("outcome", () => {
   function handledState(handled, extra = {}) {
     return {
       state_format: 1,
@@ -708,7 +707,7 @@ describe("result", () => {
   }
 
   test("done with deferred items as discovered_items and max risk", () => {
-    const block = buildResult(
+    const block = buildOutcome(
       handledState({
         "inline:1": {
           resolution: "fixed",
@@ -734,42 +733,40 @@ describe("result", () => {
     ]);
     assert.equal(block.outputs.fixed, 1);
     assert.equal(block.outputs.rejected, 1);
-    assert.equal(validateArtifact("result", block).valid, true);
   });
 
-  test("open items end awaiting-human, with a blocking needs_input under a run", () => {
+  test("open items end awaiting-human, with each open item as a blocker", () => {
     const s = handledState({
       "inline:1": { resolution: "open", risk: "high", decision: "Pick a name" }
     });
-    assert.equal(buildResult(s).needs_input, undefined);
-    const block = buildResult(s, { runDir: "/x" });
+    const block = buildOutcome(s);
     assert.equal(block.status, "awaiting-human");
-    assert.equal(block.needs_input.blocking, true);
-    assert.equal(validateArtifact("result", block).valid, true);
+    assert.equal(block.blockers.length, 1);
+    assert.match(block.blockers[0], /Pick a name/);
   });
 
   test("exhausted rounds with items left halt on budget, else add a follow-up", () => {
     const s = handledState({}, { rounds: [{ n: 1 }, { n: 2 }] });
-    const halted = buildResult(s, { remaining: 2, haltOn: ["budget"] });
+    const halted = buildOutcome(s, { remaining: 2, haltOn: ["budget"] });
     assert.equal(halted.status, "halted");
     assert.equal(halted.max_risk, "high");
-    const done = buildResult(s, { remaining: 2, haltOn: [] });
+    const done = buildOutcome(s, { remaining: 2, haltOn: [] });
     assert.equal(done.status, "done");
     assert.match(
       done.discovered_items[0].title,
       /2 review items left after 2 fix rounds/
     );
     assert.equal(
-      buildResult(handledState({}), { remaining: 2, haltOn: ["budget"] })
+      buildOutcome(handledState({}), { remaining: 2, haltOn: ["budget"] })
         .status,
       "done"
     );
   });
 
-  test("cmdResult logs the budget halt as a policy decision", () => {
+  test("cmdOutcome logs the budget halt as a policy decision", () => {
     cmdFetch(ctx(), null);
     cmdRound(ctx({ "max-rounds": "1" }));
-    const block = cmdResult(ctx({ "max-rounds": "1" }), { remaining: "1" });
+    const block = cmdOutcome(ctx({ "max-rounds": "1" }), { remaining: "1" });
     assert.equal(block.status, "halted");
     const [d] = decisions();
     assert.equal(d.source, "policy");
@@ -793,7 +790,7 @@ describe("helpers", () => {
 });
 
 describe("CLI", () => {
-  test("round, record and result through the command line", () => {
+  test("round, record and outcome through the command line", () => {
     const fakeGh = join(tmp, "gh.mjs");
     writeFileSync(
       fakeGh,
@@ -832,7 +829,7 @@ else console.log("");
       })
     ]);
     assert.equal(recorded.code, 0, recorded.stderr);
-    const result = cli(SCRIPT, ["result", "--run-dir", runDir]);
+    const result = cli(SCRIPT, ["outcome", "--run-dir", runDir]);
     assert.equal(result.code, 0, result.stderr);
     const block = JSON.parse(result.stdout.trim().split("\n").at(-1));
     assert.equal(block.status, "done");

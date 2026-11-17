@@ -5,6 +5,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  readdirSync,
   rmSync,
   writeFileSync
 } from "node:fs";
@@ -13,7 +14,6 @@ import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { loadConfig } from "../config.mjs";
-import { validateArtifact } from "../lib/contract.mjs";
 import { renderPrBody } from "../lib/pr-body.mjs";
 import { detectGates } from "../lib/ship/gates.mjs";
 import { gateFailureAction, scopeCheck } from "../lib/ship/inline.mjs";
@@ -36,7 +36,6 @@ import { reviewLoop } from "../lib/ship/review-loop.mjs";
 import { ShipError, shipSettings } from "../lib/ship/state.mjs";
 import { prLoopAction, prOptions } from "../lib/ship/tail.mjs";
 import { completedFromState } from "../plan.mjs";
-import { validateFile } from "../runs.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const SCRIPT = join(HERE, "..", "ship.mjs");
@@ -114,15 +113,8 @@ function userConfig(config) {
 }
 
 function writeStep(name, block) {
-  const r = cli(RUNS, [
-    "result",
-    name,
-    "--run-dir",
-    runDir,
-    "--json",
-    JSON.stringify(block)
-  ]);
-  assert.equal(r.code === 0 || r.code > 2, true, r.stderr);
+  const r = ship("record", name, "--json", JSON.stringify(block));
+  assert.equal(r.code, 0, r.stderr);
 }
 
 const done = (outputs = {}, extra = {}) => ({
@@ -253,6 +245,7 @@ describe("cli", () => {
       "show",
       "next",
       "phase <name>",
+      "record <step>",
       "review-gate",
       "review-loop",
       "pr-loop",
@@ -262,11 +255,10 @@ describe("cli", () => {
       "scope",
       "gate-failure",
       "switch-track",
-      "escalate",
       "stop",
       "halt",
       "pr-body",
-      "result",
+      "outcome",
       "milestone <cmd>",
       "    init",
       "    next",
@@ -322,7 +314,7 @@ describe("resolvePhases", () => {
     );
   });
 
-  test("applies --no-pr, --no-merge, --stop-before-wait and internal_review_rounds 0", () => {
+  test("applies --no-pr, --no-merge and internal_review_rounds 0", () => {
     const noPr = resolvePhases("orchestrated", undefined, { noPr: true });
     assert.deepEqual(noPr.phases, [
       "plan",
@@ -345,12 +337,6 @@ describe("resolvePhases", () => {
       resolvePhases("orchestrated", ["plan", "build", "merge"]).skipped.merge,
       "needs the pr phase"
     );
-    const stopped = resolvePhases("orchestrated", undefined, {
-      stopBeforeWait: true
-    });
-    assert.equal(stopped.phases.at(-1), "pr");
-    assert.match(stopped.skipped["fix-review"], /stop-before-wait/);
-    assert.equal(stopped.skipped["await-review"], undefined);
   });
 
   test("inline: canonical order, implement required, wait phases need pr", () => {
@@ -374,10 +360,6 @@ describe("resolvePhases", () => {
     const noPr = resolvePhases("inline", ["context", "implement", "merge"]);
     assert.deepEqual(noPr.phases, ["context", "implement"]);
     assert.equal(noPr.skipped.merge, "needs the pr phase");
-    const stopped = resolvePhases("inline", undefined, {
-      stopBeforeWait: true
-    });
-    assert.deepEqual(stopped.phases, ["context", "branch", "implement", "pr"]);
     assert.throws(() => resolvePhases("inline", ["context", "pr"]), ShipError);
     assert.throws(() => resolvePhases("sideways"), ShipError);
   });
@@ -409,7 +391,6 @@ describe("init", () => {
     const s = state();
     assert.equal(s.workflow, "esp-ship");
     assert.equal(s.track, "orchestrated");
-    assert.equal(s.run_owner, "self");
     assert.equal(s.request, "Add OAuth login");
     assert.equal(s.base_sha, git("rev-parse", "HEAD"));
     assert.equal(s.internal_review_rounds, 2);
@@ -468,12 +449,10 @@ describe("init", () => {
     assert.equal(s.interactive, "plan");
     assert.equal(s.phase_status.merge, "skipped");
     rmSync(join(runDir, "ship.json"));
-    initInline("--stop-before-wait", "--caller-owned");
+    initInline("--no-merge");
     const light = state();
     assert.equal(light.max_files_changed, 3);
     assert.equal(light.escalate, false);
-    assert.equal(light.stop_before_wait, true);
-    assert.equal(light.run_owner, "caller");
     assert.deepEqual(light.phases, ["context", "implement", "pr"]);
     assert.equal(light.phase_status.branch, "skipped");
     assert.equal(light.phase_status.merge, "skipped");
@@ -492,18 +471,6 @@ describe("init", () => {
     assert.equal(again.code, 0);
     assert.equal(again.json().created, false);
     assert.equal(again.json().request, "Add OAuth login");
-  });
-
-  test("uses a given snapshot", () => {
-    const snap = join(tmp, "snap.json");
-    writeFileSync(
-      snap,
-      JSON.stringify({ version: 1, ship: { inline: { max_files_changed: 2 } } })
-    );
-    initInline("--config-snapshot", snap);
-    assert.equal(state().config_snapshot, snap);
-    assert.equal(state().max_files_changed, 2);
-    assert.equal(existsSync(join(runDir, "config.snapshot.json")), false);
   });
 });
 
@@ -657,15 +624,14 @@ describe("next and phase", () => {
     assert.equal(s.summary, "Adds hello()");
     assert.equal(s.commit, c);
     assert.deepEqual(s.gates, { test: "pass", lint: "skipped" });
-    const types = jsonl("events.jsonl").map((e) => e.type);
-    assert.deepEqual(types.slice(1), [
-      "branch.created",
-      "commit.created",
-      "pr.opened"
-    ]);
     assert.equal(runJson().branch, "feature/oauth");
     assert.equal(runJson().pr, PR);
-    assert.equal(cli(RUNS, ["validate", join(runDir, "events.jsonl")]).code, 0);
+    // The run dir holds only the files esp-skills reads.
+    assert.deepEqual(readdirSync(runDir).sort(), [
+      "config.snapshot.json",
+      "run.json",
+      "ship.json"
+    ]);
   });
 
   test("rejects unknown phases, statuses and values", () => {
@@ -710,7 +676,7 @@ describe("loops", () => {
     halt_on: ["critical-security"],
     interactive: "off"
   };
-  const step = (name, result) => ({ step: `01-${name}`, name, result });
+  const step = (name, result) => ({ step: name, name, at: null, result });
 
   test("reviewLoop ends on a clean review, the last round, or a round that fixed nothing", () => {
     assert.equal(
@@ -748,22 +714,20 @@ describe("loops", () => {
   });
 
   test("reviewLoop reruns an unfinished round recorded before a resume", () => {
-    const dir = mkdtempSync(join(tmpdir(), "ship-review-resume-"));
-    try {
-      const entry = step("review-1", {
-        status: "awaiting-human",
-        summary: "q"
-      });
-      mkdirSync(join(dir, "steps", entry.step), { recursive: true });
-      writeFileSync(join(dir, "steps", entry.step, "result.json"), "{}");
-      assert.equal(reviewLoop(dir, base, [entry]).action, "stop");
-      const later = new Date(Date.now() + 60_000).toISOString();
-      const rerun = reviewLoop(dir, { ...base, resumed_at: later }, [entry]);
-      assert.equal(rerun.action, "review");
-      assert.equal(rerun.step, "review-1");
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
-    }
+    const entry = {
+      ...step("review-1", { status: "awaiting-human", summary: "q" }),
+      at: "2026-11-10T09:00:00.000Z"
+    };
+    assert.equal(reviewLoop(null, base, [entry]).action, "stop");
+    const later = "2026-11-10T10:00:00.000Z";
+    const rerun = reviewLoop(null, { ...base, resumed_at: later }, [entry]);
+    assert.equal(rerun.action, "review");
+    assert.equal(rerun.step, "review-1");
+    const earlier = "2026-11-10T08:00:00.000Z";
+    assert.equal(
+      reviewLoop(null, { ...base, resumed_at: earlier }, [entry]).action,
+      "stop"
+    );
   });
 
   test("reviewLoop halts on critical findings left, and stops on a failed step", () => {
@@ -883,7 +847,6 @@ describe("loops", () => {
     assert.equal(out.status, "failed");
     assert.equal(state().stop.status, "failed");
     rmSync(join(runDir, "ship.json"), { force: true });
-    rmSync(join(runDir, "steps"), { recursive: true, force: true });
     init();
     writeStep("fix-review-wait", {
       status: "awaiting-human",
@@ -900,7 +863,6 @@ describe("loops", () => {
   test("pr-loop records the rounds and the stop, on both tracks", () => {
     for (const track of ["orchestrated", "inline"]) {
       rmSync(join(runDir, "ship.json"), { force: true });
-      rmSync(join(runDir, "steps"), { recursive: true, force: true });
       init("--track", track);
       writeStep(
         "fix-review",
@@ -910,7 +872,7 @@ describe("loops", () => {
       assert.equal(out.action, "stop");
       assert.equal(state().pr_rounds.done, 1);
       assert.equal(state().stop.status, "awaiting-human");
-      assert.equal(ship("next").json().action, "result");
+      assert.equal(ship("next").json().action, "finish");
     }
     assert.equal(ship("pr-loop", "--after", "merge").code, 2);
   });
@@ -1037,7 +999,6 @@ describe("inline limits", () => {
     const over = ship("scope").json();
     assert.equal(over.count, 3);
     assert.equal(over.action, "escalate");
-    assert.equal(over.escalate_with, "switch-track");
     assert.equal(ship("scope", "--estimate", "5").json().action, "escalate");
     assert.equal(ship("scope", "--estimate", "1").json().action, "continue");
     assert.equal(ship("scope", "--estimate", "-1").code, 2);
@@ -1046,11 +1007,6 @@ describe("inline limits", () => {
   test("scopeCheck continues over the limit when escalation is off", () => {
     const s = { max_files_changed: 1, escalate: false };
     assert.equal(scopeCheck(s, ["a", "b"]).action, "continue-over-limit");
-    assert.equal(
-      scopeCheck({ ...s, escalate: true, run_owner: "caller" }, ["a", "b"])
-        .escalate_with,
-      "escalate"
-    );
   });
 
   test("the second gate failure escalates, or halts without escalation", () => {
@@ -1062,7 +1018,6 @@ describe("inline limits", () => {
     const second = ship("gate-failure", "--reason", "test failed").json();
     assert.equal(second.gate_failures, 2);
     assert.equal(second.action, "escalate");
-    assert.equal(second.escalate_with, "switch-track");
     assert.deepEqual(state().gate_failure_reasons, [
       "test failed",
       "test failed"
@@ -1079,7 +1034,7 @@ describe("inline limits", () => {
 });
 
 describe("switch-track", () => {
-  test("moves an owned inline run to the orchestrated track in place", () => {
+  test("moves an inline run to the orchestrated track in place", () => {
     initInline("--plan-source", "none");
     ship("phase", "context", "--status", "done");
     ship("phase", "branch", "--status", "done", "--branch", "feature/oauth");
@@ -1107,8 +1062,7 @@ describe("switch-track", () => {
     assert.equal(s.phase_status.plan, "pending");
     assert.equal(s.phase_status.implement, undefined);
     assert.equal(s.max_wall_minutes, 240);
-    assert.equal(s.escalated_from.in_place, true);
-    assert.equal(s.escalated_from.stash, null);
+    assert.equal(s.escalated_from.trigger, "files");
     assert.equal(s.track_history[0].phase_status.implement, "started");
     // The uncommitted work stays in the tree, with no stash.
     assert.match(git("status", "--porcelain"), /new\.txt/);
@@ -1124,7 +1078,7 @@ describe("switch-track", () => {
     // The inline-only plan source is replaced by one the plan phase handles.
     assert.equal(s.plan_source, "generate");
     assert.equal(next.plan_source, "generate");
-    const block = ship("result").json();
+    const block = ship("outcome").json();
     assert.equal(block.outputs.track, "orchestrated");
     assert.equal(block.outputs.escalated_from.trigger, "files");
     assert.equal(block.outputs.track_history.length, 1);
@@ -1135,13 +1089,7 @@ describe("switch-track", () => {
     );
   });
 
-  test("refuses a caller-owned run and validates its arguments", () => {
-    initInline("--caller-owned");
-    assert.equal(
-      ship("switch-track", "--trigger", "design", "--reason", "x").code,
-      1
-    );
-    rmSync(join(runDir, "ship.json"));
+  test("validates its arguments", () => {
     initInline();
     assert.equal(
       ship("switch-track", "--trigger", "mood", "--reason", "x").code,
@@ -1160,10 +1108,10 @@ describe("switch-track", () => {
       ).code,
       2
     );
-    // An owned run switches in place instead of escalating.
+    // There is no escalate command: an inline run always switches in place.
     assert.equal(
       ship("escalate", "--trigger", "files", "--reason", "x").code,
-      1
+      2
     );
     const design = ship(
       "switch-track",
@@ -1175,139 +1123,6 @@ describe("switch-track", () => {
     assert.equal(design.code, 0, design.stderr);
     assert.equal(jsonl("decisions.jsonl")[0].source, "agent");
     assert.equal(jsonl("decisions.jsonl")[0].phase, "context");
-  });
-});
-
-describe("escalate (caller-owned run)", () => {
-  test("saves a patch, stashes the work, logs the decision and exits 30", () => {
-    initInline("--caller-owned");
-    writeFileSync(join(repo, "a.txt"), "changed\n");
-    writeFileSync(join(repo, "new.txt"), "new\n");
-    const r = ship(
-      "escalate",
-      "--trigger",
-      "files",
-      "--reason",
-      "touches 14 files"
-    );
-    assert.equal(r.code, 30, r.stderr);
-    const block = r.json();
-    assert.deepEqual(validateArtifact("result", block).errors, []);
-    assert.equal(block.status, "escalate");
-    assert.deepEqual(block.files_changed, ["a.txt", "new.txt"]);
-    const e = block.outputs.escalation;
-    assert.equal(e.trigger, "files");
-    assert.equal(e.stash, `esp-ship escalation ${runJson().id}`);
-    assert.deepEqual(block.outputs.next, {
-      skill: "esp-ship",
-      run_dir: runDir,
-      track: "orchestrated",
-      resume: true
-    });
-    assert.equal(git("status", "--porcelain"), "");
-    assert.match(git("stash", "list"), /esp-ship escalation/);
-    // The patch restores the work on a clean tree.
-    git("apply", "--check", e.patch);
-    git("apply", e.patch);
-    assert.equal(readFileSync(join(repo, "new.txt"), "utf8"), "new\n");
-    const [decision] = jsonl("decisions.jsonl");
-    assert.equal(decision["x-esp-escalation"], "files");
-    assert.equal(decision.source, "policy");
-    assert.equal(decision.risk, "medium");
-    assert.equal(state().escalation.decision, decision.id);
-    assert.equal(state().phase_status.implement, "skipped");
-    assert.equal(ship("next").json().action, "result");
-    const result = ship("result");
-    assert.equal(result.code, 30);
-    assert.equal(result.json().status, "escalate");
-    assert.equal(
-      ship("escalate", "--trigger", "gates", "--reason", "again").code,
-      1
-    );
-  });
-
-  test("keeps the tree with --keep-tree, and a design escalation is an agent decision", () => {
-    initInline("--caller-owned");
-    writeFileSync(join(repo, "a.txt"), "changed\n");
-    const r = ship(
-      "escalate",
-      "--trigger",
-      "design",
-      "--reason",
-      "two storage designs",
-      "--question",
-      "SQL or KV?",
-      "--keep-tree"
-    );
-    assert.equal(r.code, 30);
-    assert.equal(r.json().outputs.escalation.stash, null);
-    assert.equal(r.json().outputs.escalation.question, "SQL or KV?");
-    assert.notEqual(git("status", "--porcelain"), "");
-    assert.equal(jsonl("decisions.jsonl")[0].source, "agent");
-  });
-
-  test("validates its arguments", () => {
-    initInline("--caller-owned");
-    assert.equal(
-      ship("escalate", "--trigger", "mood", "--reason", "x").code,
-      2
-    );
-    assert.equal(ship("escalate", "--trigger", "files").code, 2);
-    rmSync(join(runDir, "ship.json"));
-    init("--caller-owned");
-    assert.equal(
-      ship("escalate", "--trigger", "files", "--reason", "x").code,
-      1
-    );
-  });
-
-  test("a resume takes the escalated run over on the orchestrated track", () => {
-    initInline(
-      "--caller-owned",
-      "--plan-source",
-      "none",
-      "--plan-mode",
-      "skip"
-    );
-    ship("phase", "branch", "--status", "done", "--branch", "feature/oauth");
-    writeFileSync(join(repo, "b.txt"), "work in progress\n");
-    const escalated = ship(
-      "escalate",
-      "--trigger",
-      "files",
-      "--reason",
-      "12 files estimated"
-    );
-    assert.equal(escalated.code, 30, escalated.stderr);
-    writeStep("ship", JSON.parse(escalated.stdout));
-    cli(RUNS, ["update", "--run-dir", runDir, "--status", "halted"]);
-
-    const out = ship("init", "--resume");
-    assert.equal(out.code, 0, out.stderr);
-    assert.equal(out.json().taken_over, true);
-    const s = state();
-    assert.equal(s.track, "orchestrated");
-    assert.equal(s.escalation, null);
-    assert.equal(s.branch, "feature/oauth");
-    assert.equal(s.phase_status.branch, "done");
-    assert.equal(s.phase_status.plan, "pending");
-    assert.equal(s.escalated_from.trigger, "files");
-    assert.equal(s.escalated_from.in_place, false);
-    assert.equal(s.escalated_from.patch, join(runDir, "escalation.patch"));
-    assert.match(s.escalated_from.stash, /esp-ship escalation/);
-    assert.equal(runJson().status, "running");
-    assert.ok(
-      jsonl("events.jsonl").some(
-        (e) => e.type === "run.resumed" && e.data.from === "inline"
-      )
-    );
-    assert.equal(s.plan_source, "synthesize");
-    const next = ship("next").json();
-    assert.equal(next.phase, "plan");
-    assert.equal(next.plan_source, "synthesize");
-    // The escalate step of the inline run does not decide the final status.
-    ship("stop", "--status", "failed", "--reason", "gave up");
-    assert.equal(ship("result").json().status, "failed");
   });
 });
 
@@ -1348,10 +1163,10 @@ describe("stop, halt and resume", () => {
       "--reason",
       "the plan changes the public API"
     );
-    assert.equal(out.code, 20, out.stderr);
+    assert.equal(out.code, 0, out.stderr);
     const block = JSON.parse(out.stdout);
-    assert.deepEqual(validateArtifact("result", block).errors, []);
     assert.equal(block.status, "halted");
+    assert.equal(block.halt.key, "scope-change");
     assert.deepEqual(block.blockers, [
       "scope-change: the plan changes the public API"
     ]);
@@ -1360,10 +1175,10 @@ describe("stop, halt and resume", () => {
     assert.equal(decision.risk, "high");
     assert.match(decision.rationale, /^Halt: scope-change/);
     assert.equal(state().phase_status.merge, "skipped");
-    assert.equal(ship("next").json().action, "result");
-    const result = ship("result");
-    assert.equal(result.code, 20);
-    assert.equal(JSON.parse(result.stdout).status, "halted");
+    assert.equal(ship("next").json().action, "finish");
+    const outcome = ship("outcome");
+    assert.equal(outcome.code, 0);
+    assert.equal(JSON.parse(outcome.stdout).status, "halted");
     assert.equal(ship("halt", "--key", "boredom", "--reason", "x").code, 2);
     assert.equal(ship("halt", "--key", "budget").code, 2);
   });
@@ -1379,8 +1194,8 @@ describe("stop, halt and resume", () => {
       "--reason",
       "2 review items open"
     );
-    const out = ship("result");
-    assert.equal(out.code, 10);
+    const out = ship("outcome");
+    assert.equal(out.code, 0);
     const block = JSON.parse(out.stdout);
     assert.equal(block.status, "awaiting-human");
     assert.deepEqual(block.blockers, ["2 review items open"]);
@@ -1391,7 +1206,7 @@ describe("stop, halt and resume", () => {
     ship("phase", "plan", "--status", "done", "--plan", examplePlan());
     ship("phase", "branch", "--status", "started");
     ship("stop", "--status", "awaiting-human", "--reason", "open question");
-    assert.equal(JSON.parse(ship("next").stdout).action, "result");
+    assert.equal(JSON.parse(ship("next").stdout).action, "finish");
     assert.equal(JSON.parse(ship("init").stdout).stop.status, "awaiting-human");
     const resumed = JSON.parse(ship("init", "--resume").stdout);
     assert.equal(resumed.resumed, true);
@@ -1402,7 +1217,6 @@ describe("stop, halt and resume", () => {
     assert.equal(next.action, "run");
     assert.equal(next.phase, "branch");
     assert.equal(next.resumed, true);
-    assert.ok(jsonl("events.jsonl").some((e) => e.type === "run.resumed"));
   });
 
   test("a resume leaves a failed stop and a halt in place", () => {
@@ -1418,7 +1232,71 @@ describe("stop, halt and resume", () => {
   });
 });
 
-describe("result", () => {
+describe("record", () => {
+  test("stores the facts of a step in ship.json and replaces them in place", () => {
+    init();
+    const first = ship(
+      "record",
+      "review-1",
+      "--json",
+      JSON.stringify({
+        file: "review.md",
+        findings: [],
+        outcome: {
+          status: "done",
+          summary: "1 finding",
+          outputs: { findings: 1 }
+        }
+      })
+    );
+    assert.equal(first.code, 0, first.stderr);
+    assert.equal(first.json().name, "review-1");
+    assert.equal(first.json().outputs.findings, 1);
+    writeStep("fix-review-1", done({ fixed: 1 }));
+    writeStep("review-1", done({ findings: 0 }, { max_risk: "medium" }));
+    const steps = state().steps;
+    assert.deepEqual(
+      steps.map((r) => [r.name, r.outputs]),
+      [
+        ["review-1", { findings: 0 }],
+        ["fix-review-1", { fixed: 1 }]
+      ]
+    );
+    assert.equal(typeof steps[0].at, "string");
+    assert.equal(
+      JSON.parse(readFileSync(join(runDir, "run.json"), "utf8")).max_risk,
+      "medium"
+    );
+    assert.equal(ship("review-loop").json().action, "done");
+  });
+
+  test("rejects malformed facts and step names", () => {
+    init();
+    assert.equal(ship("record", "review-1", "--json", "{}").code, 1);
+    assert.equal(
+      ship("record", "review-1", "--json", JSON.stringify({ status: "nope" }))
+        .code,
+      1
+    );
+    assert.equal(
+      ship(
+        "record",
+        "merge",
+        "--json",
+        JSON.stringify({ status: "merged", commit: "not-a-sha" })
+      ).code,
+      1
+    );
+    assert.equal(
+      ship("record", "../x", "--json", JSON.stringify(done())).code,
+      2
+    );
+    assert.equal(ship("record", "review-1", "--json", "{").code, 2);
+    assert.equal(state().steps, undefined);
+  });
+});
+
+describe("outcome", () => {
   test("orchestrated: follows the last step that ran, and merged wins", () => {
     init();
     commit("m1.txt", "1\n", "feat: M1 add the provider");
@@ -1452,7 +1330,7 @@ describe("result", () => {
       "fix-review",
       done({ mode: "pr", rounds: 1, fixed: 1, commits: ["c"] })
     );
-    let block = ship("result").json();
+    let block = ship("outcome").json();
     assert.equal(block.status, "done");
     assert.deepEqual(block.outputs.milestone_commits, {
       M1: "1111111",
@@ -1467,15 +1345,15 @@ describe("result", () => {
       summary: "merged",
       outputs: { outcome: "merged", merged: true, method: "squash" }
     });
-    const merged = ship("result");
+    const merged = ship("outcome");
     assert.equal(merged.code, 0);
     block = JSON.parse(merged.stdout);
     assert.equal(block.status, "merged");
     assert.equal(block.outputs.merge.method, "squash");
   });
 
-  test("inline: done after --stop-before-wait, with commits and gates", () => {
-    initInline("--stop-before-wait");
+  test("inline: done after the pull request, with commits and gates", () => {
+    initInline("--no-merge");
     const c = commit("b.txt", "b\n", "Add greeting");
     ship(
       "phase",
@@ -1488,27 +1366,16 @@ describe("result", () => {
       '{"test":"pass"}'
     );
     ship("phase", "pr", "--status", "done", "--pr", PR);
-    const r = ship("result");
+    const r = ship("outcome");
     assert.equal(r.code, 0, r.stderr);
     const block = r.json();
-    assert.deepEqual(validateArtifact("result", block).errors, []);
     assert.equal(block.status, "done");
     assert.equal(block.commit, c);
     assert.equal(block.pr, PR);
     assert.deepEqual(block.files_changed, ["b.txt"]);
     assert.deepEqual(block.gates, { test: "pass" });
     assert.equal(block.outputs.track, "inline");
-    assert.deepEqual(block.outputs.deferred_phases, ["fix-review", "merge"]);
-    assert.match(block.summary, /left to the caller/);
-    const recorded = cli(RUNS, [
-      "result",
-      "ship",
-      "--run-dir",
-      runDir,
-      "--json",
-      r.stdout
-    ]);
-    assert.equal(recorded.code, 0, recorded.stderr);
+    assert.match(block.summary, /Done the task/);
   });
 
   test("inline: merged from the merge step, with review fixes and follow-ups", () => {
@@ -1534,7 +1401,7 @@ describe("result", () => {
       summary: "Merged.",
       outputs: { outcome: "merged", merged: true, method: "squash" }
     });
-    const block = ship("result").json();
+    const block = ship("outcome").json();
     assert.equal(block.status, "merged");
     assert.equal(block.outputs.review_fix_commits, 1);
     assert.equal(block.outputs.commits.length, 2);
@@ -1546,55 +1413,38 @@ describe("result", () => {
     assert.match(block.summary, /squash/);
   });
 
-  test("passes an awaiting-human step through with its needs_input", () => {
+  test("passes an awaiting-human step through with its blockers", () => {
     initInline();
-    const needs = {
-      id: "fix-review-wait-timeout",
-      question: "Keep waiting?",
-      options: [{ id: "wait", label: "Wait" }],
-      recommended: "wait",
-      blocking: true
-    };
     writeStep("fix-review-wait", {
       status: "awaiting-human",
       summary: "Timed out.",
-      needs_input: needs
+      blockers: ["Keep waiting?"]
     });
-    const r = ship("result");
-    assert.equal(r.code, 10);
-    assert.deepEqual(r.json().needs_input, needs);
+    const r = ship("outcome");
+    assert.equal(r.code, 0);
+    assert.deepEqual(r.json().blockers, ["Keep waiting?"]);
     assert.equal(
-      ship("result", "--status", "failed", "--summary", "Gave up.").json()
+      ship("outcome", "--status", "failed", "--summary", "Gave up.").json()
         .summary,
       "Gave up."
     );
-    assert.equal(ship("result", "--status", "nope").code, 2);
+    assert.equal(ship("outcome", "--status", "nope").code, 2);
   });
 
   test("passes the question of a milestone builder that stopped", () => {
     init();
     writeStep("plan", done());
-    const needs = {
-      id: "m2-storage",
-      question: "SQL or KV?",
-      options: [
-        { id: "sql", label: "SQL" },
-        { id: "kv", label: "KV" }
-      ],
-      recommended: "sql",
-      blocking: true
-    };
     writeStep("build-M1", done({ milestone: "M1" }));
     writeStep("build-M2", {
       status: "awaiting-human",
       summary: "M2 needs a storage choice.",
-      needs_input: needs
+      blockers: ["SQL or KV?"]
     });
     ship("stop", "--status", "awaiting-human", "--reason", "SQL or KV?");
-    const r = ship("result");
-    assert.equal(r.code, 10);
+    const r = ship("outcome");
+    assert.equal(r.code, 0);
     assert.equal(r.json().status, "awaiting-human");
-    assert.deepEqual(r.json().needs_input, needs);
+    assert.deepEqual(r.json().blockers, ["SQL or KV?"]);
   });
 });
 
@@ -1791,32 +1641,15 @@ describe("milestone init", () => {
   });
 
   test("shares the config snapshot of ship.json", () => {
-    const snap = join(tmp, "snap.json");
-    writeFileSync(
-      snap,
-      JSON.stringify({
-        version: 1,
-        ship: { max_retries_per_milestone: 0, parallel: "on" }
-      })
-    );
-    init("--config-snapshot", snap);
+    userConfig({ ship: { max_retries_per_milestone: 0, parallel: "on" } });
+    init();
+    // A later config change does not reach the frozen run.
+    userConfig({ ship: { max_retries_per_milestone: 4, parallel: "off" } });
     assert.equal(ship("milestone", "init").code, 0);
     const s = milestones();
-    assert.equal(s.config_snapshot, snap);
+    assert.equal(s.config_snapshot, join(runDir, "config.snapshot.json"));
     assert.equal(s.max_retries, 0);
     assert.equal(s.parallel, true);
-    assert.equal(existsSync(join(runDir, "config.snapshot.json")), false);
-  });
-
-  test("uses a given config snapshot instead of writing one", () => {
-    const snap = join(tmp, "snap.json");
-    writeFileSync(
-      snap,
-      JSON.stringify({ version: 1, ship: { max_retries_per_milestone: 1 } })
-    );
-    assert.equal(ship("milestone", "init", "--config-snapshot", snap).code, 0);
-    assert.equal(milestones().config_snapshot, snap);
-    assert.equal(milestones().max_retries, 1);
   });
 
   test("is idempotent and keeps progress", () => {
@@ -1925,13 +1758,15 @@ describe("milestone loop", () => {
     }
     assert.deepEqual(seen, ["M1", "M2", "M3"]);
     assert.deepEqual(completedFromState(runDir).sort(), ["M1", "M2", "M3"]);
-    assert.deepEqual(
-      jsonl("events.jsonl")
-        .filter((e) => e.type === "commit.created")
-        .map((e) => e.data.milestone),
-      ["M1", "M2", "M3"]
-    );
-    assert.equal(validateFile(join(runDir, "events.jsonl")).valid, true);
+    const milestones = ship("milestone", "show").json().milestones;
+    for (const id of ["M1", "M2", "M3"])
+      assert.equal(milestones[id].commit, commits[id]);
+    assert.deepEqual(readdirSync(runDir).sort(), [
+      "config.snapshot.json",
+      "plan.md",
+      "run.json",
+      "state.json"
+    ]);
     assert.equal(ship("milestone", "show").json().milestones.M3.status, "done");
   });
 
@@ -1946,13 +1781,25 @@ describe("milestone loop", () => {
       "--commit",
       SHA2,
       "--reason",
-      "lint fails"
+      "lint fails",
+      "--failures",
+      JSON.stringify([
+        { gate: "lint", command: "pnpm lint", error: "no-unused-vars" }
+      ])
     );
     let next = ship("milestone", "next").json();
     assert.equal(next.action, "retry");
     assert.equal(next.attempt, 2);
     assert.equal(next.amend, SHA2);
     assert.equal(next.last_failure, "lint fails");
+    assert.deepEqual(next.failures, [
+      { gate: "lint", command: "pnpm lint", error: "no-unused-vars" }
+    ]);
+    assert.equal(
+      ship("milestone", "finish", "M1", "--status", "failed", "--failures", "{")
+        .code,
+      2
+    );
     ship("milestone", "start", "M1");
     ship(
       "milestone",
@@ -2015,21 +1862,6 @@ describe("milestone loop", () => {
     assert.equal(next.reason, "plan ambiguity");
   });
 
-  test("--milestone selects one milestone and reports blocked dependencies", () => {
-    assert.equal(
-      ship("milestone", "next", "--milestone", "M3").json().milestone,
-      "M3"
-    );
-    const blocked = ship("milestone", "next", "--milestone", "M2").json();
-    assert.equal(blocked.action, "blocked");
-    assert.match(blocked.reason, /depends on M1/);
-    assert.equal(
-      ship("milestone", "next", "--milestone", "next").json().milestone,
-      "M1"
-    );
-    assert.equal(ship("milestone", "next", "--milestone", "M9").code, 2);
-  });
-
   test("finish validates its input", () => {
     assert.equal(
       ship("milestone", "finish", "M1", "--status", "done", "--commit", SHA1)
@@ -2086,13 +1918,6 @@ describe("nextStep", () => {
     assert.deepEqual(nextStep(s, { parallel: true }).batch, ["M1", "M3", "M5"]);
     const noFiles = make({ M1: {}, M2: { files: ["x"] } });
     assert.deepEqual(nextStep(noFiles, { parallel: true }).batch, ["M1"]);
-  });
-
-  test("--milestone next never batches", () => {
-    const s = make({ M1: { files: ["a"] }, M2: { files: ["b"] } });
-    assert.deepEqual(nextStep(s, { parallel: true, only: "next" }).batch, [
-      "M1"
-    ]);
   });
 
   test("builderUsed adds the runs continued after the reported tokens", () => {
@@ -2514,9 +2339,6 @@ describe("builder reuse", () => {
     const lost = reuse("M3", "--agent-id", "zz");
     assert.equal(lost.decision, "fresh");
     assert.match(lost.reason, /zz is not the last builder \(a3\)/);
-    const single = reuse("M3", "--agent-id", "a3", "--single");
-    assert.equal(single.decision, "fresh");
-    assert.match(single.reason, /--milestone mode/);
     assert.equal(reuse("M3", "--agent-id", "a3").decision, "reuse");
   });
 
@@ -2565,17 +2387,14 @@ describe("milestone models", () => {
       join(runDir, "plan.md"),
       planText(1, [milestone("M1"), milestone("M3", { complexity: "high" })])
     );
-    const snap = join(tmp, "snap.json");
-    writeFileSync(
-      snap,
-      JSON.stringify({
-        version: 1,
-        defaults: {
-          models: { builder: { high: { model: "fable", effort: "max" } } }
-        }
-      })
-    );
-    ship("milestone", "init", "--config-snapshot", snap);
+    userConfig({
+      defaults: {
+        models: { builder: { high: { model: "fable", effort: "max" } } }
+      }
+    });
+    ship("milestone", "init");
+    // The snapshot is frozen at init: a later change does not apply.
+    userConfig({});
     assert.deepEqual(ship("milestone", "models", "M3").json().builder, {
       model: "fable",
       effort: "max"

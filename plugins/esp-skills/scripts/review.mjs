@@ -5,7 +5,7 @@
 // request), writes the diff to a file the read-only reviewer can open, and
 // picks the review round in the run directory. `parse` reads the reviewer's
 // markdown, enforces the configured minimum severity, and builds the
-// contract result block, so no SKILL.md counts findings by hand.
+// outcome (counts by class and severity), so no SKILL.md counts findings by hand.
 //
 // Exit codes: 0 success, 1 failure (bad review, git or gh error), 2 usage error.
 
@@ -21,7 +21,6 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { validateArtifact } from "./lib/contract.mjs";
 
 export class ReviewError extends Error {
   constructor(message, exitCode = 1) {
@@ -341,10 +340,68 @@ function stripResultLine(lines) {
       if (block && typeof block === "object" && "status" in block)
         return { lines: lines.slice(0, end - 1), block };
     } catch {
-      // Not a result block: keep the line.
+      // Not a trailing JSON line: keep the line.
     }
   }
   return { lines, block: null };
+}
+
+const DISCOVERED_TYPES = [
+  "bug",
+  "debt",
+  "security",
+  "docs",
+  "test",
+  "follow-up",
+  "other"
+];
+
+/** One `Discovered: <type> - <title> - <evidence>` line as a discovered item. */
+function parseDiscovered(text) {
+  const parts = text.split(/\s+-\s+/);
+  const type = parts[0].trim().toLowerCase();
+  if (parts.length >= 2 && DISCOVERED_TYPES.includes(type)) {
+    const item = { type, title: parts[1].trim() };
+    const evidence = parts.slice(2).join(" - ").trim();
+    if (evidence) item.evidence = evidence;
+    return item;
+  }
+  return { type: "other", title: text.trim() };
+}
+
+/**
+ * Split the reply lines around the review: a leading `Status:` line and the
+ * trailing `Discovered:` lines of the reply format.
+ */
+function stripReplyLines(lines) {
+  let start = 0;
+  while (start < lines.length && lines[start].trim() === "") start++;
+  let status = null;
+  const head = /^Status:\s*(\S+)/i.exec(lines[start] ?? "");
+  if (head) {
+    status = head[1].toLowerCase();
+    start++;
+  }
+  let end = lines.length;
+  const discovered = [];
+  for (let i = lines.length - 1; i >= start; i--) {
+    const text = lines[i].trim();
+    if (text === "") continue;
+    const m = /^Discovered:\s*(.+)$/i.exec(text);
+    if (!m) break;
+    discovered.unshift(parseDiscovered(m[1]));
+    end = i;
+  }
+  return { lines: lines.slice(start, end), start, status, discovered };
+}
+
+/** Text of the reply's `Summary:` line, or null. */
+function replySummary(lines) {
+  for (const line of lines) {
+    const m = /^Summary:\s*(.+)$/i.exec(line.trim());
+    if (m) return m[1].trim();
+  }
+  return null;
 }
 
 function parseFinding(id, meta, body, line, errors) {
@@ -414,11 +471,17 @@ function parseFinding(id, meta, body, line, errors) {
 /**
  * Parse reviewer markdown into findings. Sections: an optional `### Review:`
  * header, `#### F<n> - <severity> - <dimension> - <class>` findings,
- * `#### Rejected Candidates`, and an optional trailing result block line.
+ * `#### Rejected Candidates`, wrapped in the reply format: an optional leading
+ * `Status:` line and trailing `Discovered:` lines. A trailing JSON line from
+ * older reviewers is still accepted for its `discovered_items`.
  */
 export function parseReview(text) {
   const raw = text.replace(/^\uFEFF/, "").split(/\r?\n/);
-  const { lines, block } = stripResultLine(raw);
+  const stripped = stripResultLine(raw);
+  const block = stripped.block;
+  const reply = stripReplyLines(stripped.lines);
+  const lines = reply.lines;
+  const offset = reply.start;
   const errors = [];
   const findings = [];
   const rejected = [];
@@ -478,7 +541,7 @@ export function parseReview(text) {
         id: finding[1],
         meta: finding[2],
         body: [],
-        line: index + 1,
+        line: index + offset + 1,
         start: index
       };
       return;
@@ -497,7 +560,24 @@ export function parseReview(text) {
     }
   });
   close(lines.length);
-  return { header, findings, rejected, spans, lines, block, errors };
+  const discovered =
+    reply.discovered.length > 0
+      ? reply.discovered
+      : Array.isArray(block?.discovered_items)
+        ? block.discovered_items
+        : [];
+  return {
+    header,
+    findings,
+    rejected,
+    spans,
+    lines,
+    status: reply.status,
+    summary: replySummary(lines),
+    discovered,
+    block,
+    errors
+  };
 }
 
 const RISK_BY_SEVERITY = {
@@ -513,7 +593,7 @@ function countBy(findings, key, values) {
   return counts;
 }
 
-/** Build the report and the contract result block from parsed review markdown. */
+/** Build the report and its outcome from parsed review markdown. */
 export function buildReport(
   parsed,
   { minSeverity = "low", verified = true, paths = {} } = {}
@@ -567,32 +647,30 @@ export function buildReport(
   };
   if (paths.review) outputs.review_path = paths.review;
   if (paths.findings) outputs.findings_path = paths.findings;
-  const result = {
-    contract_version: 1,
-    status: "done",
-    summary,
+  // A reviewer that replied anything but `Status: done` did not review the
+  // diff: report it as failed, never as a clean review.
+  const failed = parsed.status != null && parsed.status !== "done";
+  const outcome = {
+    status: failed ? "failed" : "done",
+    summary: failed
+      ? (parsed.summary ?? `The reviewer replied Status: ${parsed.status}.`)
+      : summary,
     max_risk: maxRisk,
     outputs
   };
-  const discovered = parsed.block?.discovered_items;
+  const discovered = parsed.discovered ?? parsed.block?.discovered_items;
   if (Array.isArray(discovered) && discovered.length > 0)
-    result.discovered_items = discovered;
-  const check = validateArtifact("result", result);
-  if (!check.valid) {
-    throw new ReviewError(
-      `Result block is invalid: ${check.errors.map((e) => `${e.path} ${e.message}`).join("; ")}`
-    );
-  }
+    outcome.discovered_items = discovered;
   return {
     valid: true,
     findings: kept,
     rejected: parsed.rejected,
     dropped,
-    result
+    outcome
   };
 }
 
-/** Review markdown with dropped findings removed and the result line stripped. */
+/** Review markdown without the dropped findings, the status line and a trailing JSON line. */
 export function renderReview(parsed, dropped) {
   const remove = new Set();
   for (const span of parsed.spans) {
@@ -601,6 +679,16 @@ export function renderReview(parsed, dropped) {
   }
   const lines = parsed.lines.filter((_, i) => !remove.has(i));
   while (lines.length > 0 && lines.at(-1).trim() === "") lines.pop();
+  while (lines.length > 0 && lines[0].trim() === "") lines.shift();
+  // Keep a non-done status, so parsing the rewritten review still fails it.
+  if (parsed.status && parsed.status !== "done")
+    lines.unshift(`Status: ${parsed.status}`, "");
+  // Keep the discovered items, so parsing the rewritten review finds them again.
+  const discovered = (parsed.discovered ?? []).map(
+    (d) =>
+      `Discovered: ${d.type} - ${d.title}${d.evidence ? ` - ${d.evidence}` : ""}`
+  );
+  if (discovered.length > 0) lines.push("", ...discovered);
   return `${lines.join("\n")}\n`;
 }
 
@@ -637,10 +725,10 @@ export function cmdParse(file, options = {}) {
       `${JSON.stringify(
         {
           review_format: 1,
-          base: report.result.outputs.base,
-          head: report.result.outputs.head,
-          min_severity: report.result.outputs.min_severity,
-          verified: report.result.outputs.verified,
+          base: report.outcome.outputs.base,
+          head: report.outcome.outputs.head,
+          min_severity: report.outcome.outputs.min_severity,
+          verified: report.outcome.outputs.verified,
           findings: report.findings,
           rejected: report.rejected
         },
@@ -648,9 +736,6 @@ export function cmdParse(file, options = {}) {
         2
       )}\n`
     );
-  }
-  if (options.result !== undefined && parseBool(options.result, "result")) {
-    return { output: JSON.stringify(report.result) };
   }
   return { output: { file: path, ...report } };
 }
@@ -668,7 +753,7 @@ Commands:
                          Prints { kind, base, head, files, empty, round, step, diff_path,
                          review_path, findings_path, ... }
   parse <review.md>      Parse reviewer markdown, apply --min-severity, and print
-                         { findings, rejected, dropped, result } (exit 1 with errors when a
+                         { findings, rejected, dropped, outcome } (exit 1 with errors when a
                          finding is malformed)
 
 Options:
@@ -679,13 +764,12 @@ Options:
   --min-severity <lvl>   Drop findings below low|medium|high|critical (parse, default low)
   --verified <bool>      Whether the verify pass ran (parse, default true)
   --md-out <file>        Write the review markdown without dropped findings (parse)
-  --result               Print only the result block, as one line (parse)
   --help                 Show this help
 
 Environment:
   ESP_GH_CMD             JSON array replacing the gh command (tests)`;
 
-const BOOLEAN_OPTIONS = new Set(["result", "help"]);
+const BOOLEAN_OPTIONS = new Set(["help"]);
 
 export function parseArgs(argv) {
   const options = {};

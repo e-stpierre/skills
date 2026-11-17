@@ -75,7 +75,6 @@ Reserved short letters keep one meaning in every skill: `-h` help, `-v` verbose,
 Plugin-wide short letters keep one meaning in every skill:
 
 - `-d|--run-dir <path>`
-- `-c|--config-snapshot <path>`
 - `-i|--interactive <mode>`
 - `-r|--reviewers <name>...`
 - `-p|--pr <pr>` or `-p|--plan <path>` (no skill takes both)

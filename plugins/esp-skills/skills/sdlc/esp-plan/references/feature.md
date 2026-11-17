@@ -5,7 +5,7 @@
 A feature plan follows [plan format 1](../../../../references/plan-format.md). Use these context sections between `## Overview` and `## Milestones`:
 
 - `## Requirements`: functional and non-functional requirements (performance, security, UX)
-- `## Architecture`: high-level design, the existing patterns it follows, integration points, data models and API contracts, and the key technical decisions
+- `## Architecture`: high-level design, the existing patterns it follows, integration points, data models and API shapes, and the key technical decisions
 - `## Testing Strategy`: the unit, integration and end-to-end coverage the milestones add
 
 Put feature-level validation in the acceptance criteria of the last milestone that completes it.
@@ -24,7 +24,7 @@ Settle these from the context and the exploration; when one stays open, follow A
 ## Architecture Considerations
 
 - Follow the existing patterns of the codebase and reuse its components
-- Define data models and API contracts at the integration points
+- Define data models and API shapes at the integration points
 - Design for the stated requirements, with extensibility only where they call for it
 
 ## Milestone Design

@@ -43,7 +43,6 @@ Arguments: $ARGUMENTS
 - **Skill**: a `SKILL.md` under a `skills/` path segment (`plugins/*/skills/**`, `.claude/skills/**`). Other files in a skill's `references/`, `scripts/` or `assets/` are support files: check only that SKILL.md links them and that the links resolve
 - **Agent**: a `.md` file directly under a plugin's `agents/` directory
 - **README**: `plugins/<plugin>/README.md`. READMEs in subdirectories are skipped
-- **Workflow**: a `.yaml` file under `af-workflows/`: every `skill:` value uses the full plugin namespace (`esp-skills:esp-plan`)
 - **Skipped**: `CHANGELOG.md`, files under `local/`, `docs/templates/` and `node_modules/`, and anything else unclassified (listed in the report)
 
 Match path segments, not substrings: the plugin directory `esp-skills/` is not a `skills/` segment.
@@ -62,7 +61,7 @@ Everything else (a missing section, a weak description, a step without a done-co
 ## Instructions
 
 1. **Parse arguments**: read `-a` or `--autofix`, and every `-t` or `--target` value. Done when the target list is known (the repository root when none is given).
-2. **Run the script**: `node scripts/validate-prompts.mjs --json`, and keep the issues whose file is under a target. It covers frontmatter, sections, arguments and option letters, link conditions, leftovers, links, ASCII, size, registration, workflow namespaces and marketplace order. Done when the script has exited 0 or 1 (2 is a usage error: report it and stop).
+2. **Run the script**: `node scripts/validate-prompts.mjs --json`, and keep the issues whose file is under a target. It covers frontmatter, sections, arguments and option letters, link conditions, leftovers, links, ASCII, size, registration and marketplace order. Done when the script has exited 0 or 1 (2 is a usage error: report it and stop).
 3. **Classify the targeted files** (see File Classes), and read the template of each class present and, for skills, the esp-create-skill Validate step.
 4. **Judgment checks** on each targeted file: the description follows the invocation rule (a user-invoked one-line summary, or a model-invoked front-load with one trigger per case), the body reads each option by both names, every step ends on a checkable done-condition, and target behaviors are stated positively. Done when every file has a pass or a list of issues.
 5. **Autofix** (with `-a|--autofix`): apply the fixes of Autofix, then run the script again. Done when every remaining issue needs an author.
@@ -85,7 +84,7 @@ List only the files with issues, grouped by file, then a one-line summary. Use `
 - [FAIL] skill not listed: `./skills/sdlc/esp-new`
 - [INFO] not shipped (in progress): `skills/in-progress/esp-draft`
 
-Checked 22 files (15 skills, 3 agents, 1 README, 3 workflows): 20 pass, 2 with issues, 1 fixed.
+Checked 19 files (15 skills, 3 agents, 1 README): 17 pass, 2 with issues, 1 fixed.
 ```
 
 When every file passes, print only the summary line.

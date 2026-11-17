@@ -1,16 +1,16 @@
 #!/usr/bin/env node
-// esp-skills run directories (harness contract v1, owned by agentic-forge).
+// esp-skills run directories (layout: references/run-directory.md).
 //
-// Creates and updates contract-compliant run directories so no skill writes
-// the JSON layouts by hand. Every artifact is validated against the schemas in
-// references/contract/v1/ before it is written.
+// Creates and updates run directories so no skill writes the JSON layouts by
+// hand. run.json and every decision are checked (lib/run-files.mjs) before
+// they are written.
 //
-// Run location: --run-dir <path> when given (a harness or parent run owns it),
+// Run location: --run-dir <path> when given (a parent skill owns the run),
 // otherwise <runs.root>/<YYYY-MM-DD>-<slug> from the resolved config.
 // Appends to *.jsonl files and run.json updates hold `<file>.lock`.
 // ESP_RUNS_NOW (ISO date-time) fixes the clock, for tests.
 //
-// Exit codes: 0 success, 1 invalid artifact or failed operation, 2 usage error.
+// Exit codes: 0 success, 1 invalid file or failed operation, 2 usage error.
 
 import {
   appendFileSync,
@@ -25,17 +25,10 @@ import {
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { expandHome, loadConfig } from "./config.mjs";
-import {
-  CONTRACT_VERSION,
-  RISK_ORDER,
-  RUN_STATUS_EVENTS,
-  TERMINAL_RUN_STATUSES,
-  exitCodeFor,
-  maxRisk,
-  parseFrontmatter,
-  validateArtifact
-} from "./lib/contract.mjs";
+import { parseFrontmatter } from "./lib/frontmatter.mjs";
 import { withLock } from "./lib/lock.mjs";
+import { RISK_ORDER, maxRisk } from "./lib/risk.mjs";
+import { CHECKS, TERMINAL_RUN_STATUSES } from "./lib/run-files.mjs";
 import {
   ATTRIBUTION,
   BODY_SECTIONS,
@@ -116,13 +109,11 @@ function writeJsonAtomic(path, data) {
   renameSync(tmp, path);
 }
 
-function assertArtifact(artifact, value, source) {
-  const result = validateArtifact(artifact, value);
-  if (!result.valid) {
-    const lines = result.errors.map((e) => `  ${e.path}: ${e.message}`);
-    throw new RunsError(
-      `Invalid ${artifact} (${source}):\n${lines.join("\n")}`
-    );
+function assertValid(kind, value, source) {
+  const errors = CHECKS[kind](value);
+  if (errors.length > 0) {
+    const lines = errors.map((e) => `  ${e.path}: ${e.message}`);
+    throw new RunsError(`Invalid ${kind} (${source}):\n${lines.join("\n")}`);
   }
 }
 
@@ -133,7 +124,7 @@ function jsonlEnd(lines) {
   return end;
 }
 
-/** Physical line count of a jsonl file, which is the `seq` of its last event. */
+/** Physical line count of a jsonl file. */
 function countLines(path) {
   if (!existsSync(path)) return 0;
   return jsonlEnd(readFileSync(path, "utf8").split("\n"));
@@ -143,11 +134,11 @@ function countLines(path) {
  * Append one entry to a jsonl file under its lock. `build(lineNumber)` returns
  * the entry; it receives the 1-based number the new line will have.
  */
-function appendJsonl(path, artifact, build) {
+function appendJsonl(path, kind, build) {
   mkdirSync(dirname(path), { recursive: true });
   return withLock(path, () => {
     const entry = build(countLines(path) + 1);
-    assertArtifact(artifact, entry, path);
+    assertValid(kind, entry, path);
     appendFileSync(path, `${JSON.stringify(entry)}\n`, "utf8");
     return entry;
   });
@@ -167,7 +158,7 @@ function parseJsonInput(raw, what) {
   }
 }
 
-function readStdin() {
+export function readStdin() {
   try {
     return readFileSync(0, "utf8");
   } catch {
@@ -189,10 +180,7 @@ function runId(dir) {
 }
 
 function configFor(options) {
-  return loadConfig({
-    snapshot: options["config-snapshot"],
-    projectDir: options["project-dir"]
-  }).config;
+  return loadConfig({ projectDir: options["project-dir"] }).config;
 }
 
 /** Runs root from --root, else runs.root in the config. */
@@ -215,20 +203,8 @@ function splitList(value) {
 // Run lifecycle
 // ---------------------------------------------------------------------------
 
-/** Append an event to events.jsonl; `seq` is the line number. */
-export function appendEvent(dir, type, data = {}, env = process.env) {
-  const id = runId(dir);
-  return appendJsonl(join(dir, "events.jsonl"), "event", (seq) => ({
-    seq,
-    at: now(env).toISOString(),
-    run: id,
-    type,
-    data
-  }));
-}
-
 /** Raise run.json max_risk to `risk` when it is higher. */
-function raiseRunRisk(dir, risk, env) {
+export function raiseRunRisk(dir, risk, env) {
   if (!risk) return;
   const path = join(dir, "run.json");
   withLock(path, () => {
@@ -237,7 +213,7 @@ function raiseRunRisk(dir, risk, env) {
     if (next === run.max_risk) return;
     run.max_risk = next;
     run.updated_at = now(env).toISOString();
-    assertArtifact("run", run, path);
+    assertValid("run", run, path);
     writeJsonAtomic(path, run);
   });
 }
@@ -275,7 +251,6 @@ export function cmdCreate(slugArg, options, env = process.env) {
   if (!ID_PATTERN.test(id))
     throw new RunsError(`Invalid run directory name: ${id}`, 2);
   const run = {
-    contract_version: CONTRACT_VERSION,
     id,
     type: options.type ?? "skill"
   };
@@ -289,15 +264,9 @@ export function cmdCreate(slugArg, options, env = process.env) {
     models: {},
     budgets_used: {}
   });
-  assertArtifact("run", run, runPath);
+  assertValid("run", run, runPath);
   mkdirSync(dir, { recursive: true });
   writeJsonAtomic(runPath, run);
-  appendEvent(
-    dir,
-    "run.started",
-    { type: run.type, workflow: run.workflow },
-    env
-  );
   return { run_dir: dir, id, created: true };
 }
 
@@ -319,10 +288,8 @@ function parsePairs(values, what) {
 export function cmdUpdate(options, env = process.env) {
   const dir = requireRunDir(options);
   const path = join(dir, "run.json");
-  let previous;
-  const run = withLock(path, () => {
+  return withLock(path, () => {
     const current = readJsonFile(path);
-    previous = current.status;
     const next = structuredClone(current);
     for (const field of RUN_FIELDS) {
       if (options[field] !== undefined)
@@ -356,23 +323,14 @@ export function cmdUpdate(options, env = process.env) {
         : null;
     }
     next.updated_at = at;
-    assertArtifact("run", next, path);
+    assertValid("run", next, path);
     writeJsonAtomic(path, next);
     return next;
   });
-  if (options.status !== undefined && options.status !== previous) {
-    const type =
-      options.status === "running" && previous === "paused"
-        ? "run.resumed"
-        : RUN_STATUS_EVENTS[options.status];
-    if (type)
-      appendEvent(dir, type, { from: previous, to: options.status }, env);
-  }
-  return run;
 }
 
 // ---------------------------------------------------------------------------
-// Decisions, events, results
+// Decisions
 // ---------------------------------------------------------------------------
 
 /** Append a decision; fills `id` (D001, D002, ...) and `at` when missing. */
@@ -392,66 +350,8 @@ export function cmdDecision(options, env = process.env) {
   return appendDecision(dir, input, env);
 }
 
-export function cmdEvent(type, options, env = process.env) {
-  if (!type)
-    throw new RunsError(
-      "Usage: event <type> --run-dir <path> [--data <json>]",
-      2
-    );
-  const dir = requireRunDir(options);
-  const data =
-    options.data === undefined
-      ? {}
-      : parseJsonInput(options.data, "event --data");
-  return appendEvent(dir, type, data, env);
-}
-
-/** Resolve a step directory name: reuse `NN-<name>` when it exists, otherwise number it. */
-export function stepDirName(dir, step) {
-  if (!step || !ID_PATTERN.test(step))
-    throw new RunsError(`Invalid step name: ${step ?? "(missing)"}`, 2);
-  if (/^\d+-/.test(step)) return step;
-  const stepsDir = join(dir, "steps");
-  const existing = existsSync(stepsDir)
-    ? readdirSync(stepsDir)
-        .filter((d) => /^\d+-/.test(d))
-        .sort()
-    : [];
-  const match = existing.filter((d) => d.replace(/^\d+-/, "") === step).at(-1);
-  if (match) return match;
-  const next =
-    existing.reduce((max, d) => Math.max(max, Number.parseInt(d, 10)), 0) + 1;
-  return `${String(next).padStart(2, "0")}-${step}`;
-}
-
-export function cmdResult(step, options, env = process.env) {
-  const dir = requireRunDir(options);
-  const input = parseJsonInput(options.json ?? readStdin(), "result");
-  const block = { contract_version: CONTRACT_VERSION, ...input };
-  const name = stepDirName(dir, step);
-  const path = join(dir, "steps", name, "result.json");
-  assertArtifact("result", block, path);
-  writeJsonAtomic(path, block);
-  raiseRunRisk(dir, block.max_risk, env);
-  appendEvent(
-    dir,
-    block.status === "failed" ? "step.failed" : "step.completed",
-    { step: name, status: block.status },
-    env
-  );
-  if (block.needs_input) {
-    appendEvent(dir, "needs_input", { step: name, ...block.needs_input }, env);
-  }
-  return {
-    path,
-    step: name,
-    exit_code: exitCodeFor(block.status),
-    line: JSON.stringify(block)
-  };
-}
-
 // ---------------------------------------------------------------------------
-// Plans, operator messages, amendments
+// Plans
 // ---------------------------------------------------------------------------
 
 /** Latest plan version: plan.md is version 1, plan.v<N>.md is version N. */
@@ -476,152 +376,27 @@ export function cmdPlan(options) {
   return latestPlan(requireRunDir(options));
 }
 
-function compactTimestamp(date) {
-  return date.toISOString().replace(/[-:]/g, "").replace(".", "");
-}
-
-/** Read inbox messages sorted by file name (queue order). */
-export function readMessages(dir) {
-  const inbox = join(dir, "inbox");
-  if (!existsSync(inbox)) return [];
-  return readdirSync(inbox)
-    .filter((f) => f.endsWith(".json"))
-    .sort()
-    .map((file) => ({
-      file: join(inbox, file),
-      message: readJsonFile(join(inbox, file))
-    }));
-}
-
-export function cmdMessages(options) {
-  const dir = requireRunDir(options);
-  const all = readMessages(dir);
-  return all
-    .filter(({ message }) => options.all || !message.delivered_at)
-    .map(({ message }) => message);
-}
-
-export function cmdSend(options, env = process.env) {
-  const dir = requireRunDir(options);
-  if (!options.text || options.text === true)
-    throw new RunsError("send requires --text <message>", 2);
-  if (options.target === "step" && (!options.step || options.step === true))
-    throw new RunsError("send --target step requires --step <name>", 2);
-  const inbox = join(dir, "inbox");
-  mkdirSync(inbox, { recursive: true });
-  const message = withLock(inbox, () => {
-    const at = now(env);
-    const id = `m${String(readMessages(dir).length + 1).padStart(3, "0")}`;
-    const msg = {
-      id,
-      at: at.toISOString(),
-      from: options.from ?? "user",
-      mode: options.mode ?? "next",
-      text: options.text,
-      target: options.target ?? (options.step ? "step" : "run")
-    };
-    if (options.step) msg.step = options.step;
-    const path = join(inbox, `${compactTimestamp(at)}-${id}.json`);
-    assertArtifact("inbox-message", msg, path);
-    writeJsonAtomic(path, msg);
-    return msg;
-  });
-  appendEvent(
-    dir,
-    "message.queued",
-    { id: message.id, mode: message.mode },
-    env
-  );
-  return message;
-}
-
-export function cmdDeliver(ids, options, env = process.env) {
-  const dir = requireRunDir(options);
-  if (ids.length === 0)
-    throw new RunsError("Usage: deliver <message-id>... --run-dir <path>", 2);
-  const delivered = [];
-  for (const id of ids) {
-    const found = readMessages(dir).find(({ message }) => message.id === id);
-    if (!found) throw new RunsError(`Unknown message: ${id}`);
-    if (found.message.delivered_at) continue;
-    const message = { ...found.message, delivered_at: now(env).toISOString() };
-    assertArtifact("inbox-message", message, found.file);
-    writeJsonAtomic(found.file, message);
-    appendEvent(dir, "message.delivered", { id }, env);
-    appendDecision(
-      dir,
-      {
-        phase: options.phase ?? "operator",
-        source: "operator",
-        risk: "low",
-        decision: message.text,
-        rationale: `Operator message ${id} from ${message.from} (mode ${message.mode})`,
-        refs: [id]
-      },
-      env
-    );
-    delivered.push(message);
-  }
-  return delivered;
-}
-
-export function cmdAmend(options, env = process.env) {
-  const dir = requireRunDir(options);
-  if (!options.text || options.text === true)
-    throw new RunsError("amend requires --text <amendment>", 2);
-  const affects = splitList(options.affects);
-  const version =
-    options["plan-version"] !== undefined
-      ? Number(options["plan-version"])
-      : latestPlan(dir).version;
-  if (!Number.isInteger(version) || version < 2) {
-    throw new RunsError(
-      "amend needs plan.v<N>.md (N >= 2) on disk first, or --plan-version <N>",
-      2
-    );
-  }
-  const entry = appendJsonl(join(dir, "amendments.jsonl"), "amendment", (n) => {
-    const amendment = {
-      id: `A${String(n).padStart(3, "0")}`,
-      at: now(env).toISOString()
-    };
-    if (options.from) amendment.from = options.from;
-    return { ...amendment, text: options.text, affects, plan_version: version };
-  });
-  appendEvent(
-    dir,
-    "amendment.applied",
-    { id: entry.id, plan_version: version, affects },
-    env
-  );
-  appendDecision(
-    dir,
-    {
-      phase: options.phase ?? "plan",
-      source: "operator",
-      risk: options.risk ?? "medium",
-      decision: `Amendment ${entry.id} applied as plan version ${version}`,
-      rationale: entry.text,
-      refs: [entry.id, ...affects]
-    },
-    env
-  );
-  return entry;
-}
-
 // ---------------------------------------------------------------------------
 // Run notes
 // ---------------------------------------------------------------------------
 
-// notes.md is a run artifact outside contract v1: short facts a builder learns
-// (a pattern, a gotcha, a command that works) for the builders of later
-// milestones. Never committed. Verifiers do not read it.
+// notes.md holds short facts for later workers: a pattern, a gotcha or a
+// command that works, left by a builder or an iteration, and corrections the
+// user sent during the run. Each line is `- **<scope>**: <text>`, where the
+// scope is a milestone ID or `run` for a line that applies to the whole run,
+// and an operator line adds ` (operator)` after the scope. Never committed.
+// Verifiers do not read it.
 export const NOTES_FILE = "notes.md";
 export const NOTES_MAX_LENGTH = 500;
+export const NOTES_RUN_SCOPE = "run";
+export const NOTE_SOURCES = ["agent", "operator"];
 const NOTES_HEADER = "# Run Notes\n\n";
-const NOTE_LINE = /^- \*\*([^*]+)\*\*: (.*)$/;
+const NOTE_LINE = /^- \*\*([^*]+)\*\*( \(operator\))?: (.*)$/;
 
-/** Parse notes.md into `{ milestone, text }` entries, in file order. */
+/**
+ * Parse notes.md into `{ milestone, from, text }` entries, in file order.
+ * `milestone` is null on a run-wide line.
+ */
 export function readNotes(dir) {
   const path = join(dir, NOTES_FILE);
   if (!existsSync(path)) return [];
@@ -629,14 +404,32 @@ export function readNotes(dir) {
     .split(/\r?\n/)
     .map((line) => NOTE_LINE.exec(line))
     .filter(Boolean)
-    .map((m) => ({ milestone: m[1], text: m[2] }));
+    .map((m) => ({
+      milestone: m[1] === NOTES_RUN_SCOPE ? null : m[1],
+      from: m[2] ? "operator" : "agent",
+      text: m[3]
+    }));
 }
 
-/** Append one note under the notes.md lock; the text becomes one line. */
-export function appendNote(dir, milestone, text) {
-  if (!milestone || milestone === true || !ID_PATTERN.test(String(milestone)))
+/**
+ * Append one note under the notes.md lock; the text becomes one line. With no
+ * milestone, the line applies to the whole run.
+ */
+export function appendNote(dir, milestone, text, from = "agent") {
+  const scoped = milestone !== undefined && milestone !== null;
+  if (
+    scoped &&
+    (milestone === true ||
+      !ID_PATTERN.test(String(milestone)) ||
+      String(milestone) === NOTES_RUN_SCOPE)
+  )
     throw new RunsError(
-      `notes --append requires --milestone <id>, got ${milestone ?? "(missing)"}`,
+      `notes --append expects --milestone <id>, got ${milestone === true ? "(missing)" : milestone}`,
+      2
+    );
+  if (!NOTE_SOURCES.includes(from))
+    throw new RunsError(
+      `notes --from expects ${NOTE_SOURCES.join(" or ")}, got ${from === true ? "(missing)" : from}`,
       2
     );
   const line = String(text ?? "")
@@ -649,13 +442,15 @@ export function appendNote(dir, milestone, text) {
       `A note holds at most ${NOTES_MAX_LENGTH} characters (got ${line.length}): split it or keep only the fact`,
       2
     );
+  const scope = scoped ? String(milestone) : NOTES_RUN_SCOPE;
+  const marker = from === "operator" ? " (operator)" : "";
   const path = join(dir, NOTES_FILE);
   return withLock(path, () => {
     const prefix = existsSync(path) ? "" : NOTES_HEADER;
-    appendFileSync(path, `${prefix}- **${milestone}**: ${line}\n`, "utf8");
+    appendFileSync(path, `${prefix}- **${scope}**${marker}: ${line}\n`, "utf8");
     return {
       path,
-      entry: { milestone: String(milestone), text: line },
+      entry: { milestone: scoped ? scope : null, from, text: line },
       count: readNotes(dir).length
     };
   });
@@ -666,14 +461,23 @@ export function cmdNotes(options) {
   const append = options.append !== undefined;
   if (append === Boolean(options.show))
     throw new RunsError(
-      "Usage: notes --append <text> --milestone <id> | notes --show [--milestone <id>] --run-dir <path>",
+      "Usage: notes --append <text> [--milestone <id>] [--from operator|agent] | notes --show [--milestone <id>] --run-dir <path>",
       2
     );
-  if (append) return appendNote(dir, options.milestone, options.append);
+  if (append)
+    return appendNote(
+      dir,
+      options.milestone,
+      options.append,
+      options.from ?? "agent"
+    );
   const all = readNotes(dir);
   const entries =
     options.milestone && options.milestone !== true
-      ? all.filter((e) => e.milestone === String(options.milestone))
+      ? all.filter(
+          (e) =>
+            e.milestone === null || e.milestone === String(options.milestone)
+        )
       : all;
   return { path: join(dir, NOTES_FILE), count: entries.length, entries };
 }
@@ -799,46 +603,40 @@ export function cmdIndex(options, env = process.env) {
 }
 
 // ---------------------------------------------------------------------------
-// Validation and exit codes
+// File checks
 // ---------------------------------------------------------------------------
 
-const JSONL_ARTIFACTS = {
-  "decisions.jsonl": "decision",
-  "events.jsonl": "event",
-  "amendments.jsonl": "amendment"
-};
-
-/** Guess the artifact of a contract file from its name and location. */
-export function artifactFor(file) {
+/** The kind of a run file from its name: run.json, decisions.jsonl or summary.md. */
+export function kindFor(file) {
   const name = basename(file);
   if (name === "run.json") return "run";
-  if (name === "result.json") return "result";
-  if (name === "summary.md") return "summary-frontmatter";
-  if (JSONL_ARTIFACTS[name]) return JSONL_ARTIFACTS[name];
-  if (basename(dirname(file)) === "inbox" && name.endsWith(".json"))
-    return "inbox-message";
+  if (name === "decisions.jsonl") return "decision";
+  if (name === "summary.md") return "summary";
   return null;
 }
 
-export function validateFile(file, schemaName) {
+/** Run the writers' field checks on a run.json, decisions.jsonl or summary.md. */
+export function checkFile(file, kindName) {
   const path = resolve(file);
   if (!existsSync(path)) throw new RunsError(`File not found: ${path}`);
-  const artifact = schemaName ?? artifactFor(path);
-  if (!artifact)
+  const kind = kindName ?? kindFor(path);
+  if (!Object.hasOwn(CHECKS, kind ?? ""))
     throw new RunsError(
-      `Cannot infer the artifact of ${path}; pass --schema <name>`,
+      kindName
+        ? `Unknown --kind ${kindName}; expected run, decision or summary`
+        : `Cannot infer the kind of ${path}; pass --kind run|decision|summary`,
       2
     );
   const errors = [];
   const text = readFileSync(path, "utf8").replace(/^\uFEFF/, "");
   const check = (value, line) => {
-    for (const e of validateArtifact(artifact, value).errors) {
+    for (const e of CHECKS[kind](value)) {
       errors.push(line ? { line, ...e } : e);
     }
   };
   if (path.endsWith(".jsonl")) {
     // Trailing empty lines come from the final newline; any other blank line
-    // is an error. Event `seq` must equal the physical line number.
+    // is an error.
     const lines = text.split("\n");
     const end = jsonlEnd(lines);
     for (let i = 0; i < end; i++) {
@@ -863,15 +661,8 @@ export function validateFile(file, schemaName) {
         continue;
       }
       check(value, line);
-      if (artifact === "event" && value?.seq !== line) {
-        errors.push({
-          line,
-          path: "seq",
-          message: `expected ${line}, got ${value?.seq}`
-        });
-      }
     }
-  } else if (artifact === "summary-frontmatter" && path.endsWith(".md")) {
+  } else if (kind === "summary" && path.endsWith(".md")) {
     let data;
     try {
       data = parseFrontmatter(text);
@@ -888,7 +679,7 @@ export function validateFile(file, schemaName) {
       errors.push({ path: "(root)", message: `invalid JSON (${err.message})` });
     }
   }
-  return { file: path, artifact, valid: errors.length === 0, errors };
+  return { file: path, kind, valid: errors.length === 0, errors };
 }
 
 // ---------------------------------------------------------------------------
@@ -897,7 +688,7 @@ export function validateFile(file, schemaName) {
 
 /**
  * Pull request body built from the run artifacts (decisions.jsonl, the build
- * state.json and the step results), per pr.body_sections. Used by esp-pr with
+ * state.json and the esp-ship step records in ship.json), per pr.body_sections. Used by esp-pr with
  * a run directory when pr.body_from_run is on. --summary is the one free text.
  */
 export function cmdPrBody(options) {
@@ -937,30 +728,23 @@ Commands:
   get                    Print run.json
   update                 Update run.json fields (--status, --pr, --branch, --max-risk, --model, --budget, ...)
   decision               Append to decisions.jsonl (--json <object> or stdin); fills id and at
-  event <type>           Append to events.jsonl (--data <json>)
-  result <step>          Validate a result block (--json or stdin), write steps/<NN-step>/result.json,
-                         and print the block as one line (the final output line of a step)
   plan                   Print the latest plan version (plan.md = 1, plan.v<N>.md = N)
-  messages               List pending inbox messages (--all includes delivered ones)
-  send                   Queue an inbox message (--text, --from, --mode, --target, --step)
-  deliver <id>...        Mark messages delivered and log them as operator decisions
-  amend                  Append to amendments.jsonl (--text, --affects M2,M3, --plan-version <N>)
-  notes                  Run notes in notes.md: --append <text> --milestone <id> (one fact, under the lock),
-                         or --show [--milestone <id>]
+  notes                  Run notes in notes.md: --append <text> [--milestone <id>] [--from operator|agent]
+                         (one line, under the lock), or --show [--milestone <id>] (includes run-wide lines)
   index                  List runs (--root, --since, --until, --last 7d, --repo, --status, --risk, --limit)
   pr-body                Pull request body from the run artifacts (--summary <text>, --out <file>)
-  validate <file>        Validate a contract file (--schema <artifact> when it cannot be inferred)
-  exit-code <status>     Print the exit code of a result status
+  check <file>           Check a run.json, decisions.jsonl or summary.md with the writers' field
+                         checks (--kind run|decision|summary when the file name does not tell)
 
 Options:
-  --run-dir <path>          Run directory (required by every command except create, index, validate, exit-code)
+  --run-dir <path>          Run directory (required by every command except create, index, check)
   --root <dir>              Runs root for create, or a root to index (repeatable)
-  --config-snapshot <path>  Config snapshot used to resolve runs.root and recap.roots
   --project-dir <dir>       Project root for config resolution
   --help                    Show this help`;
 
+// `all` is a flag of recap.mjs, which reuses this parser.
 const BOOLEAN_FLAGS = new Set(["all", "help", "show"]);
-const REPEATABLE = new Set(["root", "model", "budget", "affects", "status"]);
+const REPEATABLE = new Set(["root", "model", "budget", "status"]);
 
 export function parseArgs(argv) {
   const options = {};
@@ -1003,37 +787,23 @@ export function run(argv, env = process.env) {
       return { output: cmdUpdate(options, env) };
     case "decision":
       return { output: cmdDecision(options, env) };
-    case "event":
-      return { output: cmdEvent(args[0], options, env) };
-    case "result": {
-      const out = cmdResult(args[0], options, env);
-      return { output: out.line };
-    }
     case "plan":
       return { output: cmdPlan(options) };
-    case "messages":
-      return { output: cmdMessages(options) };
-    case "send":
-      return { output: cmdSend(options, env) };
-    case "deliver":
-      return { output: cmdDeliver(args, options, env) };
-    case "amend":
-      return { output: cmdAmend(options, env) };
     case "notes":
       return { output: cmdNotes(options) };
     case "index":
       return { output: cmdIndex(options, env) };
     case "pr-body":
       return { output: cmdPrBody(options) };
-    case "validate": {
+    case "check": {
       if (!args[0])
-        throw new RunsError("Usage: validate <file> [--schema <artifact>]", 2);
-      const out = validateFile(args[0], options.schema);
+        throw new RunsError(
+          "Usage: check <file> [--kind run|decision|summary]",
+          2
+        );
+      const out = checkFile(args[0], options.kind);
       return { output: out, exitCode: out.valid ? 0 : 1 };
     }
-    case "exit-code":
-      if (!args[0]) throw new RunsError("Usage: exit-code <status>", 2);
-      return { output: String(exitCodeFor(args[0])) };
     default:
       throw new RunsError(`Unknown command: ${command}\n\n${USAGE}`, 2);
   }

@@ -31,47 +31,16 @@ Classify every item before acting on it. When an item fits several classes, take
 | `all`  | Plan approval, review findings (A and B groups), fix-review recap, merge | Interactive     |
 
 - In standalone interactive mode, "Ask" uses the session's question tool (for example `AskUserQuestion`) with the recommended option listed first.
-- Headless sessions (`claude -p`, harness steps, subagents) are always `off`, whatever the flag says. Subagents never ask: they return the question to their caller.
+- Headless sessions (`claude -p`) and subagents are always `off`, whatever the flag says. Subagents never ask: they return the question to their caller (see Asking Outside an Interactive Session).
 
-## Asking Under a Harness
+## Asking Outside an Interactive Session
 
-When a skill runs with `--run-dir` and is headless, "Ask" becomes a `needs_input` request in the result block. The step ends with `status: awaiting-human` and exit code 10:
+Only the main interactive session asks the user. Everywhere else, "Ask" becomes one of two moves:
 
-```json
-{
-  "status": "awaiting-human",
-  "summary": "Review found a public API change that needs a decision.",
-  "needs_input": {
-    "id": "Q1",
-    "question": "Rename getUser() to fetchUser() as the reviewer suggests?",
-    "options": [
-      {
-        "id": "keep",
-        "label": "Keep getUser()",
-        "description": "No API change"
-      },
-      {
-        "id": "rename",
-        "label": "Rename",
-        "description": "Breaking for callers"
-      }
-    ],
-    "recommended": "keep",
-    "context": "Comment https://github.com/o/r/pull/12#discussion_r1; 3 call sites",
-    "blocking": true,
-    "kind": "decision",
-    "risk": "medium"
-  }
-}
-```
+- **Apply the autonomous column**: B-Decide applies the recommended option, B-Scope defers, Halt stops. This is the default for headless sessions (`claude -p`) and for every subagent.
+- **Stop and hand the question back**: when no safe default exists (a Halt, or a B-Scope item that cannot be deferred), finish every item that does not depend on the answer, log those decisions, then reply with `Status: needs-decision` and a `Question:` line with the options, the recommended one first (see Replies). A script step ends with `status: awaiting-human` and the question in `blockers`.
 
-- **B-Decide** requests set `blocking: false` and always set `recommended`: the harness may apply it after its timeout.
-- **B-Scope** and **Halt** requests set `blocking: true`.
-- Set `kind` (`question` for missing information, `permission` to approve an action, `decision` for a choice the step may not take alone) and `risk`, the decision's risk. A harness applies `recommended` on its own only to a `risk: low` request: leave `risk` out, or set it higher, when a wrong default would hurt.
-- Before ending with `needs_input`, finish every item that does not depend on the answer, and log those decisions.
-- The answer comes back as an operator message. Log it with `source: operator` (`runs.mjs deliver` does this) and continue.
-
-Without `--run-dir`, a headless skill that would ask applies the autonomous column instead.
+The main session then asks with `AskUserQuestion`, logs the answer with `source: operator`, and passes it to the next subagent, or to the same one when it continues.
 
 ## Stop Conditions
 
@@ -90,13 +59,13 @@ When a condition is met and its key is in `ship.halt_on`:
 1. Stop starting new work. Do not merge, and do not push anything the halt is about.
 2. Log a decision with `source: policy`, `risk: high`, and the key in `rationale`.
 3. Write `summary.md` (see `summary-template.md`) when the skill owns the run.
-4. End with `status: halted` (exit 20), or `awaiting-human` with a blocking `needs_input` when a single answer would unblock the task.
+4. Reply with `Status: halted` (a script records `status: halted` with `ship.mjs halt`), or hand the question back (see Asking Outside an Interactive Session) when a single answer would unblock the task.
 
 A condition whose key is not in `ship.halt_on` becomes a B-Scope item: deferred and logged, never applied.
 
 ## Risk
 
-Every decision carries a risk level. It feeds `max_risk` in `run.json` and the result block, and `esp-recap --risks`.
+Every decision carries a risk level. It feeds `max_risk` in `run.json` and in the steps `ship.json` records, and `esp-recap --risks`.
 
 | Risk     | Use when                                                                                                            |
 | -------- | ------------------------------------------------------------------------------------------------------------------- |
@@ -122,7 +91,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/runs.mjs" decision --run-dir <path> --json '
 }'
 ```
 
-- `source`: `agent` for choices the model made, `policy` for rules applied from config (stop conditions, deferrals), `operator` for answers and messages.
+- `source`: `agent` for choices the model made, `policy` for rules applied from config (stop conditions, deferrals), `operator` for the user's answers and corrections, and plan amendments.
 - `x-esp-class`: the class from this policy (`A-Fix`, `B-Decide`, `B-Scope`, `Reject`, `Halt`).
 - `rationale` starts with the class, then the reason.
 - Without `--run-dir`, report the same information in the skill output instead.
@@ -131,7 +100,32 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/runs.mjs" decision --run-dir <path> --json '
 
 B-Scope items, and items outside the task, are deferred per `fix-review.deferred_items`:
 
-- `follow-up` (default): return the item in `discovered_items` of the result block, reply on the PR thread with the reason, and resolve it.
+- `follow-up` (default): return the item as a `Discovered:` line of the reply (see Replies), reply on the PR thread with the reason, and resolve it.
 - `block`: leave the thread open, end with `awaiting-human`, and do not merge.
 
-Every deferred item is a `discovered_items` entry with a `type` (`bug`, `debt`, `security`, `docs`, `test`, `follow-up`, `other`), a `title`, and `evidence`.
+Every deferred item has a `type` (`bug`, `debt`, `security`, `docs`, `test`, `follow-up`, `other`), a `title`, and `evidence`. The session that records the step stores them as `discovered_items` with `ship.mjs record`.
+
+## Replies
+
+Every subagent and every skill called by another skill ends its work with a short markdown reply in this format, and nothing after it:
+
+```text
+Status: needs-decision
+Commit: 3f2a1c9e0b7d4a6f8c5e2d1b0a9f8e7d6c5b4a3f
+Summary: Fixed 4 of 5 review findings; F5 renames a public API
+Blockers:
+- F5 is B-Scope and fix-review.deferred_items is block
+Discovered: debt - Legacy rounding helper - src/round.js:1
+Question: Rename getUser() to fetchUser()? Options: keep it and defer (recommended); rename it and update 3 callers
+```
+
+- `Status:` (always, first line): `done` (the work is complete), `failed` (it could not be done; the reason is in `Summary:`), `halted` (a stop condition is met, see Stop Conditions), or `needs-decision` (a question blocks the rest, see Asking Outside an Interactive Session)
+- `Commit:` (when the work made a commit): the full SHA from `git rev-parse HEAD`
+- `Summary:` (always): one or two sentences on what changed or what was found
+- `Blockers:` (when the caller must act): what stops the task, on the same line for one blocker or as a `-` list under it for several
+- `Discovered:` (one line per item): `<type> - <title> - <evidence>`, for issues outside the task (see Deferred Items)
+- `Question:` (with `needs-decision` only): the question and its options, the recommended one first
+
+A script outcome maps to the reply status: `done` and `merged` are `done`, `awaiting-human` is `needs-decision` (its `blockers` hold the question), `halted` and `failed` stay as they are.
+
+The caller reads changed files from git and gate results from its own gate run, so replies carry no file lists, gate tables or JSON. Details go to the run dir (`notes.md`, `decisions.jsonl`), not the reply. The orchestrating session records the facts it needs with `ship.mjs record`, `ship.mjs phase` and `ship.mjs milestone finish`. A skill's own report to the user may say more, but when another skill called it, it ends with this reply.

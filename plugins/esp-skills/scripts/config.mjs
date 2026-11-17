@@ -5,7 +5,8 @@
 //   1. Built-in defaults: references/config-defaults.json
 //   2. User config: ~/.esp-skills/config.json (ESP_SKILLS_HOME overrides ~/.esp-skills)
 //   3. Project config: <repo>/.esp-skills/config.json
-//   4. --config-snapshot <path>: replaces layers 2 and 3 (defaults still fill missing keys)
+//   4. A frozen snapshot (loadConfig({ snapshot }), esp-ship's config.snapshot.json):
+//      replaces layers 2 and 3 (defaults still fill missing keys)
 // Skill arguments are applied by the calling skill, on top of the resolved value.
 //
 // Exit codes: 0 success, 1 invalid config or failed operation, 2 usage error.
@@ -304,7 +305,7 @@ const USAGE = `Usage: node config.mjs <command> [args] [options]
 
 Commands:
   get <key>            Print the merged value of a section or dotted key (JSON)
-  show                 Print the full merged config (JSON), usable as a snapshot
+  show                 Print the full merged config (JSON)
   sources              Print the layers and whether each was used (JSON)
   init                 Create a starter config file (user, or project with --project)
   set <key> <value>    Set a key in the user (or --project) file; value is JSON or a string
@@ -312,7 +313,6 @@ Commands:
   validate [file]      Validate one file, or every layer and the merged result
 
 Options:
-  --config-snapshot <path>  Use a snapshot instead of the user and project layers
   --project-dir <dir>       Project root (default: nearest git root, else cwd)
   --project                 Target the project file for init, set and unset
   --force                   Overwrite an existing file on init
@@ -323,13 +323,11 @@ export function parseArgs(argv) {
   const positional = [];
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
-    if (arg === "--config-snapshot" || arg === "--project-dir") {
+    if (arg === "--project-dir") {
       const value = argv[++i];
       if (value === undefined)
         throw new ConfigError(`${arg} requires a value`, 2);
-      options[arg === "--config-snapshot" ? "snapshot" : "projectDir"] = value;
-    } else if (arg.startsWith("--config-snapshot=")) {
-      options.snapshot = arg.slice("--config-snapshot=".length);
+      options.projectDir = value;
     } else if (arg.startsWith("--project-dir=")) {
       options.projectDir = arg.slice("--project-dir=".length);
     } else if (arg === "--project") {

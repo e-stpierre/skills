@@ -1,6 +1,6 @@
 // Cross-process advisory lock based on exclusive file creation.
 //
-// Protocol (part of the contract notes): a writer creates `<file>.lock` with
+// Protocol (see references/run-directory.md): a writer creates `<file>.lock` with
 // O_CREAT | O_EXCL, does its read-modify-append, then deletes the lock file.
 // A lock older than `staleMs` is considered abandoned and removed.
 

@@ -7,23 +7,20 @@
 // tail: pull request, review wait and fix rounds, body refresh, merge. This
 // script keeps everything deterministic out of the model: the phases of the
 // track and what to run next, the loops, the limits and budgets, the track
-// switch and the caller hand-off, the task worktree, the milestone state, the
-// pull request body built from the run artifacts, and the final result block.
+// switch, the task worktree, the milestone state, the step records, the
+// pull request body built from the run artifacts, and the outcome of the run.
 // State lives in <run-dir>/ship.json and, for the milestones, in
 // <run-dir>/state.json, so an interrupted run resumes.
 //
 // The logic lives in lib/ship/: state, phases, review-loop, tail, inline,
-// milestones, gates, workspace, triage and review-gate.
+// milestones, steps, gates, workspace, triage and review-gate.
 //
-// Exit codes: 0 ok, 1 failure or invalid state, 2 usage. `escalate`, `halt`
-// and `result` exit with the contract code of their result status (0 done or
-// merged, 10 awaiting-human, 20 halted, 30 escalate, 1 failed).
+// Every command prints JSON to stdout. Exit codes: 0 ok, 1 failure or invalid
+// state, 2 usage.
 
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { exitCodeFor } from "./lib/contract.mjs";
 import {
-  cmdEscalate,
   cmdGateFailure,
   cmdScope,
   cmdSwitchTrack
@@ -48,7 +45,8 @@ import {
 } from "./lib/ship/phases.mjs";
 import { reviewLoop } from "./lib/ship/review-loop.mjs";
 import { readState, runDirOf, ShipError } from "./lib/ship/state.mjs";
-import { cmdHalt, cmdPrBody, cmdPrLoop, cmdResult } from "./lib/ship/tail.mjs";
+import { cmdRecord } from "./lib/ship/steps.mjs";
+import { cmdHalt, cmdOutcome, cmdPrBody, cmdPrLoop } from "./lib/ship/tail.mjs";
 import { cmdFinalGates } from "./lib/ship/gates.mjs";
 import { cmdReviewGate } from "./lib/ship/review-gate.mjs";
 import { cmdTriage } from "./lib/ship/triage.mjs";
@@ -66,16 +64,20 @@ Commands:
                        issue, --judged-track inline|orchestrated --estimate <files> --reason <text>
                        passes the model's judgment. --plan-mode auto|skip|always changes the plan
                        of a prompt or an issue. --record (needs --run-dir) logs one decision per
-                       choice and writes the triage step result
+                       choice and writes triage.json
   init                 Create ship.json (--request <text> --track inline|orchestrated --base <branch>);
                        resolves the phases of the track and freezes the config. A second call
-                       prints the state; --resume lifts an awaiting-human stop, or takes over
-                       an escalated caller-owned run on the orchestrated track
+                       prints the state; --resume lifts an awaiting-human stop
   show                 Print ship.json
-  next                 What to run now: { action, track, phase, sub, skill, role, model, effort, cwd, ... }
+  next                 What to run now: { action, track, phase, sub, skill, role, model, effort, cwd, ... };
+                       action finish means every phase ended: go to the outcome
   phase <name>         Record a phase: --status started|done|skipped|failed, and its facts
                        (--plan <file>, --branch, --base, --base-sha, --commit, --pr, --summary,
                        --gates <json>, --reason)
+  record <step>        Record the facts of a step (review-<N>, fix-review-<N>, fix-review-wait,
+                       fix-review, merge, ...) in ship.json, from --json <object> or stdin: the JSON
+                       a script printed ({ status, summary, commit, blockers, discovered_items,
+                       outputs }; an outcome key is unwrapped). Recording a step again replaces it
   final-gates          Record one run of the full gates in the main tree (--result pass|fail
                        [--gates <json>] [--reason <text>]): continue, fix (one fixer round),
                        halt (gates-exhausted) or continue-failing
@@ -93,27 +95,25 @@ Commands:
   scope                Inline track: changed files since the base vs max_files_changed
                        (--estimate <n> checks a planned file count instead)
   gate-failure         Inline track: count a gate failure (--reason); the second escalates, or halts
-  switch-track         Owned inline run: move to the orchestrated track in place (--to orchestrated
+  switch-track         Inline run: move to the orchestrated track in place (--to orchestrated
                        --trigger files|design|gates --reason <text>); logs the Escalate decision
-  escalate             Caller-owned inline run: hand the task to the caller (--trigger files|design|gates
-                       --reason <text> [--question <text>] [--keep-tree]): saves escalation.patch,
-                       stashes the work, logs the decision, prints the escalate block (exit 30)
   stop                 Record a stop (--status awaiting-human|failed|halted --reason <text>)
-  halt                 Halt under a halt_on key (--key --reason), log it, print the halted block (exit 20)
+  halt                 Halt under a halt_on key (--key --reason), log it, record it and print the halt
   pr-body              Pull request body from the run artifacts (--summary <text>, --out <file>)
-  result               Final result block (--status, --summary); exits with its contract code
+  outcome              Outcome of the run for summary.md and the report (--status, --summary)
   milestone <cmd>      Milestone state (state.json) of the orchestrated track:
     init               Create state.json from the latest plan (or --plan), or sync it with an
                        amended plan; uses the run's frozen config
     next               What to run now: { action: run|retry|halt|done|blocked, milestone, batch }
-                       (--milestone <id|next> for one milestone, --parallel for a batch)
-    start <id>         Begin an attempt of a milestone (emits iteration.started)
+                       (--parallel for a batch)
+    start <id>         Begin an attempt of a milestone
     finish <id>        End the attempt: --status done|failed|halted [--commit <sha>] [--reason <text>]
+                       [--failures <json>] (the verifier's failures, returned by next on the retry)
     models <id>        Builder and verifier { model, effort } (--model <alias> [--effort <level>])
     reuse <id>         Continue the last builder with a milestone or spawn a fresh one:
                        { decision: reuse|fresh, agent_id, reason, used, cost, limit }; logs a
-                       policy decision (--agent-id <id> held by this session, --single in
-                       --milestone mode, --parallel, --model, --effort)
+                       policy decision (--agent-id <id> held by this session, --parallel,
+                       --model, --effort)
     agent <id>         Record the builder agent of the current attempt (--agent-id <id>
                        [--tokens <n> reported by the Agent result] [--worktree]
                        [--model <m>] [--effort <e>] as given to milestone models)
@@ -125,18 +125,15 @@ Commands:
 
 Options:
   --run-dir <path>          Run directory (required except by milestone gates)
-  --config-snapshot <path>  Config snapshot (init; later commands use the frozen one)
   --project-dir <dir>       Repository root (default: recorded at init, else the git root)
   --track <track>           init, triage: inline or orchestrated (init default: orchestrated)
   --request <text>          init, triage: the task, an issue reference or a file path
-  --record                  triage: log the decisions and write the triage step result
-  --caller-owned            init: the caller owns the run, so an inline escalation ends with exit 30
+  --record                  triage: log the decisions and write triage.json
   --plan-source <source>    init: reuse, import, generate or synthesize the plan (default: reuse
                             a plan in the run directory, else generate)
   --plan-mode <mode>        init, triage: auto, skip or always (default: ship.plan_mode)
   --review-mode <mode>      init: auto, internal, pr, both or none (default: ship.review_mode)
   --no-pr, --no-merge       init: stop before the pull request, or before the merge
-  --stop-before-wait        init: leave the review wait, fix-review and merge to the caller
   --resume                  init: resume the run (see init)
   --worktree                init: work in a task worktree (default: ship.worktree)
   --branch <name>           workspace: the task branch (checked out, tracked from origin or created)
@@ -150,12 +147,8 @@ const BOOLEAN_FLAGS = new Set([
   "no-merge",
   "worktree",
   "resume",
-  "stop-before-wait",
-  "caller-owned",
   "record",
-  "keep-tree",
   "parallel",
-  "single",
   "help"
 ]);
 
@@ -180,11 +173,6 @@ export function parseArgs(argv) {
   }
   return { command: positional[0], args: positional.slice(1), options };
 }
-
-const blockOutput = (block) => ({
-  output: JSON.stringify(block),
-  exitCode: exitCodeFor(block.status)
-});
 
 function runMilestone(sub, args, options, env) {
   switch (sub) {
@@ -229,6 +217,8 @@ export function run(argv, env = process.env) {
       return { output: cmdNext(options, env) };
     case "phase":
       return { output: cmdPhase(args[0], options, env) };
+    case "record":
+      return { output: cmdRecord(args[0], options, env) };
     case "final-gates":
       return { output: cmdFinalGates(options, env) };
     case "review-gate":
@@ -251,16 +241,14 @@ export function run(argv, env = process.env) {
       return { output: cmdGateFailure(options, env) };
     case "switch-track":
       return { output: cmdSwitchTrack(options, env) };
-    case "escalate":
-      return blockOutput(cmdEscalate(options, env));
     case "stop":
       return { output: cmdStop(options, env) };
     case "halt":
-      return blockOutput(cmdHalt(options, env));
+      return { output: cmdHalt(options, env) };
     case "pr-body":
       return { output: cmdPrBody(options) };
-    case "result":
-      return blockOutput(cmdResult(options));
+    case "outcome":
+      return { output: cmdOutcome(options) };
     case "milestone":
       return runMilestone(args[0], args.slice(1), options, env);
     default:

@@ -31,4 +31,4 @@ In a worktree workspace, `next` returns the worktree path as `cwd` from then on:
 
 ## Summary
 
-The result block carries `outputs.workspace` (`kind`, `branch`, `location`, `reason`, `dirty_files`, `worktree`, `cleanup`, `decision`). `summary.md` names the workspace in its outcome and, for a worktree, its path and its cleanup (`worktrees.cleanup`: `on-merge`, `on-finish` or `never`).
+The outcome (`ship.mjs outcome`) carries `outputs.workspace` (`kind`, `branch`, `location`, `reason`, `dirty_files`, `worktree`, `cleanup`, `decision`). `summary.md` names the workspace in its outcome and, for a worktree, its path and its cleanup (`worktrees.cleanup`: `on-merge`, `on-finish` or `never`).

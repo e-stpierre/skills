@@ -1,9 +1,8 @@
 // The shared tail of both tracks: the pull request options, the review wait
-// and fix rounds, the pull request body, the halt, and the final result block.
+// and fix rounds, the pull request body, the halt, and the outcome of the run.
 
 import { existsSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { validateArtifact } from "../contract.mjs";
 import {
   ATTRIBUTION,
   BODY_SECTIONS,
@@ -32,17 +31,15 @@ import {
   stepsByRound,
   stringOption,
   updateState,
-  WAIT_PHASES,
   WAIT_STEP
 } from "./state.mjs";
 
-export const RESULT_STATUSES = [
+export const OUTCOME_STATUSES = [
   "done",
   "merged",
   "halted",
   "awaiting-human",
-  "failed",
-  "escalate"
+  "failed"
 ];
 
 // ---------------------------------------------------------------------------
@@ -60,7 +57,7 @@ export function prOptions(state, config) {
  * Pull request round loop: wait (reviews and checks of the head, step
  * `fix-review-wait`) -> fix-review (one round per call, with --max-rounds <n>)
  * -> wait again while the round pushed commits and rounds are left.
- * `--after wait|fix` reads that step's result.
+ * `--after wait|fix` reads that step's record.
  */
 export function prLoopAction(
   state,
@@ -72,7 +69,7 @@ export function prLoopAction(
   if (!result)
     return {
       action: after === "wait" ? "wait" : "fix",
-      reason: `no ${after} result yet`
+      reason: `no ${after} record yet`
     };
   if (after === "wait") {
     const failing = result.outputs?.checks?.failing ?? [];
@@ -160,7 +157,7 @@ export function cmdPrLoop(options, env = process.env) {
 // Pull request body
 // ---------------------------------------------------------------------------
 
-/** Body from plan.md (title and overview), the build state, decisions.jsonl and the step results. */
+/** Body from plan.md (title and overview), the build state, decisions.jsonl and the step records. */
 export function cmdPrBody(options) {
   const dir = runDirOf(options);
   const state = readState(dir);
@@ -185,17 +182,8 @@ export function cmdPrBody(options) {
 }
 
 // ---------------------------------------------------------------------------
-// Result blocks
+// Halt and outcome
 // ---------------------------------------------------------------------------
-
-export function assertBlock(block) {
-  const { valid, errors } = validateArtifact("result", block);
-  if (!valid)
-    throw new ShipError(
-      `Invalid result block:\n  ${errors.map((e) => `${e.path}: ${e.message}`).join("\n  ")}`
-    );
-  return block;
-}
 
 function pick(object, keys) {
   if (!object) return null;
@@ -208,7 +196,6 @@ export function baseOutputs(state, dir) {
   const out = {
     request: state.request,
     track: state.track,
-    run_owner: state.run_owner,
     branch: state.branch,
     base: state.base,
     base_sha: state.base_sha,
@@ -222,7 +209,6 @@ export function baseOutputs(state, dir) {
     review_mode: state.review_mode ?? "auto",
     review_gate: state.review_gate ?? null,
     gate_failures: state.gate_failures,
-    stop_before_wait: state.stop_before_wait,
     state_path: statePath(dir),
     summary_path: join(dir, "summary.md")
   };
@@ -231,7 +217,7 @@ export function baseOutputs(state, dir) {
   return out;
 }
 
-/** Halt the task under a halt_on key: log the Halt decision and build the block. */
+/** Halt the task under a halt_on key: log the Halt decision, record the halt and print the state. */
 export function cmdHalt(options, env = process.env) {
   const dir = runDirOf(options);
   const key = options.key;
@@ -265,17 +251,15 @@ export function cmdHalt(options, env = process.env) {
     env
   );
   const projectDir = projectDirOf(options, state);
-  return assertBlock({
-    contract_version: 1,
+  return {
     status: "halted",
     summary: `Halted (${key}): ${options.reason}`,
-    files_changed: filesSince(projectDir, state.base_sha),
     commit: headOf(projectDir),
     pr: state.pr,
-    max_risk: "high",
     blockers: [`${key}: ${options.reason}`],
-    outputs: { ...baseOutputs(state, dir), halt: state.halt }
-  });
+    halt: state.halt,
+    phase_status: state.phase_status
+  };
 }
 
 /**
@@ -287,7 +271,7 @@ function orderedSteps(steps) {
   const named = (n) => latestNamed(steps, n);
   if (named("plan")) ordered.push({ name: "plan", result: named("plan") });
   // The build phase ends with the aggregate build step, or with the last
-  // milestone step when the loop stopped on one (it carries its needs_input).
+  // milestone step when the loop stopped on one (it carries its blockers).
   const build = steps.filter((s) => /^build(-.+)?$/.test(s.name)).at(-1);
   if (build) ordered.push({ name: build.name, result: build.result });
   const fixes = stepsByRound(steps, "fix-review");
@@ -305,11 +289,11 @@ function orderedSteps(steps) {
 }
 
 /**
- * Final result block. The status is the one of the last phase step that ran
+ * Outcome of the run, for summary.md and the report. The status is the one of the last phase step that ran
  * (an earlier step that did not end done was continued past), unless the task
- * escalated, halted or a loop stopped it; merged wins over done.
+ * halted or a loop stopped it; merged wins over done.
  */
-export function buildResult(
+export function buildOutcome(
   dir,
   state,
   {
@@ -325,10 +309,8 @@ export function buildResult(
   const last = ordered.at(-1) ?? null;
   let derived = last ? last.result.status : "done";
   if (named("merge")?.status === "merged") derived = "merged";
-  if (derived === "escalate") derived = "failed";
   if (state.stop) derived = state.stop.status;
   if (state.halt) derived = "halted";
-  if (state.escalation) derived = "escalate";
   const carrier = last;
   const finalStatus = status ?? derived;
   const commits = commitsSince(projectDir, state.base_sha);
@@ -365,7 +347,6 @@ export function buildResult(
     buildStep?.gates ??
     (Object.keys(state.gates ?? {}).length > 0 ? state.gates : undefined);
   const block = {
-    contract_version: 1,
     status: finalStatus,
     summary:
       summary ??
@@ -420,19 +401,11 @@ export function buildResult(
         "method_reason",
         "failing"
       ]),
-      deferred_phases: state.stop_before_wait
-        ? WAIT_PHASES.filter((p) =>
-            state.skipped_phases?.[p]?.includes("stop-before-wait")
-          )
-        : [],
       stop: state.stop ?? undefined,
-      halt: state.halt ?? undefined,
-      escalation: state.escalation ?? undefined
+      halt: state.halt ?? undefined
     }
   };
   if (discovered.length > 0) block.discovered_items = discovered;
-  if (finalStatus === "awaiting-human" && carrier?.result.needs_input)
-    block.needs_input = carrier.result.needs_input;
   if (!FINISHED.has(finalStatus)) {
     const blockers = [...(carrier?.result.blockers ?? [])];
     if (state.stop) blockers.unshift(state.stop.reason);
@@ -440,9 +413,9 @@ export function buildResult(
     if (blockers.length > 0) block.blockers = [...new Set(blockers)];
   }
   if (block.gates === undefined) delete block.gates;
-  for (const key of ["stop", "halt", "escalation"])
+  for (const key of ["stop", "halt"])
     if (block.outputs[key] === undefined) delete block.outputs[key];
-  return assertBlock(block);
+  return block;
 }
 
 function defaultSummary(status, state, merge, built) {
@@ -455,16 +428,12 @@ function defaultSummary(status, state, merge, built) {
     case "merged":
       return `Merged ${what}${milestones}:${pr} with ${merge?.outputs?.method ?? "the resolved method"}.`;
     case "done":
-      if (state.stop_before_wait && state.pr)
-        return `Opened${pr}; review, fixes and merge are left to the caller.`;
       if (state.pr) return `Done ${what}${milestones}:${pr}.`;
       if (state.track === "inline")
         return `Committed ${state.commit ? state.commit.slice(0, 7) : "the change"} on ${state.branch ?? "the branch"}.`;
       return `Built ${what}${milestones} on ${state.branch ?? "the branch"}.`;
     case "halted":
       return `Halted ${what}${state.halt ? ` (${state.halt.key}): ${state.halt.reason}` : state.stop ? `: ${state.stop.reason}` : "."}`;
-    case "escalate":
-      return `Escalated to the orchestrated track (${state.escalation?.trigger}).`;
     case "awaiting-human":
       return `Waiting for a human on ${what}${pr}${state.stop ? `: ${state.stop.reason}` : "."}`;
     default:
@@ -472,15 +441,18 @@ function defaultSummary(status, state, merge, built) {
   }
 }
 
-export function cmdResult(options) {
+export function cmdOutcome(options) {
   const dir = runDirOf(options);
   const state = readState(dir);
-  if (options.status !== undefined && !RESULT_STATUSES.includes(options.status))
+  if (
+    options.status !== undefined &&
+    !OUTCOME_STATUSES.includes(options.status)
+  )
     throw new ShipError(
-      `--status must be one of ${RESULT_STATUSES.join(", ")}`,
+      `--status must be one of ${OUTCOME_STATUSES.join(", ")}`,
       2
     );
-  return buildResult(dir, state, {
+  return buildOutcome(dir, state, {
     status: options.status,
     summary: stringOption(options.summary) ?? undefined,
     projectDir: projectDirOf(options, state),

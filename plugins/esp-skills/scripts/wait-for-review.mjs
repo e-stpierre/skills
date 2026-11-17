@@ -11,12 +11,13 @@
 // changes. A failing check never ends the wait early: the reviews are always
 // awaited, so the next fix round handles both.
 //
-// The last stdout line is a contract result block. Progress goes to stderr and
-// to the state file, which a session can read while the script runs.
+// The last stdout line is the outcome as JSON ({ status, summary, outputs }):
+// done, awaiting-human (timeout, or still pending with --once) or failed.
+// Progress goes to stderr and to the state file, which a session can read
+// while the script runs.
 //
-// Exit codes follow the contract statuses: 0 done, 10 awaiting-human (timeout,
-// or still pending with --once), 1 failed (closed pull request, gh errors),
-// 2 usage error.
+// Exit codes: 0 ok (done or awaiting-human), 1 failed (closed pull request,
+// gh errors), 2 usage error.
 
 import { spawnSync } from "node:child_process";
 import {
@@ -30,8 +31,6 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { ConfigError, findRepoRoot, loadConfig } from "./config.mjs";
 import { classifyChecks, fetchChecks } from "./lib/checks.mjs";
-import { exitCodeFor, validateArtifact } from "./lib/contract.mjs";
-import { appendEvent } from "./runs.mjs";
 
 export class WaitError extends Error {
   constructor(message, exitCode = 1) {
@@ -416,26 +415,9 @@ export function nextInterval(base, factor, idlePolls, cap) {
   return Math.min(cap, Math.round(base * factor ** idlePolls));
 }
 
-function needsInput(pending, minutes) {
-  return {
-    id: "fix-review-wait-timeout",
-    question: `Still waiting for ${pending.join(", ")} on the head commit after ${minutes} minute${minutes === 1 ? "" : "s"}. Wait again or continue without it?`,
-    options: [
-      {
-        id: "wait",
-        label: "Wait again",
-        description: "Run the wait again with the same reviewers and state file"
-      },
-      {
-        id: "skip",
-        label: "Continue without it",
-        description:
-          "Treat the missing reviews and checks as not coming, and fix what arrived"
-      }
-    ],
-    recommended: "wait",
-    blocking: true
-  };
+/** The choice a timeout leaves to the caller, as a blocker line. */
+function timeoutBlocker(pending, minutes) {
+  return `Still waiting for ${pending.join(", ")} on the head commit after ${minutes} minute${minutes === 1 ? "" : "s"}: wait again with the same state file, or continue without it.`;
 }
 
 function checksSummary(checks, pr, short) {
@@ -525,7 +507,6 @@ export async function waitForReview(options, deps) {
     );
     const pending = names.filter((n) => !completed.includes(n));
     const result = {
-      contract_version: 1,
       status,
       summary,
       max_risk: "low",
@@ -561,11 +542,6 @@ export async function waitForReview(options, deps) {
       },
       ...extra
     };
-    const { errors } = validateArtifact("result", result);
-    if (errors.length > 0)
-      throw new WaitError(
-        `Internal error, invalid result block: ${errors.map((e) => `${e.path} ${e.message}`).join("; ")}`
-      );
     return { result, state };
   };
 
@@ -650,22 +626,6 @@ export async function waitForReview(options, deps) {
         log(
           `${reviewer.name} reviewed ${state.head.slice(0, SHORT_SHA)} (${status.kind})`
         );
-        if (options.runDir) {
-          appendEvent(
-            options.runDir,
-            "review.received",
-            {
-              reviewer: reviewer.name,
-              login: reviewer.login,
-              pr: state.pr,
-              head: state.head,
-              kind: status.kind,
-              state: status.state,
-              url: status.url
-            },
-            env
-          );
-        }
       }
     }
 
@@ -766,7 +726,7 @@ export async function waitForReview(options, deps) {
       return finish(
         "awaiting-human",
         `Timed out after ${options.timeoutMinutes} min waiting for ${pendingNames.join(", ")} on #${state.pr} at ${state.head.slice(0, SHORT_SHA)}.`,
-        { needs_input: needsInput(pendingNames, options.timeoutMinutes) }
+        { blockers: [timeoutBlocker(pendingNames, options.timeoutMinutes)] }
       );
     }
 
@@ -799,7 +759,7 @@ const USAGE = `Usage: node wait-for-review.mjs [pr] [options]
 Waits until every reviewer has reviewed the head commit of a pull request
 and, with --checks, until no check of that commit is pending.
 [pr] is a number, #<n>, or a URL (default: the pull request of the current branch).
-The last stdout line is a contract result block; progress goes to stderr.
+The last stdout line is the outcome as JSON; progress goes to stderr.
 
 Options:
   --reviewers <a,b>          Reviewer names from fix-review.wait.reviewers, or raw logins
@@ -810,18 +770,17 @@ Options:
   --backoff <factor>         Interval multiplier while nothing changes (default 1.5)
   --trigger / --no-trigger   Post trigger comments (default: fix-review.wait.auto_trigger)
   --checks                   Also wait until no CI check of the head is pending (a
-                             failing check does not end the wait early); the result
+                             failing check does not end the wait early); the outcome
                              carries outputs.checks { failing, pending, passing }
   --checks-grace-seconds <n> An empty check list is pending for n seconds after the
                              head commit (default: fix-review.wait.checks_grace_seconds)
-  --once                     Check once and exit (0 done, 10 still pending)
+  --once                     Check once and exit (status done, or awaiting-human while pending)
   --state <file>             Progress file (default: <run-dir>/${DEFAULT_STATE_FILE})
-  --run-dir <path>           Run directory: state file location and review.received events
-  --config-snapshot <path>   Config snapshot to read instead of the user and project layers
+  --run-dir <path>           Run directory: state file location
   --project-dir <dir>        Repository (default: nearest git root, else cwd)
   --help                     Show this help
 
-Exit codes: 0 done, 10 awaiting-human, 1 failed, 2 usage error.
+Exit codes: 0 ok (done or awaiting-human), 1 failed, 2 usage error.
 
 Environment:
   ESP_GH_CMD                 JSON array replacing the gh command (tests)`;
@@ -880,11 +839,7 @@ export function resolveOptions(cli, positional, env = process.env) {
   );
   let config;
   try {
-    ({ config } = loadConfig({
-      projectDir,
-      snapshot: cli["config-snapshot"],
-      env
-    }));
+    ({ config } = loadConfig({ projectDir, env }));
   } catch (err) {
     if (err instanceof ConfigError)
       throw new WaitError(err.message, err.exitCode ?? 1);
@@ -954,7 +909,7 @@ export async function run(argv, env = process.env, io = {}) {
   });
   return {
     output: JSON.stringify(result),
-    exitCode: exitCodeFor(result.status)
+    exitCode: result.status === "failed" ? 1 : 0
   };
 }
 

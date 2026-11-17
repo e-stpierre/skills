@@ -10,7 +10,7 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { parseFrontmatter } from "./lib/contract.mjs";
+import { parseFrontmatter } from "./lib/frontmatter.mjs";
 
 export class PlanError extends Error {
   constructor(message, exitCode = 1) {

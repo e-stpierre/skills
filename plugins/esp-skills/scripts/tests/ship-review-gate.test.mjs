@@ -296,7 +296,7 @@ describe("init", () => {
     assert.equal(s.phase_status["fix-review"], "skipped");
     assert.equal(s.phase_status.merge, "pending");
     assert.equal(s.skipped_phases.review, "--review none");
-    const result = ship("result").json();
+    const result = ship("outcome").json();
     assert.equal(result.outputs.skipped_phases["fix-review"], "--review none");
     assert.equal(result.outputs.review_mode, "none");
     assert.equal(result.outputs.plan_mode, "skip");
@@ -457,7 +457,7 @@ describe("review-gate command", () => {
     const again = ok("review-gate");
     assert.equal(again.recorded, false);
     assert.equal(decisions().filter((d) => d.phase === "review").length, 1);
-    const result = ship("result").json();
+    const result = ship("outcome").json();
     assert.match(result.outputs.skipped_phases.review, /^review gate/);
     assert.equal(result.outputs.review_gate.decision, "skip");
   });

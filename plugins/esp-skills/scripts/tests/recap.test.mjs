@@ -16,7 +16,7 @@ const NOW = "2026-11-10T12:00:00.000Z";
 let tmp;
 let home;
 let standalone;
-let harness;
+let secondRoot;
 
 function cli(script, args, { now = NOW, project = tmp } = {}) {
   const r = spawnSync(
@@ -47,7 +47,7 @@ function runs(args, now) {
     : null;
 }
 
-/** A run built with the contract tooling, like esp-go and esp-go-light leave it. */
+/** A run built with the runs.mjs tooling, like esp-go and esp-go-light leave it. */
 function makeRun(
   root,
   {
@@ -102,10 +102,12 @@ function makeRun(
     );
     runs(["update", "--run-dir", dir, "--max-risk", d.risk], now);
   }
-  for (const [name, block] of steps)
-    runs(
-      ["result", name, "--run-dir", dir, "--json", JSON.stringify(block)],
-      now
+  if (steps.length > 0)
+    writeFileSync(
+      join(dir, "ship.json"),
+      JSON.stringify({
+        steps: steps.map(([name, block]) => ({ name, ...block, at: now }))
+      })
     );
   if (critical.length > 0) {
     writeFileSync(
@@ -229,7 +231,7 @@ function seed() {
     })
   });
   // An esp-go-light run that escalated and was taken over by esp-go.
-  makeRun(harness, {
+  makeRun(secondRoot, {
     date: "2026-11-09",
     slug: "fix-typo",
     title: "Fix login typo",
@@ -263,7 +265,7 @@ beforeEach(() => {
   tmp = mkdtempSync(join(tmpdir(), "esp-recap-"));
   home = join(tmp, "home");
   standalone = join(tmp, "runs");
-  harness = join(tmp, "af-runs");
+  secondRoot = join(tmp, "other-runs");
   mkdirSync(home, { recursive: true });
   writeFileSync(
     join(home, "config.json"),
@@ -271,7 +273,7 @@ beforeEach(() => {
       version: 1,
       runs: { root: standalone },
       recap: {
-        roots: [standalone, harness],
+        roots: [standalone, secondRoot],
         default_range_days: 7,
         fan_out_threshold: 5
       }
@@ -414,8 +416,9 @@ describe("show", () => {
     assert.match(data.decisions[0].source, /decisions\.jsonl:1$/);
     assert.deepEqual(
       data.steps.map((s) => s.step),
-      ["01-plan", "02-build", "03-await-review", "04-go"]
+      ["plan", "build", "await-review", "go"]
     );
+    assert.match(data.steps[0].source, /ship\.json$/);
     assert.equal(data.commits[0].sha, "abcdef1");
     assert.equal(data.critical_findings[0].id, "F1");
     assert.equal(recap("show", "missing-run").code, 1);
@@ -483,7 +486,7 @@ describe("sources", () => {
 });
 
 describe("runs written by esp-ship", () => {
-  test("recaps an escalated inline run taken over on the orchestrated track", () => {
+  test("recaps an inline run switched to the orchestrated track", () => {
     const repo = join(tmp, "repo");
     mkdirSync(repo);
     const git = (...args) => {
@@ -524,32 +527,20 @@ describe("runs written by esp-ship", () => {
       "--base",
       "main",
       "--track",
-      "inline",
-      "--caller-owned"
+      "inline"
     );
     assert.equal(started.code, 0, started.stderr);
     ship("phase", "branch", "--status", "done", "--branch", "feature/oauth");
     writeFileSync(join(repo, "b.txt"), "work in progress\n");
-    const escalated = ship(
-      "escalate",
+    const switched = ship(
+      "switch-track",
       "--trigger",
       "files",
       "--reason",
       "12 files estimated"
     );
-    assert.equal(escalated.code, 30, escalated.stderr);
-    runs([
-      "result",
-      "ship",
-      "--run-dir",
-      dir,
-      "--json",
-      escalated.stdout.trim()
-    ]);
-    runs(["update", "--run-dir", dir, "--status", "halted"]);
-    const resumed = ship("init", "--resume");
-    assert.equal(resumed.code, 0, resumed.stderr);
-    assert.equal(resumed.json().track, "orchestrated");
+    assert.equal(switched.code, 0, switched.stderr);
+    assert.equal(switched.json().track, "orchestrated");
     const stop = ship("stop", "--status", "halted", "--reason", "budget");
     assert.equal(stop.code === 0 || stop.code > 2, true, stop.stderr);
 
@@ -561,8 +552,6 @@ describe("runs written by esp-ship", () => {
       current: "orchestrated",
       history: ["inline", "orchestrated"]
     });
-    assert.equal(r.steps[0].step, "01-ship");
-    assert.equal(r.steps[0].status, "escalate");
     assert.ok(r.decisions.count >= 1);
     const shown = recap("show", dir).json();
     assert.ok(

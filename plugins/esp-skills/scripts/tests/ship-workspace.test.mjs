@@ -234,7 +234,10 @@ describe("ship.mjs workspace", () => {
     const s = state();
     assert.equal(s.branch, "feature/oauth");
     assert.equal(s.workspace.kind, "checkout");
-    assert.ok(jsonl("events.jsonl").some((e) => e.type === "branch.created"));
+    assert.equal(
+      JSON.parse(readFileSync(join(runDir, "run.json"), "utf8")).branch,
+      "feature/oauth"
+    );
     // A second call returns the recorded workspace.
     const again = workspace();
     assert.equal(again.action, "use");
@@ -309,7 +312,7 @@ describe("ship.mjs workspace", () => {
     assert.equal(decisions.length, 1, "logged once across both calls");
     assert.equal(decisions[0].source, "policy");
     assert.deepEqual(decisions[0].files.sort(), ["a.txt", "notes.txt"]);
-    const result = ship("result").json();
+    const result = ship("outcome").json();
     assert.equal(result.outputs.workspace.kind, "worktree");
     assert.equal(result.outputs.workspace.worktree, out.worktree);
     gitIn(repo, "worktree", "remove", "--force", out.worktree);

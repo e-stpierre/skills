@@ -26,7 +26,7 @@ The first level that gives a value wins:
 
 1. **`--model` flag**: the user passed `--model <alias>` to the orchestrator skill. It applies to every spawn of the roles that skill documents.
 2. **Plan milestone complexity**: for the `builder` role only, the milestone's `complexity` (`low`, `medium`, `high`) selects `defaults.models.builder.<complexity>`. A milestone without `complexity` uses `medium`. Plans never name models.
-3. **Config role**: `defaults.models.<role>` from the merged config (defaults, user, project, snapshot).
+3. **Config role**: `defaults.models.<role>` from the merged config (defaults, user, project; esp-ship reads its frozen copy in `ship.json`).
 4. **Agent frontmatter**: the `model` in the agent file. It is a static fallback, used only when the config has no entry for the role.
 5. **Inherit**: no model parameter at all; the subagent uses the session model.
 
@@ -39,7 +39,7 @@ The precedence picks the builder model of every milestone, also when the esp-shi
 - The Agent tool accepts aliases only: `opus`, `sonnet`, `haiku`, `fable`. Agent frontmatter also accepts `inherit`. Never pass a full model ID.
 - Pass the resolved values on each spawn, as the Agent tool's `model` and `effort` parameters. Do not rely on the frontmatter.
 - Worker skills invoked directly by a user (not spawned) run on the session model. A skill cannot switch the main session model.
-- Under a harness, the step's own model is set by the harness (for example `claude -p --model`). The precedence above still applies to the subagents the step spawns, read from the `--config-snapshot`.
+- A headless session (`claude -p --model`) sets its own model. The precedence above still applies to the subagents it spawns.
 - Record what was used: `runs.mjs update --run-dir <path> --model <role>=<alias>[:<effort>]` keeps `run.json` `models` accurate for `esp-recap`.
 
 ## Example

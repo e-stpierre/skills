@@ -1,12 +1,10 @@
-// Internal review loop of the orchestrated track, read from the run's steps.
+// Internal review loop of the orchestrated track, read from the step records.
 
-import { statSync } from "node:fs";
-import { join } from "node:path";
 import { readStepResults } from "../pr-body.mjs";
 import { FINISHED, stepsByRound } from "./state.mjs";
 
 /**
- * Internal review loop, read from the run's steps: review-<N> (esp-review)
+ * Internal review loop, read from the step records: review-<N> (esp-review)
  * and fix-review-<N> (esp-fix-review --internal). A round reviews, then fixes
  * the findings. A clean review ends the loop; so does the last round, and a
  * fix round that fixed nothing. Critical findings left after the last fix halt
@@ -16,15 +14,11 @@ import { FINISHED, stepsByRound } from "./state.mjs";
  * True when an unfinished step was recorded before the run was resumed: the
  * resume answered it, so the round runs again instead of stopping again.
  */
-function beforeResume(dir, state, entry) {
+function beforeResume(state, entry) {
   const resumed = Date.parse(state.resumed_at ?? "");
-  if (!Number.isFinite(resumed) || !entry?.step) return false;
-  try {
-    const path = join(dir, "steps", entry.step, "result.json");
-    return statSync(path).mtimeMs < resumed;
-  } catch {
-    return false;
-  }
+  const at = Date.parse(entry?.at ?? "");
+  if (!Number.isFinite(resumed) || !Number.isFinite(at)) return false;
+  return at < resumed;
 }
 
 export function reviewLoop(dir, state, steps = readStepResults(dir)) {
@@ -47,10 +41,7 @@ export function reviewLoop(dir, state, steps = readStepResults(dir)) {
   });
   if (round === 0) return next(1);
   const review = reviews.get(round).result;
-  if (
-    !FINISHED.has(review.status) &&
-    beforeResume(dir, state, reviews.get(round))
-  )
+  if (!FINISHED.has(review.status) && beforeResume(state, reviews.get(round)))
     return next(round);
   if (!FINISHED.has(review.status))
     return {
@@ -73,7 +64,7 @@ export function reviewLoop(dir, state, steps = readStepResults(dir)) {
   const fix = fixes.get(round)?.result;
   if (
     !fix ||
-    (!FINISHED.has(fix.status) && beforeResume(dir, state, fixes.get(round)))
+    (!FINISHED.has(fix.status) && beforeResume(state, fixes.get(round)))
   )
     return {
       action: "fix",

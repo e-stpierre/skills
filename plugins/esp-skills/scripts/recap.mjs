@@ -3,7 +3,7 @@
 //
 // The skill never opens run files by hand to decide what to read. This script
 // lists the runs in range (through runs.mjs indexRuns), reads their summary
-// frontmatter, decisions and step results, and returns JSON with the path of
+// frontmatter, decisions and step records, and returns JSON with the path of
 // every artifact it used, so each statement in a recap can cite its source.
 //
 // Commands: collect (recap mode), show (one run in full, used by fan-out
@@ -17,7 +17,8 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { basename, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { expandHome, loadConfig } from "./config.mjs";
-import { RISK_ORDER, parseFrontmatter } from "./lib/contract.mjs";
+import { parseFrontmatter } from "./lib/frontmatter.mjs";
+import { RISK_ORDER } from "./lib/risk.mjs";
 import { readStepResults } from "./lib/pr-body.mjs";
 import {
   RunsError,
@@ -149,7 +150,7 @@ export function readCriticalFindings(dir) {
   return found;
 }
 
-/** Commits of a run: milestone commits from state.json, then step result commits. */
+/** Commits of a run: milestone commits from state.json, then step record commits. */
 function runCommits(dir, steps) {
   const commits = [];
   const add = (sha, from) => {
@@ -172,10 +173,7 @@ function countByRisk(decisions) {
 // ---------------------------------------------------------------------------
 
 function configFor(options) {
-  return loadConfig({
-    snapshot: options["config-snapshot"],
-    projectDir: options["project-dir"]
-  }).config;
+  return loadConfig({ projectDir: options["project-dir"] }).config;
 }
 
 function splitList(value) {
@@ -252,7 +250,7 @@ export function selectRuns(options, env = process.env) {
  * Track of an esp-ship run from its ship.json: the current track and the
  * tracks it started on (an inline run escalated to orchestrated reports
  * `{ current: "orchestrated", history: ["inline", "orchestrated"] }`). Null
- * for runs without ship.json (runs from before 0.8.0, harness
+ * for runs without ship.json (runs from before 0.8.0, other
  * runs), which keep their recorded workflow names.
  */
 export function readTrack(dir) {
@@ -348,7 +346,7 @@ export function showRun(dir) {
       max_risk: s.result.max_risk ?? null,
       blockers: s.result.blockers ?? [],
       discovered_items: s.result.discovered_items ?? [],
-      source: join(dir, "steps", s.step, "result.json")
+      source: join(dir, s.step === "triage" ? "triage.json" : "ship.json")
     })),
     commits: runCommits(dir, steps),
     critical_findings: readCriticalFindings(dir)
@@ -641,7 +639,6 @@ Options:
   --min-risk <level>        risks: lowest decision risk to report (default high)
   --question <text>         sources: the question to answer
   --root <dir>              A runs root to read (repeatable; default recap.roots plus runs.root)
-  --config-snapshot <path>  Config snapshot used to resolve recap.* and runs.root
   --project-dir <dir>       Project root for config resolution
   --help                    Show this help`;
 

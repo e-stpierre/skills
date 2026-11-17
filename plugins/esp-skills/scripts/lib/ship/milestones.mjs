@@ -6,7 +6,7 @@
 // `ship.mjs milestone <cmd>` between builder and verifier spawns, so no
 // SKILL.md writes state.json by hand.
 //
-// state.json is not a contract artifact: the contract only reserves its name.
+// state.json belongs to esp-ship (see references/run-directory.md).
 // Its `milestones.<id>.status` values are read by plan.mjs (`completedFromState`)
 // and by esp-plan --amend, so `done` must keep its meaning.
 
@@ -15,11 +15,12 @@ import { dirname, join, resolve } from "node:path";
 import { expandHome } from "../../config.mjs";
 import { withLock } from "../lock.mjs";
 import { filesOverlap, planBatches, readPlan, wholeRepo } from "../../plan.mjs";
-import { appendDecision, appendEvent, latestPlan, now } from "../../runs.mjs";
+import { appendDecision, latestPlan, now } from "../../runs.mjs";
 import { gatesFor } from "./gates.mjs";
 import {
   configOf,
   freezeConfig,
+  parseJsonOption,
   readJson,
   runDirOf,
   SHA,
@@ -136,16 +137,13 @@ export function cmdMilestoneInit(options, env = process.env) {
   if (plan.milestones.length === 0)
     throw new ShipError(`Plan has no milestones: ${planFile}`);
 
-  // Freeze the config for deterministic resume: an explicit snapshot wins,
-  // then the one of state.json, then the one of ship.json, else the merged
-  // config is written in the run directory once.
+  // Freeze the config for deterministic resume: the snapshot of state.json
+  // wins, then the one of ship.json, else the merged config is written in the
+  // run directory once.
   const path = statePath(dir);
   const existing = existsSync(path) ? readMilestoneState(dir) : null;
   const snapshot = freezeConfig(dir, {
-    snapshot:
-      stringOption(options["config-snapshot"]) ??
-      existing?.config_snapshot ??
-      shipSnapshot(dir),
+    snapshot: existing?.config_snapshot ?? shipSnapshot(dir),
     projectDir: stringOption(options["project-dir"]) ?? undefined
   });
   const config = configOf(snapshot);
@@ -320,7 +318,7 @@ export { filesOverlap };
  * - `done`: every milestone is done
  * - `blocked`: nothing is runnable (a dependency is missing from the plan)
  */
-export function nextStep(state, { parallel = false, only } = {}) {
+export function nextStep(state, { parallel = false } = {}) {
   const ms = state.milestones;
   const order = state.order;
   const remaining = order.filter((id) => ms[id].status !== "done");
@@ -359,7 +357,8 @@ export function nextStep(state, { parallel = false, only } = {}) {
       batch: [current],
       attempt: m.attempts + 1,
       amend: m.commit ?? null,
-      last_failure: m.last_failure
+      last_failure: m.last_failure,
+      failures: m.last_failures ?? []
     };
   }
 
@@ -368,33 +367,6 @@ export function nextStep(state, { parallel = false, only } = {}) {
       ms[id].status === "pending" &&
       ms[id].depends.every((d) => ms[d]?.status === "done")
   );
-  if (only && only !== "next") {
-    if (!ms[only]) throw new ShipError(`Unknown milestone: ${only}`, 2);
-    if (ms[only].status === "done")
-      return {
-        ...base,
-        action: "done",
-        milestone: only,
-        batch: [],
-        note: `${only} is already done`
-      };
-    if (!runnable.includes(only))
-      return {
-        ...base,
-        action: "blocked",
-        milestone: only,
-        batch: [],
-        reason: `${only} depends on ${ms[only].depends.filter((d) => ms[d]?.status !== "done").join(", ")}`
-      };
-    return {
-      ...base,
-      action: "run",
-      milestone: only,
-      batch: [only],
-      attempt: 1,
-      amend: null
-    };
-  }
   if (runnable.length === 0)
     return {
       ...base,
@@ -407,8 +379,7 @@ export function nextStep(state, { parallel = false, only } = {}) {
   const batch = [runnable[0]];
   const alone = (id) => ms[id].files.length === 0 || wholeRepo(ms[id].files);
   const cap = Math.max(1, state.max_parallel ?? Infinity);
-  // Single Milestone Mode (only) never batches.
-  if (parallel && !only && !alone(batch[0])) {
+  if (parallel && !alone(batch[0])) {
     for (const id of runnable.slice(1)) {
       if (batch.length >= cap) break;
       if (alone(id)) continue;
@@ -432,8 +403,7 @@ export function cmdMilestoneNext(options) {
   return nextStep(state, {
     parallel:
       options.parallel === true ||
-      (options.parallel === undefined && state.parallel),
-    only: options.milestone
+      (options.parallel === undefined && state.parallel)
   });
 }
 
@@ -476,13 +446,26 @@ export function cmdStart(id, options, env = process.env) {
     },
     env
   );
-  appendEvent(
-    dir,
-    "iteration.started",
-    { milestone: id, attempt: entry.attempt },
-    env
-  );
   return entry;
+}
+
+/** --failures <json>: the verifier's failures, a list of objects or strings. */
+function failuresOption(raw) {
+  if (raw === undefined || raw === null || raw === true) return null;
+  const value = parseJsonOption(raw, "failures");
+  const list = Array.isArray(value) ? value : [value];
+  if (
+    !list.every(
+      (f) =>
+        (typeof f === "string" && f.trim() !== "") ||
+        (f && typeof f === "object" && !Array.isArray(f))
+    )
+  )
+    throw new ShipError(
+      "--failures must be a JSON list of objects or strings",
+      2
+    );
+  return list;
 }
 
 export function cmdFinish(id, options, env = process.env) {
@@ -494,6 +477,7 @@ export function cmdFinish(id, options, env = process.env) {
     options.commit && options.commit !== true ? String(options.commit) : null;
   if (commit && !SHA.test(commit))
     throw new ShipError(`--commit must be a commit SHA, got ${commit}`, 2);
+  const failures = failuresOption(options.failures);
   const entry = updateState(
     dir,
     (state) => {
@@ -515,6 +499,9 @@ export function cmdFinish(id, options, env = process.env) {
           : options.reason && options.reason !== true
             ? String(options.reason)
             : (m.last_failure ?? status);
+      // The verifier's failures reach the builder of the retry (milestone next).
+      if (status === "done") delete m.last_failures;
+      else if (failures) m.last_failures = failures;
       return {
         milestone: id,
         status,
@@ -523,19 +510,6 @@ export function cmdFinish(id, options, env = process.env) {
         attempts_left: Math.max(0, 1 + state.max_retries - m.attempts)
       };
     },
-    env
-  );
-  if (status === "done")
-    appendEvent(
-      dir,
-      "commit.created",
-      { milestone: id, sha: entry.commit },
-      env
-    );
-  appendEvent(
-    dir,
-    "iteration.completed",
-    { milestone: id, attempt: entry.attempt, status },
     env
   );
   return entry;
@@ -650,8 +624,8 @@ function builderModel(state, m, options) {
 
 /**
  * Decide whether the last builder continues with milestone `id` (pure).
- * Reuse only when every rule holds, in this order: not --milestone mode, a
- * builder ran in the main tree, `id` does not run in a parallel batch, this
+ * Reuse only when every rule holds, in this order: a builder ran in the
+ * main tree, `id` does not run in a parallel batch, this
  * session still holds the builder's agent ID, `id` is a retry of that builder
  * or depends on / shares files with a milestone it ran, the builder model and
  * effort of `id` equal the builder's, and `used + cost(id) <= limit`.
@@ -661,7 +635,6 @@ export function reuseDecision({
   id,
   model,
   agentId = null,
-  single = false,
   batch = [],
   limit = REUSE_DEFAULTS.limit_tokens,
   cost = REUSE_DEFAULTS.cost
@@ -685,7 +658,6 @@ export function reuseDecision({
     agent_id: null,
     reason
   });
-  if (single) return fresh("--milestone mode always spawns a fresh builder");
   if (!builder) return fresh("no builder ran before this milestone");
   if (builder.worktree)
     return fresh("the last builder ran in a worktree of a parallel batch");
@@ -746,7 +718,6 @@ export function cmdReuse(id, options, env = process.env) {
     id,
     model: builderModel(state, m, options),
     agentId: stringOption(options["agent-id"]),
-    single: options.single === true,
     batch: ["run", "retry"].includes(next.action) ? next.batch : [],
     limit,
     cost
@@ -866,7 +837,7 @@ const shipPlanPath = (dir) => shipJson(dir)?.plan_path ?? null;
 const shipSnapshot = (dir) => shipJson(dir)?.config_snapshot ?? null;
 
 export function cmdMilestoneGates(options) {
-  let snapshot = stringOption(options["config-snapshot"]) ?? undefined;
+  let snapshot;
   let planPath = stringOption(options.plan);
   planPath = planPath ? resolve(expandHome(planPath)) : null;
   if (options["run-dir"]) {

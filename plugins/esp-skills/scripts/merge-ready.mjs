@@ -9,26 +9,14 @@
 // Commands:
 //   check [pr]   Evaluate every merge condition, print the report
 //   method [pr]  Resolve the merge method, print it
-//   merge [pr]   Under the merge lock: check again, merge, clean up, log the
-//                decision, print a contract result block
+//   merge [pr]   Check again right before merging, merge, clean up, log the
+//                decision, print the outcome as JSON ({ status, summary, outputs })
 //
-// Exit codes: check and method exit 0 when they ran (read `ready` / `method`).
-// merge exits with the contract code of its result status (0 done or merged,
-// 10 awaiting-human, 20 halted, 1 failed). 2 is a usage error everywhere.
+// Exit codes: 0 ok (check and method when they ran, read `ready` / `method`;
+// merge with any status but failed), 1 failed, 2 usage error.
 
-import { spawn, spawnSync } from "node:child_process";
-import { randomUUID } from "node:crypto";
-import {
-  closeSync,
-  existsSync,
-  openSync,
-  readFileSync,
-  rmSync,
-  statSync,
-  utimesSync,
-  writeSync
-} from "node:fs";
-import { hostname } from "node:os";
+import { spawnSync } from "node:child_process";
+import { existsSync, readFileSync } from "node:fs";
 import { join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -38,8 +26,7 @@ import {
   loadConfig
 } from "./config.mjs";
 import { classifyChecks, fetchChecks } from "./lib/checks.mjs";
-import { exitCodeFor, validateArtifact } from "./lib/contract.mjs";
-import { appendDecision, appendEvent } from "./runs.mjs";
+import { appendDecision } from "./runs.mjs";
 import { prArgument, repoFromUrl } from "./wait-for-review.mjs";
 
 export class MergeError extends Error {
@@ -62,8 +49,6 @@ export const CONDITIONS = [
   "branch-protection"
 ];
 const SHORT_SHA = 7;
-const STALE_LOCK_MS = 30_000;
-const HEARTBEAT_MS = 10_000;
 const HALTED_RUN_STATUSES = new Set(["halted", "failed", "canceled"]);
 
 // ---------------------------------------------------------------------------
@@ -751,139 +736,6 @@ export async function waitForChecks(
 }
 
 // ---------------------------------------------------------------------------
-// Merge lock (AF_MERGE_LOCK)
-// ---------------------------------------------------------------------------
-
-/**
- * Acquire the harness merge lock: exclusive create of `lockPath`, the contract
- * lock protocol (a lock older than 30 s is stale). A separate heartbeat
- * process refreshes the mtime every 10 s, so the lock stays live while this
- * process blocks on synchronous GitHub calls; the holder also refreshes before
- * each call. Refresh and release act only on a lock that still carries this
- * holder's token, never on a lock another process took over.
- * Returns `{ path, token, refresh(), release() }`.
- */
-export async function acquireMergeLock(
-  lockPath,
-  {
-    timeoutMs,
-    sleep,
-    now = () => new Date(),
-    staleMs = STALE_LOCK_MS,
-    heartbeatMs = HEARTBEAT_MS,
-    holder = {}
-  }
-) {
-  const token = randomUUID();
-  const deadline = now().getTime() + timeoutMs;
-  for (;;) {
-    try {
-      const fd = openSync(lockPath, "wx");
-      writeSync(
-        fd,
-        JSON.stringify({
-          pid: process.pid,
-          host: hostname(),
-          at: now().toISOString(),
-          ...holder,
-          token
-        })
-      );
-      closeSync(fd);
-      break;
-    } catch (err) {
-      if (err.code !== "EEXIST" && err.code !== "EPERM")
-        throw new MergeError(
-          `Cannot create merge lock ${lockPath}: ${err.message}`
-        );
-      try {
-        if (now().getTime() - statSync(lockPath).mtimeMs > staleMs) {
-          rmSync(lockPath, { force: true });
-          continue;
-        }
-      } catch {
-        continue;
-      }
-      if (now().getTime() >= deadline) return null;
-      await sleep(Math.min(2000, Math.max(0, deadline - now().getTime())));
-    }
-  }
-  const owned = () => {
-    try {
-      return JSON.parse(readFileSync(lockPath, "utf8")).token === token;
-    } catch {
-      return false;
-    }
-  };
-  const refresh = () => {
-    if (!owned()) return;
-    try {
-      const t = new Date();
-      utimesSync(lockPath, t, t);
-    } catch {
-      // Lost the lock file: nothing to refresh.
-    }
-  };
-  const heartbeat = startHeartbeat(lockPath, token, heartbeatMs);
-  return {
-    path: lockPath,
-    token,
-    refresh,
-    release() {
-      stopHeartbeat(heartbeat);
-      if (owned()) rmSync(lockPath, { force: true });
-    }
-  };
-}
-
-// The heartbeat runs in its own process: the holder blocks its event loop on
-// spawnSync GitHub calls, which would starve an in-process timer. It exits
-// when the holder dies or the lock is no longer this holder's.
-const HEARTBEAT_SCRIPT = `
-const fs = require("node:fs");
-const [lockPath, token, parent, everyMs] = process.argv.slice(1);
-const beat = () => {
-  try { process.kill(Number(parent), 0); } catch { process.exit(0); }
-  try {
-    if (JSON.parse(fs.readFileSync(lockPath, "utf8")).token !== token) process.exit(0);
-    const t = new Date();
-    fs.utimesSync(lockPath, t, t);
-  } catch { process.exit(0); }
-};
-setInterval(beat, Number(everyMs));
-`;
-
-function startHeartbeat(lockPath, token, everyMs) {
-  try {
-    const child = spawn(
-      process.execPath,
-      [
-        "-e",
-        HEARTBEAT_SCRIPT,
-        lockPath,
-        token,
-        String(process.pid),
-        String(everyMs)
-      ],
-      { stdio: "ignore", windowsHide: true }
-    );
-    child.on("error", () => {});
-    child.unref();
-    return child;
-  } catch {
-    return null;
-  }
-}
-
-function stopHeartbeat(child) {
-  try {
-    child?.kill();
-  } catch {
-    // Already gone.
-  }
-}
-
-// ---------------------------------------------------------------------------
 // Cleanup
 // ---------------------------------------------------------------------------
 
@@ -954,27 +806,6 @@ const STATUS_BY_OUTCOME = {
   error: "failed"
 };
 
-function needsInput(outcome, reasons) {
-  return {
-    id: `merge-${outcome}`,
-    question: `The pull request cannot merge yet: ${reasons.join("; ")}. Check again after fixing it, or leave it open?`,
-    options: [
-      {
-        id: "retry",
-        label: "Check again",
-        description: "Run esp-merge again once the condition is met"
-      },
-      {
-        id: "leave-open",
-        label: "Leave the pull request open",
-        description: "Stop here and merge by hand later"
-      }
-    ],
-    recommended: "retry",
-    blocking: true
-  };
-}
-
 function failingReasons(rep) {
   const reasons = rep.conditions
     .filter((c) => c.status !== "pass")
@@ -983,14 +814,13 @@ function failingReasons(rep) {
   return reasons;
 }
 
-/** Build and validate the merge result block. */
+/** Build the merge outcome. */
 export function buildResult(
   rep,
   {
     outcome,
     summary,
     extra = {},
-    runDir = null,
     decision = null,
     cleanup = null,
     blockers = []
@@ -999,7 +829,6 @@ export function buildResult(
   const status = STATUS_BY_OUTCOME[outcome] ?? "awaiting-human";
   const reasons = [...(rep ? failingReasons(rep) : []), ...blockers];
   const block = {
-    contract_version: 1,
     status,
     summary,
     max_risk: status === "halted" ? "high" : "low",
@@ -1022,15 +851,8 @@ export function buildResult(
       ...extra
     }
   };
-  if (status === "awaiting-human" && reasons.length > 0 && runDir)
-    block.needs_input = needsInput(outcome, reasons);
   if (status !== "done" && status !== "merged" && reasons.length > 0)
     block.blockers = reasons;
-  const check = validateArtifact("result", block);
-  if (!check.valid)
-    throw new MergeError(
-      `Invalid result block:\n${check.errors.map((e) => `  ${e.path}: ${e.message}`).join("\n")}`
-    );
   return block;
 }
 
@@ -1063,9 +885,8 @@ function summaryFor(rep, outcome) {
 }
 
 /**
- * The `merge` command. Holds the merge lock (when `AF_MERGE_LOCK` or `--lock`
- * names one) from the final check to the cleanup, so serialized merges always
- * check against the latest base.
+ * The `merge` command. Checks the pull request again right before merging, so
+ * a base that moved since the last check ends `behind` instead of merging.
  */
 export async function cmdMerge(ctx, target, options = {}) {
   const merge = ctx.config.merge ?? {};
@@ -1082,7 +903,6 @@ export async function cmdMerge(ctx, target, options = {}) {
     return buildResult(rep, {
       outcome: "halted",
       summary: `Halted, not merged: ${options.halt}.`,
-      runDir: ctx.runDir,
       decision,
       blockers: [options.halt]
     });
@@ -1092,155 +912,101 @@ export async function cmdMerge(ctx, target, options = {}) {
     const rep = safeReport(ctx, target);
     return buildResult(rep, {
       outcome: "disabled",
-      summary: summaryFor(rep, "disabled"),
-      runDir: ctx.runDir
+      summary: summaryFor(rep, "disabled")
     });
   }
 
-  const lockPath = options.lock ?? ctx.env.AF_MERGE_LOCK ?? null;
-  let lock = null;
-  if (lockPath && !options.dryRun) {
-    lock = await acquireMergeLock(resolve(lockPath), {
-      timeoutMs:
-        (options.lockTimeoutMinutes ?? merge.checks_timeout_minutes ?? 30) *
-        60_000,
-      sleep: ctx.sleep,
-      now: ctx.now,
-      holder: { run: ctx.runDir ?? null }
+  const rep = report(ctx, target);
+  let outcome = rep.outcome;
+  if (options.dryRun) outcome = "dry-run";
+  else if (outcome === "pending" && merge.use_auto_merge && rep.method.method)
+    outcome = "auto-merge";
+  else if (outcome === "ready" && rep.method.queue) outcome = "queued";
+
+  if (rep.outcome === "merged" && !options.dryRun) {
+    return buildResult(rep, {
+      outcome,
+      summary: `#${rep.pr} was already merged.`,
+      extra: { already_merged: true }
     });
-    if (!lock) {
-      const rep = safeReport(ctx, target);
-      return buildResult(rep, {
-        outcome: "lock-busy",
-        summary: `Merge lock ${lockPath} stayed busy: not merged.`,
-        runDir: null,
-        extra: { lock: lockPath },
-        blockers: [`merge lock ${lockPath} busy`]
-      });
-    }
-    if (ctx.runDir)
-      appendEvent(ctx.runDir, "merge.locked", { lock: lock.path }, ctx.env);
   }
-
-  try {
-    lock?.refresh();
-    const rep = report(ctx, target);
-    lock?.refresh();
-    let outcome = rep.outcome;
-    if (options.dryRun) outcome = "dry-run";
-    else if (outcome === "pending" && merge.use_auto_merge && rep.method.method)
-      outcome = "auto-merge";
-    else if (outcome === "ready" && rep.method.queue) outcome = "queued";
-
-    if (rep.outcome === "merged" && !options.dryRun) {
-      return buildResult(rep, {
-        outcome,
-        summary: `#${rep.pr} was already merged.`,
-        runDir: ctx.runDir,
-        extra: { already_merged: true }
-      });
-    }
-    if (rep.outcome === "queued" && !options.dryRun) {
-      return buildResult(rep, {
-        outcome: "queued",
-        summary: `#${rep.pr} is already ${rep.policy.in_merge_queue ? "in the merge queue" : "set to auto-merge"}.`,
-        runDir: ctx.runDir,
-        extra: { already_queued: true }
-      });
-    }
-    if (!["ready", "queued", "auto-merge"].includes(outcome)) {
-      const decision =
-        outcome === "dry-run"
-          ? null
-          : logDecision(ctx, {
-              risk: outcome === "halted" ? "high" : "medium",
-              decision: `Did not merge #${rep.pr}: ${outcome}`,
-              rationale:
-                failingReasons(rep).join("; ") || rep.method.error || outcome,
-              refs: [
-                rep.url,
-                ...(rep.conditions.find((c) => c.name === "threads")?.threads ??
-                  [])
-              ].filter(Boolean),
-              ...(outcome === "halted" ? { "x-esp-class": "Halt" } : {})
-            });
-      return buildResult(rep, {
-        outcome,
-        summary: summaryFor(rep, outcome),
-        runDir: ctx.runDir,
-        decision
-      });
-    }
-
-    const auto = outcome !== "ready";
-    lock?.refresh();
-    ctx.client.merge(rep.pr, {
-      method: rep.method.method,
-      head: rep.head,
-      auto
+  if (rep.outcome === "queued" && !options.dryRun) {
+    return buildResult(rep, {
+      outcome: "queued",
+      summary: `#${rep.pr} is already ${rep.policy.in_merge_queue ? "in the merge queue" : "set to auto-merge"}.`,
+      extra: { already_queued: true }
     });
-    lock?.refresh();
-    if (outcome === "ready") outcome = "merged";
-
-    const decision = logDecision(ctx, {
-      risk: "low",
-      decision:
-        outcome === "merged"
-          ? `Merged #${rep.pr} with ${rep.method.method}`
-          : outcome === "queued"
-            ? `Enqueued #${rep.pr} in the merge queue`
-            : `Enabled auto-merge (${rep.method.method}) on #${rep.pr}`,
-      rationale: `Method: ${rep.method.reason}. Conditions: ${rep.conditions.map((c) => `${c.name} ${c.status}`).join(", ")}`,
-      alternatives: rep.method.alternatives ?? [],
-      refs: [rep.url],
-      commit: rep.head
-    });
-
-    const cleanup = { remote_branch: "kept", worktree: null };
-    if (outcome === "merged") {
-      if (merge.delete_branch === false)
-        cleanup.remote_branch = "kept (merge.delete_branch false)";
-      else if (rep.cross_repository)
-        cleanup.remote_branch = "kept (fork branch)";
-      else if (rep.policy.delete_branch_on_merge)
-        cleanup.remote_branch = "deleted by GitHub (delete_branch_on_merge)";
-      else {
-        try {
-          cleanup.remote_branch = ctx.client.deleteBranch(rep.repo, rep.branch);
-        } catch (err) {
-          if (!(err instanceof MergeError)) throw err;
-          cleanup.remote_branch = `failed: ${err.message}`;
-        }
-      }
-      cleanup.worktree = ctx.inspectWorktree ? ctx.inspectWorktree() : null;
-    } else {
-      cleanup.remote_branch = "pending (GitHub merges later)";
-    }
-    if (ctx.runDir) {
-      appendEvent(
-        ctx.runDir,
-        "merge.completed",
-        {
-          pr: rep.pr,
-          url: rep.url,
-          outcome,
-          method: rep.method.method,
-          head: rep.head,
-          branch_cleanup: cleanup.remote_branch
-        },
-        ctx.env
-      );
-    }
+  }
+  if (!["ready", "queued", "auto-merge"].includes(outcome)) {
+    const decision =
+      outcome === "dry-run"
+        ? null
+        : logDecision(ctx, {
+            risk: outcome === "halted" ? "high" : "medium",
+            decision: `Did not merge #${rep.pr}: ${outcome}`,
+            rationale:
+              failingReasons(rep).join("; ") || rep.method.error || outcome,
+            refs: [
+              rep.url,
+              ...(rep.conditions.find((c) => c.name === "threads")?.threads ??
+                [])
+            ].filter(Boolean),
+            ...(outcome === "halted" ? { "x-esp-class": "Halt" } : {})
+          });
     return buildResult(rep, {
       outcome,
       summary: summaryFor(rep, outcome),
-      runDir: ctx.runDir,
-      decision,
-      cleanup
+      decision
     });
-  } finally {
-    lock?.release();
   }
+
+  const auto = outcome !== "ready";
+  ctx.client.merge(rep.pr, {
+    method: rep.method.method,
+    head: rep.head,
+    auto
+  });
+  if (outcome === "ready") outcome = "merged";
+
+  const decision = logDecision(ctx, {
+    risk: "low",
+    decision:
+      outcome === "merged"
+        ? `Merged #${rep.pr} with ${rep.method.method}`
+        : outcome === "queued"
+          ? `Enqueued #${rep.pr} in the merge queue`
+          : `Enabled auto-merge (${rep.method.method}) on #${rep.pr}`,
+    rationale: `Method: ${rep.method.reason}. Conditions: ${rep.conditions.map((c) => `${c.name} ${c.status}`).join(", ")}`,
+    alternatives: rep.method.alternatives ?? [],
+    refs: [rep.url],
+    commit: rep.head
+  });
+
+  const cleanup = { remote_branch: "kept", worktree: null };
+  if (outcome === "merged") {
+    if (merge.delete_branch === false)
+      cleanup.remote_branch = "kept (merge.delete_branch false)";
+    else if (rep.cross_repository) cleanup.remote_branch = "kept (fork branch)";
+    else if (rep.policy.delete_branch_on_merge)
+      cleanup.remote_branch = "deleted by GitHub (delete_branch_on_merge)";
+    else {
+      try {
+        cleanup.remote_branch = ctx.client.deleteBranch(rep.repo, rep.branch);
+      } catch (err) {
+        if (!(err instanceof MergeError)) throw err;
+        cleanup.remote_branch = `failed: ${err.message}`;
+      }
+    }
+    cleanup.worktree = ctx.inspectWorktree ? ctx.inspectWorktree() : null;
+  } else {
+    cleanup.remote_branch = "pending (GitHub merges later)";
+  }
+  return buildResult(rep, {
+    outcome,
+    summary: summaryFor(rep, outcome),
+    decision,
+    cleanup
+  });
 }
 
 function safeReport(ctx, target) {
@@ -1261,8 +1027,8 @@ const USAGE = `Usage: merge-ready.mjs <command> [pr] [options]
 Commands:
   check [pr]              Evaluate the merge conditions and resolve the method (JSON report)
   method [pr]             Resolve the merge method only
-  merge [pr]              Under the merge lock: check again, merge, clean up, log the decision,
-                          print a contract result block
+  merge [pr]              Check again, merge, clean up, log the decision, print the
+                          outcome { status, summary, outputs }
 
 [pr] is a number, #<n>, or a URL (default: the pull request of the current branch).
 
@@ -1271,19 +1037,15 @@ Options:
   --wait                  check: poll while checks are pending
   --wait-minutes <n>      check --wait timeout (default: merge.checks_timeout_minutes)
   --poll-seconds <n>      check --wait interval (default 30)
-  --lock <path>           merge: lock file to hold (default: AF_MERGE_LOCK)
-  --lock-timeout-minutes <n>  merge: wait for a busy lock (default: merge.checks_timeout_minutes)
   --dry-run               merge: evaluate only, never merge
   --halt <reason>         merge: record a Halt and report halted, never merge
-  --run-dir <path>        Run directory: halt signals, decisions and merge events
-  --config-snapshot <p>   Config snapshot
+  --run-dir <path>        Run directory: halt signals and decisions
   --project-dir <dir>     Repository root (default: nearest git root)
 
-Exit codes: check and method 0 when they ran; merge exits with the contract code of its
-status (0 done or merged, 10 awaiting-human, 20 halted, 1 failed); 2 usage error.
+Exit codes: 0 ok (check and method when they ran; merge with any status but failed),
+1 failed, 2 usage error.
 
 Environment:
-  AF_MERGE_LOCK           Harness merge lock path; standalone runs merge without a lock
   ESP_GH_CMD              JSON array replacing the gh command (tests)`;
 
 const BOOLEAN_OPTIONS = new Set(["wait", "dry-run", "help"]);
@@ -1324,11 +1086,7 @@ export function buildContext(options, env = process.env, io = {}) {
   );
   let config;
   try {
-    ({ config } = loadConfig({
-      projectDir,
-      snapshot: options["config-snapshot"],
-      env
-    }));
+    ({ config } = loadConfig({ projectDir, env }));
   } catch (err) {
     if (err instanceof ConfigError)
       throw new MergeError(err.message, err.exitCode ?? 1);
@@ -1405,20 +1163,11 @@ export async function run(argv, env = process.env, io = {}) {
     case "merge": {
       const block = await cmdMerge(ctx, target, {
         dryRun: Boolean(options["dry-run"]),
-        halt: options.halt,
-        lock: options.lock,
-        lockTimeoutMinutes:
-          options["lock-timeout-minutes"] !== undefined
-            ? positiveNumber(
-                options["lock-timeout-minutes"],
-                "lock-timeout-minutes",
-                0
-              )
-            : undefined
+        halt: options.halt
       });
       return {
         output: JSON.stringify(block),
-        exitCode: exitCodeFor(block.status)
+        exitCode: block.status === "failed" ? 1 : 0
       };
     }
     default:

@@ -14,20 +14,54 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, test } from "node:test";
 import { fileURLToPath } from "node:url";
-import { CONTRACT_DIR } from "../lib/contract.mjs";
 import {
   NOTES_MAX_LENGTH,
   indexRuns,
   latestPlan,
   readNotes,
   slugify,
-  stepDirName,
-  validateFile
+  checkFile
 } from "../runs.mjs";
 
 const SCRIPT = join(dirname(fileURLToPath(import.meta.url)), "..", "runs.mjs");
-const FIXTURES = join(CONTRACT_DIR, "fixtures");
 const NOW = "2026-11-10T12:00:00.000Z";
+
+// What runs.mjs writes for createRun() and for a decision given without id and at.
+const GOLDEN = {
+  run: {
+    id: "2026-11-10-fix-login-timeout",
+    type: "skill",
+    title: "Fix login timeout",
+    workflow: "esp-go-light",
+    parent: null,
+    repo: "e-stpierre/skills",
+    base: "main",
+    branch: null,
+    worktree: null,
+    pr: null,
+    runtime: null,
+    status: "running",
+    max_risk: null,
+    started_at: NOW,
+    updated_at: NOW,
+    ended_at: null,
+    models: {},
+    budgets_used: {}
+  },
+  decision: {
+    id: "D001",
+    at: NOW,
+    phase: "build",
+    source: "agent",
+    risk: "medium",
+    decision: "Reuse the existing HTTP client instead of adding axios",
+    rationale:
+      "The project already wraps fetch with retries; a second client would duplicate it",
+    alternatives: ["Add axios"],
+    files: ["src/http.ts"],
+    commit: null
+  }
+};
 
 const readJson = (path) => JSON.parse(readFileSync(path, "utf8"));
 const readJsonl = (path) =>
@@ -35,8 +69,7 @@ const readJsonl = (path) =>
     .split("\n")
     .filter(Boolean)
     .map((l) => JSON.parse(l));
-const fixture = (artifact, name) =>
-  readJson(join(FIXTURES, artifact, "valid", `${name}.json`));
+const golden = (kind) => structuredClone(GOLDEN[kind]);
 
 let root;
 let home;
@@ -93,16 +126,11 @@ afterEach(() => {
 });
 
 describe("create", () => {
-  test("creates <root>/<date>-<slug> with a golden run.json and run.started event", () => {
+  test("creates <root>/<date>-<slug> with a golden run.json and nothing else", () => {
     const dir = createRun();
     assert.equal(dir, join(root, "runs", "2026-11-10-fix-login-timeout"));
-    assert.deepEqual(
-      readJson(join(dir, "run.json")),
-      fixture("run", "created-by-runs-mjs")
-    );
-    assert.deepEqual(readJsonl(join(dir, "events.jsonl")), [
-      fixture("event", "run-started-by-runs-mjs")
-    ]);
+    assert.deepEqual(readJson(join(dir, "run.json")), golden("run"));
+    assert.deepEqual(readdirSync(dir), ["run.json"]);
   });
 
   test("uses runs.root from the config when no root is given", () => {
@@ -116,20 +144,6 @@ describe("create", () => {
     assert.equal(out.json().run_dir, join(runsRoot, "2026-11-10-task"));
   });
 
-  test("uses runs.root from a config snapshot", () => {
-    const snapshot = join(root, "snapshot.json");
-    writeFileSync(
-      snapshot,
-      JSON.stringify({ runs: { root: join(root, "snap-runs") } })
-    );
-    const out = cli(["create", "task", "--config-snapshot", snapshot]);
-    assert.equal(out.code, 0, out.stderr);
-    assert.equal(
-      out.json().run_dir,
-      join(root, "snap-runs", "2026-11-10-task")
-    );
-  });
-
   test("adds a numeric suffix when the directory exists", () => {
     createRun();
     const second = createRun();
@@ -137,7 +151,7 @@ describe("create", () => {
   });
 
   test("--run-dir creates the given directory, and reuses an existing run", () => {
-    const dir = join(root, "harness", "T01-add-oauth");
+    const dir = join(root, "parent", "T01-add-oauth");
     const first = cli(["create", "--run-dir", dir, "--type", "workflow"]);
     assert.equal(first.code, 0, first.stderr);
     assert.deepEqual(first.json(), {
@@ -147,7 +161,7 @@ describe("create", () => {
     });
     const second = cli(["create", "--run-dir", dir]);
     assert.equal(second.json().created, false);
-    assert.equal(readJsonl(join(dir, "events.jsonl")).length, 1);
+    assert.deepEqual(readdirSync(dir), ["run.json"]);
   });
 
   test("rejects an invalid type before writing anything", () => {
@@ -174,7 +188,7 @@ describe("create", () => {
 });
 
 describe("update", () => {
-  test("sets fields, raises max_risk only, and emits status events", () => {
+  test("sets fields and raises max_risk only", () => {
     const dir = createRun();
     let out = cli([
       "update",
@@ -217,15 +231,7 @@ describe("update", () => {
       builder: { model: "opus", effort: "high" }
     });
     assert.deepEqual(run.budgets_used, { wall_minutes: 38 });
-    assert.deepEqual(
-      readJsonl(join(dir, "events.jsonl")).map((e) => [e.seq, e.type]),
-      [
-        [1, "run.started"],
-        [2, "run.paused"],
-        [3, "run.resumed"],
-        [4, "run.completed"]
-      ]
-    );
+    assert.deepEqual(readdirSync(dir), ["run.json"]);
   });
 
   test("rejects an invalid status and leaves run.json untouched", () => {
@@ -245,7 +251,7 @@ describe("update", () => {
 
 describe("decisions", () => {
   const input = () => {
-    const { id, at, ...rest } = fixture("decision", "appended-by-runs-mjs");
+    const { id, at, ...rest } = golden("decision");
     return rest;
   };
 
@@ -259,7 +265,7 @@ describe("decisions", () => {
       JSON.stringify(input())
     ]);
     assert.equal(out.code, 0, out.stderr);
-    assert.deepEqual(out.json(), fixture("decision", "appended-by-runs-mjs"));
+    assert.deepEqual(out.json(), golden("decision"));
     assert.equal(readJson(join(dir, "run.json")).max_risk, "medium");
   });
 
@@ -344,113 +350,12 @@ describe("decisions", () => {
     assert.equal(entries.length, workers * perWorker);
     const ids = new Set(entries.map((e) => e.id));
     assert.equal(ids.size, workers * perWorker);
-    assert.equal(validateFile(join(dir, "decisions.jsonl")).valid, true);
+    assert.equal(checkFile(join(dir, "decisions.jsonl")).valid, true);
     assert.equal(existsSync(join(dir, "decisions.jsonl.lock")), false);
   });
 });
 
-describe("events", () => {
-  test("appends with increasing seq and rejects unknown types", () => {
-    const dir = createRun();
-    const out = cli([
-      "event",
-      "pr.opened",
-      "--run-dir",
-      dir,
-      "--data",
-      '{"pr":"u"}'
-    ]);
-    assert.equal(out.code, 0, out.stderr);
-    assert.equal(out.json().seq, 2);
-    const bad = cli(["event", "run.exploded", "--run-dir", dir]);
-    assert.equal(bad.code, 1);
-    assert.equal(readJsonl(join(dir, "events.jsonl")).length, 2);
-    assert.equal(validateFile(join(dir, "events.jsonl")).valid, true);
-  });
-});
-
-describe("result", () => {
-  test("writes steps/NN-<step>/result.json and prints the block on one line", () => {
-    const dir = createRun();
-    const block = fixture("result", "done-full");
-    const out = cli([
-      "result",
-      "build-M2",
-      "--run-dir",
-      dir,
-      "--json",
-      JSON.stringify(block)
-    ]);
-    assert.equal(out.code, 0, out.stderr);
-    assert.equal(out.stdout.trim().split("\n").length, 1);
-    assert.deepEqual(JSON.parse(out.stdout), block);
-    assert.deepEqual(
-      readJson(join(dir, "steps", "01-build-M2", "result.json")),
-      block
-    );
-    const events = readJsonl(join(dir, "events.jsonl"));
-    assert.deepEqual(events.at(-1).data, {
-      step: "01-build-M2",
-      status: "done"
-    });
-    assert.equal(events.at(-1).type, "step.completed");
-  });
-
-  test("adds contract_version and emits needs_input", () => {
-    const dir = createRun();
-    const { contract_version, ...block } = fixture("result", "awaiting-human");
-    const out = cli([
-      "result",
-      "review",
-      "--run-dir",
-      dir,
-      "--json",
-      JSON.stringify(block)
-    ]);
-    assert.equal(out.code, 0, out.stderr);
-    assert.equal(JSON.parse(out.stdout).contract_version, 1);
-    const types = readJsonl(join(dir, "events.jsonl")).map((e) => e.type);
-    assert.deepEqual(types.slice(-2), ["step.completed", "needs_input"]);
-  });
-
-  test("rejects an invalid block without writing it", () => {
-    const dir = createRun();
-    const out = cli([
-      "result",
-      "plan",
-      "--run-dir",
-      dir,
-      "--json",
-      '{"status":"ok"}'
-    ]);
-    assert.equal(out.code, 1);
-    assert.equal(existsSync(join(dir, "steps")), false);
-  });
-
-  test("step names are numbered once and reused on retry", () => {
-    const dir = createRun();
-    assert.equal(stepDirName(dir, "plan"), "01-plan");
-    mkdirSync(join(dir, "steps", "01-plan"), { recursive: true });
-    assert.equal(stepDirName(dir, "plan"), "01-plan");
-    assert.equal(stepDirName(dir, "build-M1"), "02-build-M1");
-    assert.equal(stepDirName(dir, "07-custom"), "07-custom");
-    assert.throws(() => stepDirName(dir, "../x"), /Invalid step/);
-  });
-
-  test("exit-code maps statuses", () => {
-    const codes = [
-      "done",
-      "merged",
-      "awaiting-human",
-      "halted",
-      "escalate",
-      "failed"
-    ].map((s) => cli(["exit-code", s]).stdout.trim());
-    assert.deepEqual(codes, ["0", "0", "10", "20", "30", "1"]);
-  });
-});
-
-describe("plans, messages and amendments", () => {
+describe("plans", () => {
   test("plan returns the latest version", () => {
     const dir = createRun();
     assert.deepEqual(latestPlan(dir), { path: null, version: 0, versions: [] });
@@ -462,109 +367,14 @@ describe("plans, messages and amendments", () => {
     assert.equal(out.path, join(dir, "plan.v3.md"));
   });
 
-  test("send, list and deliver operator messages", () => {
+  test("the removed operator channels are unknown commands", () => {
     const dir = createRun();
-    const sent = cli([
-      "send",
-      "--run-dir",
-      dir,
-      "--text",
-      "Use the existing retry helper instead of a new one."
-    ]);
-    assert.equal(sent.code, 0, sent.stderr);
-    assert.deepEqual(sent.json(), fixture("inbox-message", "sent-by-runs-mjs"));
-    assert.deepEqual(readdirSync(join(dir, "inbox")), [
-      "20261110T120000000Z-m001.json"
-    ]);
-    cli(["send", "--run-dir", dir, "--text", "Second", "--mode", "now"]);
-    assert.equal(cli(["messages", "--run-dir", dir]).json().length, 2);
-
-    const delivered = cli(["deliver", "m001", "--run-dir", dir]);
-    assert.equal(delivered.code, 0, delivered.stderr);
-    assert.deepEqual(
-      cli(["messages", "--run-dir", dir])
-        .json()
-        .map((m) => m.id),
-      ["m002"]
-    );
-    assert.equal(cli(["messages", "--run-dir", dir, "--all"]).json().length, 2);
-    const [decision] = readJsonl(join(dir, "decisions.jsonl"));
-    const { id, ...expected } = fixture("decision", "operator");
-    delete expected["x-esp-class"];
-    assert.deepEqual(decision, { id: "D001", ...expected });
-    const types = readJsonl(join(dir, "events.jsonl")).map((e) => e.type);
-    assert.deepEqual(types, [
-      "run.started",
-      "message.queued",
-      "message.queued",
-      "message.delivered"
-    ]);
-    // Delivering twice is a no-op.
-    assert.deepEqual(cli(["deliver", "m001", "--run-dir", dir]).json(), []);
-  });
-
-  test("send --target step requires --step", () => {
-    const dir = createRun();
-    const missing = cli([
-      "send",
-      "--run-dir",
-      dir,
-      "--text",
-      "x",
-      "--target",
-      "step"
-    ]);
-    assert.equal(missing.code, 2);
-    assert.match(missing.stderr, /--step/);
-    const ok = cli([
-      "send",
-      "--run-dir",
-      dir,
-      "--text",
-      "x",
-      "--target",
-      "step",
-      "--step",
-      "build"
-    ]);
-    assert.equal(ok.code, 0, ok.stderr);
-    assert.equal(ok.json().step, "build");
-  });
-
-  test("amend appends to amendments.jsonl and logs an operator decision", () => {
-    const dir = createRun();
-    const missing = cli([
-      "amend",
-      "--run-dir",
-      dir,
-      "--text",
-      "x",
-      "--affects",
-      "M2"
-    ]);
-    assert.equal(missing.code, 2);
-    writeFileSync(join(dir, "plan.md"), "# v1");
-    writeFileSync(join(dir, "plan.v2.md"), "# v2");
-    const out = cli([
-      "amend",
-      "--run-dir",
-      dir,
-      "--text",
-      "Support GitHub Enterprise hosts too.",
-      "--affects",
-      "M2,M3",
-      "--from",
-      "user"
-    ]);
-    assert.equal(out.code, 0, out.stderr);
-    assert.deepEqual(out.json(), fixture("amendment", "appended-by-runs-mjs"));
-    const [decision] = readJsonl(join(dir, "decisions.jsonl"));
-    assert.equal(decision.source, "operator");
-    assert.deepEqual(decision.refs, ["A001", "M2", "M3"]);
-    assert.equal(
-      readJsonl(join(dir, "events.jsonl")).at(-1).type,
-      "amendment.applied"
-    );
+    for (const command of ["send", "messages", "deliver", "amend", "event"]) {
+      const out = cli([command, "--run-dir", dir, "--text", "x"]);
+      assert.equal(out.code, 2, command);
+      assert.match(out.stderr, /Unknown command/);
+    }
+    assert.deepEqual(readdirSync(dir), ["run.json"]);
   });
 });
 
@@ -585,6 +395,7 @@ describe("notes", () => {
     assert.equal(first.code, 0, first.stderr);
     assert.deepEqual(first.json().entry, {
       milestone: "M1",
+      from: "agent",
       text: "Run the API tests with pnpm test:api"
     });
     cli([
@@ -609,13 +420,78 @@ describe("notes", () => {
     );
     const m2 = cli(["notes", "--show", "--milestone", "M2", "--run-dir", dir]);
     assert.deepEqual(m2.json().entries, [
-      { milestone: "M2", text: "Fixtures live in tests/fixtures" }
+      {
+        milestone: "M2",
+        from: "agent",
+        text: "Fixtures live in tests/fixtures"
+      }
     ]);
     assert.equal(existsSync(`${path}.lock`), false);
     assert.equal(readNotes(dir).length, 2);
   });
 
-  test("rejects a missing milestone, an empty or long text, and bad usage", () => {
+  test("an operator line with no milestone applies to the whole run", () => {
+    const dir = createRun();
+    cli([
+      "notes",
+      "--append",
+      "Builder fact",
+      "--milestone",
+      "M1",
+      "--run-dir",
+      dir
+    ]);
+    const op = cli([
+      "notes",
+      "--append",
+      "Keep the public API unchanged",
+      "--from",
+      "operator",
+      "--run-dir",
+      dir
+    ]);
+    assert.equal(op.code, 0, op.stderr);
+    assert.deepEqual(op.json().entry, {
+      milestone: null,
+      from: "operator",
+      text: "Keep the public API unchanged"
+    });
+    cli(["notes", "--append", "Iteration 2 done", "--run-dir", dir]);
+    cli([
+      "notes",
+      "--append",
+      "Other fact",
+      "--milestone",
+      "M2",
+      "--run-dir",
+      dir
+    ]);
+    assert.equal(
+      readFileSync(join(dir, "notes.md"), "utf8"),
+      "# Run Notes\n\n- **M1**: Builder fact\n- **run** (operator): Keep the public API unchanged\n- **run**: Iteration 2 done\n- **M2**: Other fact\n"
+    );
+    const m1 = cli(["notes", "--show", "--milestone", "M1", "--run-dir", dir]);
+    assert.deepEqual(m1.json().entries, [
+      { milestone: "M1", from: "agent", text: "Builder fact" },
+      {
+        milestone: null,
+        from: "operator",
+        text: "Keep the public API unchanged"
+      },
+      { milestone: null, from: "agent", text: "Iteration 2 done" }
+    ]);
+    assert.equal(
+      cli(["notes", "--append", "x", "--from", "user", "--run-dir", dir]).code,
+      2
+    );
+    assert.equal(
+      cli(["notes", "--append", "x", "--milestone", "run", "--run-dir", dir])
+        .code,
+      2
+    );
+  });
+
+  test("rejects a bad milestone, an empty or long text, and bad usage", () => {
     const dir = createRun();
     const usage = [
       ["notes", "--run-dir", dir],
@@ -629,7 +505,6 @@ describe("notes", () => {
         "--run-dir",
         dir
       ],
-      ["notes", "--append", "x", "--run-dir", dir],
       ["notes", "--append", "x", "--milestone", "bad id", "--run-dir", dir],
       ["notes", "--append", "  ", "--milestone", "M1", "--run-dir", dir],
       [
@@ -747,7 +622,6 @@ describe("index", () => {
       writeFileSync(
         join(dir, "run.json"),
         JSON.stringify({
-          contract_version: 1,
           id: name,
           type: "skill",
           started_at: NOW,
@@ -755,14 +629,13 @@ describe("index", () => {
         })
       );
       writeFileSync(join(dir, "summary.md"), "not read by index");
-      writeFileSync(join(dir, "events.jsonl"), "not json");
+      writeFileSync(join(dir, "decisions.jsonl"), "not json");
       for (const [child, childRun] of Object.entries(children)) {
         const cdir = join(dir, "tasks", child);
         mkdirSync(cdir, { recursive: true });
         writeFileSync(
           join(cdir, "run.json"),
           JSON.stringify({
-            contract_version: 1,
             id: child,
             type: "workflow",
             started_at: NOW,
@@ -855,7 +728,6 @@ describe("index", () => {
     writeFileSync(
       join(other, "2026-11-08-gamma", "run.json"),
       JSON.stringify({
-        contract_version: 1,
         id: "2026-11-08-gamma",
         type: "skill",
         status: "done",
@@ -876,55 +748,106 @@ describe("index", () => {
   });
 });
 
-describe("validate", () => {
-  test("infers the artifact from the file name", () => {
+describe("check", () => {
+  const decision = {
+    phase: "build",
+    source: "agent",
+    risk: "low",
+    decision: "Keep the retry helper",
+    rationale: "A-Fix"
+  };
+  const summaryText = (frontmatter) =>
+    `---\n${frontmatter}\n---\n\n# Fix login timeout\n\n## Outcome\n\nMerged.\n`;
+  const SUMMARY = [
+    "task: 2026-11-10-fix-login-timeout",
+    'title: "Fix login timeout"',
+    "workflow: esp-ship",
+    "status: merged",
+    "pr: https://github.com/e-stpierre/skills/pull/12",
+    "max_risk: low",
+    "decisions: 4",
+    "critical_findings: 0",
+    "duration_minutes: 38"
+  ];
+
+  test("infers the kind from the file name", () => {
     const dir = createRun();
-    for (const file of ["run.json", "events.jsonl"]) {
-      const out = cli(["validate", join(dir, file)]);
+    cli(["decision", "--run-dir", dir, "--json", JSON.stringify(decision)]);
+    for (const [file, kind] of [
+      ["run.json", "run"],
+      ["decisions.jsonl", "decision"]
+    ]) {
+      const out = cli(["check", join(dir, file)]);
       assert.equal(out.code, 0, out.stdout);
       assert.equal(out.json().valid, true);
+      assert.equal(out.json().kind, kind);
     }
-    const summary = join(
-      FIXTURES,
-      "summary-frontmatter",
-      "valid",
-      "summary.md"
-    );
-    assert.equal(
-      cli(["validate", summary]).json().artifact,
-      "summary-frontmatter"
-    );
-    assert.equal(cli(["validate", summary]).code, 0);
+    const summary = join(dir, "summary.md");
+    writeFileSync(summary, summaryText(SUMMARY.join("\n")));
+    const out = cli(["check", summary]);
+    assert.equal(out.code, 0, out.stdout);
+    assert.equal(out.json().kind, "summary");
   });
 
-  test("reports invalid lines and broken event sequences", () => {
+  test("reports a summary missing its status, and a missing frontmatter", () => {
     const dir = createRun();
+    const summary = join(dir, "summary.md");
     writeFileSync(
-      join(dir, "events.jsonl"),
-      `${readFileSync(join(dir, "events.jsonl"), "utf8")}{"seq":5,"at":"${NOW}","run":"r","type":"pr.opened"}\n`
+      summary,
+      summaryText(SUMMARY.filter((l) => !l.startsWith("status:")).join("\n"))
     );
-    const out = cli(["validate", join(dir, "events.jsonl")]);
+    const out = cli(["check", summary]);
     assert.equal(out.code, 1);
     assert.deepEqual(out.json().errors, [
-      { line: 2, path: "seq", message: "expected 2, got 5" }
+      { path: "status", message: "is required" }
     ]);
-    // Blank lines are only allowed at the end, and seq counts physical lines.
-    const fresh = createRun();
-    const lines = readFileSync(join(fresh, "events.jsonl"), "utf8");
+    writeFileSync(summary, "# No frontmatter\n");
+    assert.deepEqual(cli(["check", summary]).json().errors, [
+      { path: "(frontmatter)", message: "is missing" }
+    ]);
+  });
+
+  test("reports bad run.json fields and accepts unknown ones", () => {
+    const dir = createRun();
+    const path = join(dir, "run.json");
+    const run = readJson(path);
+    writeFileSync(path, JSON.stringify({ ...run, extra: true }));
+    assert.equal(cli(["check", path]).code, 0);
     writeFileSync(
-      join(fresh, "events.jsonl"),
-      `${lines}\n{"seq":2,"at":"${NOW}","run":"r","type":"pr.opened"}\n\n`
+      path,
+      JSON.stringify({ ...run, status: "finished", max_risk: "extreme" })
     );
+    const out = cli(["check", path]);
+    assert.equal(out.code, 1);
     assert.deepEqual(
-      cli(["validate", join(fresh, "events.jsonl")]).json().errors,
-      [
-        { line: 2, path: "(root)", message: "blank line inside a jsonl file" },
-        { line: 3, path: "seq", message: "expected 3, got 2" }
-      ]
+      out.json().errors.map((e) => e.path),
+      ["status", "max_risk"]
     );
+  });
+
+  test("reports invalid lines and blank lines inside a jsonl file", () => {
+    const dir = createRun();
+    cli(["decision", "--run-dir", dir, "--json", JSON.stringify(decision)]);
+    const path = join(dir, "decisions.jsonl");
+    const { rationale, ...broken } = { ...decision, id: "D002", at: NOW };
+    writeFileSync(
+      path,
+      `${readFileSync(path, "utf8")}\n${JSON.stringify(broken)}\n\n`
+    );
+    const out = cli(["check", path]);
+    assert.equal(out.code, 1);
+    const errors = out.json().errors;
+    assert.deepEqual(errors[0], {
+      line: 2,
+      path: "(root)",
+      message: "blank line inside a jsonl file"
+    });
+    assert.equal(errors[1].line, 3);
+    assert.equal(errors[1].path, "rationale");
     const bare = join(root, "x.json");
     writeFileSync(bare, "{}");
-    assert.equal(cli(["validate", bare]).code, 2);
-    assert.equal(cli(["validate", bare, "--schema", "result"]).code, 1);
+    assert.equal(cli(["check", bare]).code, 2);
+    assert.equal(cli(["check", bare, "--kind", "run"]).code, 1);
+    assert.equal(cli(["check", bare, "--kind", "schema"]).code, 2);
   });
 });

@@ -4,6 +4,7 @@ import {
   existsSync,
   mkdtempSync,
   readFileSync,
+  readdirSync,
   rmSync,
   writeFileSync
 } from "node:fs";
@@ -11,7 +12,6 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, test } from "node:test";
 import { fileURLToPath } from "node:url";
-import { validateArtifact } from "../lib/contract.mjs";
 import {
   checksStatus,
   codexState,
@@ -322,7 +322,6 @@ describe("waitForReview", () => {
       ...clock
     });
     assert.equal(result.status, "done");
-    assert.deepEqual(validateArtifact("result", result).errors, []);
     assert.deepEqual(clock.sleeps, [60_000, 90_000, 135_000]);
     assert.deepEqual(result.outputs.completed, ["codex"]);
     assert.equal(result.outputs.polls, 4);
@@ -354,7 +353,7 @@ describe("waitForReview", () => {
     assert.deepEqual(clock.sleeps, [60_000, 90_000, 60_000]);
   });
 
-  test("times out to awaiting-human with a needs_input request", async () => {
+  test("times out to awaiting-human with the choice as a blocker", async () => {
     const client = fakeClient([{ reviews: [codexReview(OLD)] }]);
     const clock = fakeClock();
     const { result } = await waitForReview(baseOptions({ timeoutMinutes: 5 }), {
@@ -363,8 +362,7 @@ describe("waitForReview", () => {
     });
     assert.equal(result.status, "awaiting-human");
     assert.match(result.summary, /Timed out after 5 min/);
-    assert.equal(result.needs_input.recommended, "wait");
-    assert.deepEqual(validateArtifact("result", result).errors, []);
+    assert.match(result.blockers[0], /wait again/);
     assert.deepEqual(result.outputs.pending, ["codex"]);
     const waited = clock.sleeps.reduce((a, b) => a + b, 0);
     assert.equal(waited, 5 * 60_000);
@@ -407,7 +405,7 @@ describe("waitForReview", () => {
     assert.equal(result.status, "awaiting-human");
     assert.deepEqual(result.outputs.completed, ["codex"]);
     assert.deepEqual(result.outputs.pending, ["claude"]);
-    assert.match(result.needs_input.question, /claude/);
+    assert.match(result.blockers[0], /claude/);
   });
 
   test("posts the trigger once per head, never on the first poll", async () => {
@@ -484,7 +482,6 @@ describe("waitForReview", () => {
       ...clock
     });
     assert.equal(result.status, "awaiting-human");
-    assert.equal(result.needs_input, undefined);
     assert.equal(clock.sleeps.length, 0);
   });
 
@@ -509,7 +506,7 @@ describe("waitForReview", () => {
     assert.equal(result.outputs.waited_seconds, 30 * 60);
   });
 
-  test("records review.received events in the run dir", async () => {
+  test("writes only its state file in the run dir", async () => {
     const runDir = join(dir, "run");
     const runs = spawnSync(
       process.execPath,
@@ -530,18 +527,15 @@ describe("waitForReview", () => {
     );
     assert.equal(runs.status, 0, runs.stderr);
     const client = fakeClient([{ reviews: [codexReview(HEAD)] }]);
-    await waitForReview(
+    const { result } = await waitForReview(
       baseOptions({ runDir, statePath: join(runDir, "fix-review-wait.json") }),
       { client, ...fakeClock() }
     );
-    const events = readFileSync(join(runDir, "events.jsonl"), "utf8")
-      .trim()
-      .split("\n")
-      .map((l) => JSON.parse(l));
-    const received = events.filter((e) => e.type === "review.received");
-    assert.equal(received.length, 1);
-    assert.equal(received[0].data.reviewer, "codex");
-    assert.equal(received[0].data.head, HEAD);
+    assert.equal(result.status, "done");
+    assert.deepEqual(readdirSync(runDir).sort(), [
+      "fix-review-wait.json",
+      "run.json"
+    ]);
   });
 });
 
@@ -616,7 +610,6 @@ describe("waiting for checks", () => {
     assert.deepEqual(result.outputs.checks.failing, ["ci"]);
     assert.deepEqual(result.outputs.checks.passing, ["lint"]);
     assert.match(result.summary, /1 failing \(ci\)/);
-    assert.deepEqual(validateArtifact("result", result).errors, []);
   });
 
   test("an empty check list is pending inside the grace period", async () => {
@@ -659,8 +652,7 @@ describe("waiting for checks", () => {
       { client, ...fakeClock() }
     );
     assert.equal(result.status, "awaiting-human");
-    assert.equal(result.needs_input.id, "fix-review-wait-timeout");
-    assert.match(result.needs_input.question, /checks \(ci\)/);
+    assert.match(result.blockers[0], /checks \(ci\)/);
     assert.deepEqual(result.outputs.checks.pending, ["ci"]);
   });
 
@@ -742,7 +734,7 @@ if (args[0] === "pr" && args[1] === "view") {
     );
   }
 
-  test("prints a result block and exits 0 when reviewed", () => {
+  test("prints the outcome and exits 0 when reviewed", () => {
     const res = runCli(
       ["7", "--reviewers", "codex", "--once"],
       [codexReview(HEAD)]
@@ -750,15 +742,14 @@ if (args[0] === "pr" && args[1] === "view") {
     assert.equal(res.status, 0, res.stderr);
     const result = JSON.parse(res.stdout.trim().split("\n").pop());
     assert.equal(result.status, "done");
-    assert.deepEqual(validateArtifact("result", result).errors, []);
   });
 
-  test("exits 10 while still pending with --once", () => {
+  test("exits 0 with awaiting-human while still pending with --once", () => {
     const res = runCli(
       ["#7", "--reviewers", "codex", "--once"],
       [codexReview(OLD)]
     );
-    assert.equal(res.status, 10, res.stderr);
+    assert.equal(res.status, 0, res.stderr);
     assert.equal(JSON.parse(res.stdout.trim()).status, "awaiting-human");
   });
 

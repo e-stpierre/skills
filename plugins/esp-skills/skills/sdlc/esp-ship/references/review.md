@@ -38,4 +38,4 @@ In `all` mode, standalone and not headless, run the before-fix checkpoint (see I
 
 ## In the Summary
 
-The result block carries `outputs.skipped_phases`, `outputs.review_mode` and `outputs.review_gate`. `summary.md` names each skipped review phase with its reason.
+The outcome (`ship.mjs outcome`) carries `outputs.skipped_phases`, `outputs.review_mode` and `outputs.review_gate`. `summary.md` names each skipped review phase with its reason.

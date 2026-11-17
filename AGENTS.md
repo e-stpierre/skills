@@ -12,9 +12,8 @@ The `skills` repository is a collection of modular extensions for AI coding agen
   - `.claude-plugin/plugin.json`: the plugin manifest. Its `skills` array lists every skill that ships
   - `agents/`: subagent prompts, each focused on one task
   - `skills/<category>/<skill-name>/`: one skill per directory (e.g., `skills/git/esp-branch/`), with `SKILL.md` (required) and optional `references/`, `scripts/` and `assets/`. A skill missing from the `skills` array (e.g., work in progress under `skills/in-progress/`) stays in the repository but is not installed
-  - `references/`: reference shared by several skills (decision policy, plan format, config schema, harness contract)
+  - `references/`: reference shared by several skills (decision policy, plan format, config schema, run directory)
   - `scripts/`: Node 22 ESM scripts shared by the skills, with no runtime dependencies, and their `node:test` tests in `scripts/tests/`
-  - `af-workflows/`: workflows for the agentic-forge harness
   - `CHANGELOG.md`: the plugin version history, brief, focused on what changed
   - `README.md`: plugin-specific documentation only. It opens with an `Overview` section that lets a user understand and use the plugin in two minutes, and ends with a complete example section covering every skill and argument
 
@@ -59,15 +58,6 @@ Instructions:
 ```
 
 `pnpm validate` checks the mechanical rules (sections, frontmatter, arguments, links, registration) and runs in `pnpm check`. `/normalize [-t|--target <path>]` runs it and adds the judgment checks (`-a|--autofix` to fix the mechanical issues).
-
-### Workflow Skill Namespacing
-
-Workflow YAML files name skills with the full plugin namespace, so a skill name shared by several plugins stays unambiguous:
-
-```yaml
-- type: skill
-  skill: esp-skills:esp-plan
-```
 
 ### Marketplace Ordering
 

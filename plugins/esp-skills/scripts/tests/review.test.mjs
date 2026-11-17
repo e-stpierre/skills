@@ -11,7 +11,6 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, test } from "node:test";
 import { fileURLToPath } from "node:url";
-import { validateArtifact } from "../lib/contract.mjs";
 import {
   buildReport,
   classifyTarget,
@@ -27,7 +26,9 @@ import {
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REVIEW = join(HERE, "..", "review.mjs");
 
-const REVIEW_MD = `### Review: abc1234..def5678
+const REVIEW_MD = `Status: done
+
+### Review: abc1234..def5678
 
 Dimensions: correctness, security, tests. Candidates: 6, verified: 3, rejected: 3.
 
@@ -57,7 +58,8 @@ Dimensions: correctness, security, tests. Candidates: 6, verified: 3, rejected: 
 - \`src/math.js:12\` missing null check: callers validate input in \`src/cli.js:8\`
 - \`src/math.js:30\` unused export: imported by \`src/report.js:2\`
 - \`src/math.js:40\` slow loop: runs once per process
-{"status":"done","summary":"3 findings","discovered_items":[{"type":"debt","title":"Legacy rounding helper","evidence":"src/round.js:1"}]}
+
+Discovered: debt - Legacy rounding helper - src/round.js:1
 `;
 
 function git(cwd, ...args) {
@@ -248,7 +250,7 @@ if (args[0] === "pr" && args[1] === "view") {
 });
 
 describe("parseReview", () => {
-  test("parses findings, rejected candidates and the trailing result block", () => {
+  test("parses findings, rejected candidates and the trailing JSON line", () => {
     const parsed = parseReview(REVIEW_MD);
     assert.deepEqual(parsed.errors, []);
     assert.equal(parsed.header.base, "abc1234");
@@ -267,7 +269,38 @@ describe("parseReview", () => {
     assert.equal(f3.class, "B-Decide");
     assert.equal(f3.recommended, "inline it");
     assert.equal(parsed.rejected.length, 3);
-    assert.equal(parsed.block.discovered_items.length, 1);
+    assert.equal(parsed.status, "done");
+    assert.deepEqual(parsed.discovered, [
+      {
+        type: "debt",
+        title: "Legacy rounding helper",
+        evidence: "src/round.js:1"
+      }
+    ]);
+  });
+
+  test("still reads the discovered items of a trailing JSON line", () => {
+    const legacy = REVIEW_MD.replace("Status: done\n\n", "").replace(
+      "\nDiscovered: debt - Legacy rounding helper - src/round.js:1\n",
+      '{"status":"done","discovered_items":[{"type":"bug","title":"Old"}]}\n'
+    );
+    const parsed = parseReview(legacy);
+    assert.deepEqual(parsed.errors, []);
+    assert.equal(parsed.status, null);
+    assert.equal(parsed.findings.length, 3);
+    assert.deepEqual(parsed.discovered, [{ type: "bug", title: "Old" }]);
+  });
+
+  test("an untyped Discovered line becomes an other item", () => {
+    const parsed = parseReview(
+      REVIEW_MD.replace(
+        "debt - Legacy rounding helper - src/round.js:1",
+        "flaky CI on Windows"
+      )
+    );
+    assert.deepEqual(parsed.discovered, [
+      { type: "other", title: "flaky CI on Windows" }
+    ]);
   });
 
   test("accepts CRLF, a BOM and headings inside code fences", () => {
@@ -308,13 +341,27 @@ no location here
     );
     const report = buildReport(parsed);
     assert.equal(report.findings.length, 0);
-    assert.equal(report.result.summary, "No findings, 1 candidate rejected.");
-    assert.equal(report.result.max_risk, "low");
+    assert.equal(report.outcome.summary, "No findings, 1 candidate rejected.");
+    assert.equal(report.outcome.max_risk, "low");
+  });
+
+  test("a failed reviewer reply is a failed outcome, not a clean review", () => {
+    const parsed = parseReview(
+      "Status: failed\nSummary: The diff file could not be read.\n"
+    );
+    assert.deepEqual(parsed.errors, []);
+    const report = buildReport(parsed);
+    assert.equal(report.outcome.status, "failed");
+    assert.equal(report.outcome.summary, "The diff file could not be read.");
+    const again = buildReport(
+      parseReview(renderReview(parsed, report.dropped))
+    );
+    assert.equal(again.outcome.status, "failed");
   });
 });
 
 describe("buildReport", () => {
-  test("applies the minimum severity, sorts by severity and builds a valid result block", () => {
+  test("applies the minimum severity, sorts by severity and builds the outcome", () => {
     const report = buildReport(parseReview(REVIEW_MD), {
       minSeverity: "medium"
     });
@@ -323,7 +370,7 @@ describe("buildReport", () => {
       ["F2", "F1"]
     );
     assert.deepEqual(report.dropped, ["F3"]);
-    const { result } = report;
+    const { outcome: result } = report;
     assert.equal(result.status, "done");
     assert.equal(result.max_risk, "high");
     assert.equal(
@@ -344,7 +391,6 @@ describe("buildReport", () => {
     assert.equal(result.outputs.dropped, 1);
     assert.equal(result.outputs.verified, true);
     assert.equal(result.discovered_items[0].title, "Legacy rounding helper");
-    assert.equal(validateArtifact("result", result).valid, true);
   });
 
   test("critical findings raise the risk to high and an unverified review is flagged", () => {
@@ -360,8 +406,8 @@ describe("buildReport", () => {
       report.findings.map((f) => f.id),
       ["F1"]
     );
-    assert.equal(report.result.max_risk, "high");
-    assert.equal(report.result.outputs.verified, false);
+    assert.equal(report.outcome.max_risk, "high");
+    assert.equal(report.outcome.outputs.verified, false);
   });
 
   test("rejects an unknown minimum severity", () => {
@@ -379,13 +425,25 @@ describe("renderReview and the parse command", () => {
   });
   afterEach(() => rmSync(dir, { recursive: true, force: true }));
 
-  test("renderReview drops filtered findings and the result line", () => {
+  test("renderReview drops filtered findings and the status line, and keeps discovered items", () => {
     const parsed = parseReview(REVIEW_MD);
     const md = renderReview(parsed, ["F3"]);
     assert.doesNotMatch(md, /#### F3/);
     assert.match(md, /#### F2/);
     assert.match(md, /#### Rejected Candidates/);
-    assert.doesNotMatch(md, /"status":"done"/);
+    assert.doesNotMatch(md, /^Status:/m);
+    assert.match(md, /^### Review:/);
+    assert.deepEqual(parseReview(md).discovered, parsed.discovered);
+  });
+
+  test("renderReview writes the items of a trailing JSON line as Discovered lines", () => {
+    const legacy = REVIEW_MD.replace(
+      "Discovered: debt - Legacy rounding helper - src/round.js:1",
+      '{"status":"done","discovered_items":[{"type":"bug","title":"Old"}]}'
+    );
+    const md = renderReview(parseReview(legacy), []);
+    assert.doesNotMatch(md, /"status"/);
+    assert.match(md, /^Discovered: bug - Old$/m);
   });
 
   test("parse rewrites the review in place and writes the findings file", () => {
@@ -398,8 +456,8 @@ describe("renderReview and the parse command", () => {
       out: json
     });
     assert.equal(exitCode, 0);
-    assert.equal(output.result.outputs.review_path, md);
-    assert.equal(output.result.outputs.findings_path, json);
+    assert.equal(output.outcome.outputs.review_path, md);
+    assert.equal(output.outcome.outputs.findings_path, json);
     assert.doesNotMatch(readFileSync(md, "utf8"), /#### F3/);
     const saved = JSON.parse(readFileSync(json, "utf8"));
     assert.equal(saved.review_format, 1);
@@ -410,20 +468,18 @@ describe("renderReview and the parse command", () => {
     assert.equal(saved.rejected.length, 3);
   });
 
-  test("the CLI prints the result block as one line and fails on a malformed review", () => {
+  test("the CLI prints the outcome and fails on a malformed review", () => {
     const md = join(dir, "review.md");
     writeFileSync(md, REVIEW_MD);
     const ok = spawnSync(
       process.execPath,
-      [REVIEW, "parse", md, "--min-severity", "high", "--result"],
+      [REVIEW, "parse", md, "--min-severity", "high"],
       {
         encoding: "utf8"
       }
     );
     assert.equal(ok.status, 0, ok.stderr);
-    const lines = ok.stdout.trim().split(/\r?\n/);
-    assert.equal(lines.length, 1);
-    assert.equal(JSON.parse(lines[0]).outputs.findings, 1);
+    assert.equal(JSON.parse(ok.stdout).outcome.outputs.findings, 1);
     writeFileSync(md, "#### F1 - nope - correctness - A\n");
     const bad = spawnSync(process.execPath, [REVIEW, "parse", md], {
       encoding: "utf8"

@@ -2,11 +2,11 @@
 
 Triage runs once, on a new run, after the run directory exists and before `ship.mjs init`. It reads the request, the flags and the repository, and decides the plan source and the track, or ends the run when there is nothing to do. `ship.mjs triage` does the detection and every rule-based choice. You add only the track judgment for a prompt or an issue.
 
-`triage` -> `[judge the track]` -> `triage --record` -> `init`, or the result when `nothing_to_do`
+`triage` -> `[judge the track]` -> `triage --record` -> `init`, or the summary when `nothing_to_do`
 
 ## Detect
 
-Run `ship.mjs triage --request <context> --run-dir <run-dir> --project-dir <repo-root>`, with `--track <track>` when the flag was given and `--config-snapshot <path>` when given. It prints the facts and the choices it could make, with no writes:
+Run `ship.mjs triage --request <context> --run-dir <run-dir> --project-dir <repo-root>`, with `--track <track>` when the flag was given. It prints the facts and the choices it could make, with no writes:
 
 - **`input_kind`**: `plan` (the file passes plan-lint), `task-list` (a checkbox progress list whose items name package headings, such as `- [ ] FRC-02: Health probe` and `#### FRC-02: Health probe`), `document` (any other file; `plan_errors` lists the lint errors of a broken plan), `issue` (`#12`, `owner/repo#12` or an issues URL), or `prompt`
 - **`packages`**: for a task list, each package's `id`, `title` and `checked` state
@@ -31,9 +31,9 @@ An inline task that grows past the limit later is not a triage error: the inline
 
 ## Record
 
-Run the same command with `--record` (and the judgment flags when you judged). It logs one decision per choice (`phase: triage`), writes the `triage` step result and prints `{ recorded, result, step, line }`. A second `--record` on the same run prints the recorded result and logs nothing.
+Run the same command with `--record` (and the judgment flags when you judged). It logs one decision per choice (`phase: triage`), writes `<run-dir>/triage.json` and prints `{ recorded, result, path }`. A second `--record` on the same run prints the recorded result and logs nothing.
 
 ## Hand Off
 
-- **`nothing_to_do`**: the run ends here, with no branch and no plan. The triage result (`status: done`) is the final result: skip `init` and the loop, then write the summary, set the run status and report as in Instructions steps 10 and 11, with the `line` printed by `--record` as the final output line
+- **`nothing_to_do`**: the run ends here, with no branch and no plan. The triage `result` (`status: done`) is the outcome: skip `init` and the loop, then write the summary, set the run status and report as in Instructions steps 9 and 10, ending with a `Status: done` reply and the triage summary
 - **Otherwise**: pass the result to `ship.mjs init`: `--track <track>` and, on the orchestrated track, `--plan-source <plan_source>`. The plan phase then follows plan.md: `reuse` records the plan file (`plan_path`) without a model, and `import` converts the task list or the document with `esp-plan --import <path>`
