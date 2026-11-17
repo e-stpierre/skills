@@ -10,7 +10,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/runs.mjs" <command> --run-dir <path> [option
 
 - **Standalone run**: the top-level skill (for example `esp-ship`) runs `runs.mjs create <slug>`, which creates `<runs.root>/<YYYY-MM-DD>-<slug>` (a `-2`, `-3` suffix when the name is taken) and owns the run
 - **Child skill**: the owner passes `--run-dir <path>` to the skills it calls (esp-plan, esp-review, esp-fix-review, esp-merge, esp-pr). `runs.mjs create --run-dir` finds the existing `run.json` and leaves it alone, so a child never assumes whether it owns the run
-- **Index**: `runs.mjs index` lists the runs under every root (`--root`, else `recap.roots` and `runs.root`), filtered by `--since`, `--until`, `--last`, `--repo`, `--status` and `--risk`, with dates read from the directory names
+- **Index**: `runs.mjs index` lists the runs under every root (`--root`, else `recap.roots` and `runs.root`), filtered by `--since`, `--until`, `--last`, `--repo`, `--status`, `--workflow` (the run owner, for example `esp-ralph` for a ralph loop) and `--risk`, with dates read from the directory names
 
 ## Files
 

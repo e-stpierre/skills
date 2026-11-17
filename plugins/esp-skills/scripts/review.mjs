@@ -436,7 +436,7 @@ function parseFinding(id, meta, body, line, errors) {
   const fields = {};
   for (const l of body) {
     const m =
-      /^\s*[-*]\s+(Evidence|Fix|Options|Recommended|Decision)\s*:\s*(.*)$/i.exec(
+      /^\s*[-*]\s+(Evidence|Fix|Options|Recommended|Decision|Source)\s*:\s*(.*)$/i.exec(
         l
       );
     if (m) fields[m[1].toLowerCase()] = m[2].trim();
@@ -452,7 +452,7 @@ function parseFinding(id, meta, body, line, errors) {
       `${where}: B-Decide findings need "- Options:" and "- Recommended:" lines`
     );
   }
-  return {
+  const finding = {
     id,
     severity,
     dimension,
@@ -465,6 +465,86 @@ function parseFinding(id, meta, body, line, errors) {
     recommended: fields.recommended ?? null,
     decision: fields.decision ?? null,
     body: text
+  };
+  // Only a second-opinion finding carries a `- Source:` line (`codex`); a
+  // finding without one is the reviewer's own.
+  if (fields.source) finding.source = fields.source.toLowerCase();
+  return finding;
+}
+
+/** A `path:line`, `path:start-end` or `path` location as `{ file, start, end }`. */
+export function parseLocation(location) {
+  if (!location) return null;
+  const text = location.trim().replace(/\\/g, "/").replace(/^\.\//, "");
+  const m = /^(.*?):(\d+)(?:-(\d+))?$/.exec(text);
+  if (!m) return { file: text, start: null, end: null };
+  const start = Number(m[2]);
+  return { file: m[1], start, end: m[3] ? Number(m[3]) : start };
+}
+
+/**
+ * Whether two locations name the same file and start line. A location with no
+ * line never matches: two issues in one file are not duplicates by location.
+ */
+export function sameLocation(a, b) {
+  const x = parseLocation(a);
+  const y = parseLocation(b);
+  if (!x || !y || x.file !== y.file) return false;
+  return x.start !== null && x.start === y.start;
+}
+
+/**
+ * Drop second-opinion findings (a `source` such as `codex`) that repeat a
+ * finding of the reviewer's own at the same file and start line. Returns the kept
+ * findings and `duplicates: [{ id, of, source, location, title }]`.
+ */
+export function dedupeFindings(findings) {
+  const own = findings.filter((f) => !f.source);
+  const kept = [];
+  const duplicates = [];
+  for (const f of findings) {
+    const match = f.source
+      ? own.find((o) => sameLocation(o.location, f.location))
+      : null;
+    if (match)
+      duplicates.push({
+        id: f.id,
+        of: match.id,
+        source: f.source,
+        location: f.location,
+        title: f.title
+      });
+    else kept.push(f);
+  }
+  return { kept, duplicates };
+}
+
+/**
+ * Read the result `codex.mjs review` wrote (its status file or its printed
+ * JSON) as `{ status, summary, candidates }`. A missing or unreadable file,
+ * or a run still going, counts as a failed second opinion.
+ */
+export function readSecondOpinion(path) {
+  let data;
+  try {
+    data = JSON.parse(readFileSync(path, "utf8").replace(/^\uFEFF/, ""));
+  } catch (err) {
+    return {
+      tool: "codex",
+      status: "failed",
+      summary: `Cannot read the Codex result ${path}: ${err.message}`,
+      candidates: 0
+    };
+  }
+  const done = data?.status === "done";
+  return {
+    tool: "codex",
+    status: done ? "done" : "failed",
+    summary:
+      data?.status === "running"
+        ? "The Codex review was still running"
+        : String(data?.summary ?? data?.error ?? "No summary"),
+    candidates: done && Array.isArray(data.findings) ? data.findings.length : 0
   };
 }
 
@@ -596,7 +676,12 @@ function countBy(findings, key, values) {
 /** Build the report and its outcome from parsed review markdown. */
 export function buildReport(
   parsed,
-  { minSeverity = "low", verified = true, paths = {} } = {}
+  {
+    minSeverity = "low",
+    verified = true,
+    paths = {},
+    secondOpinion = null
+  } = {}
 ) {
   if (!SEVERITIES.includes(minSeverity)) {
     throw new ReviewError(
@@ -605,12 +690,9 @@ export function buildReport(
     );
   }
   const floor = SEVERITIES.indexOf(minSeverity);
-  const kept = parsed.findings.filter(
-    (f) => SEVERITIES.indexOf(f.severity) >= floor
-  );
-  const dropped = parsed.findings
-    .filter((f) => !kept.includes(f))
-    .map((f) => f.id);
+  const { kept: unique, duplicates } = dedupeFindings(parsed.findings);
+  const kept = unique.filter((f) => SEVERITIES.indexOf(f.severity) >= floor);
+  const dropped = unique.filter((f) => !kept.includes(f)).map((f) => f.id);
   const order = (f) => -SEVERITIES.indexOf(f.severity);
   kept.sort((a, b) => order(a) - order(b));
   const bySeverity = countBy(kept, "severity", [...SEVERITIES].reverse());
@@ -647,6 +729,21 @@ export function buildReport(
   };
   if (paths.review) outputs.review_path = paths.review;
   if (paths.findings) outputs.findings_path = paths.findings;
+  let opinion = "";
+  if (secondOpinion) {
+    const source = secondOpinion.tool ?? "codex";
+    outputs.second_opinion = {
+      ...secondOpinion,
+      kept: kept.filter((f) => f.source === source).length,
+      duplicates: duplicates.length
+    };
+    opinion =
+      secondOpinion.status === "done"
+        ? ` Codex second opinion: ${outputs.second_opinion.kept} kept, ${duplicates.length} duplicate${duplicates.length === 1 ? "" : "s"}.`
+        : ` Codex second opinion failed (${secondOpinion.summary}): Claude-only review.`;
+  } else if (duplicates.length > 0) {
+    outputs.duplicates = duplicates.length;
+  }
   // A reviewer that replied anything but `Status: done` did not review the
   // diff: report it as failed, never as a clean review.
   const failed = parsed.status != null && parsed.status !== "done";
@@ -654,7 +751,7 @@ export function buildReport(
     status: failed ? "failed" : "done",
     summary: failed
       ? (parsed.summary ?? `The reviewer replied Status: ${parsed.status}.`)
-      : summary,
+      : `${summary}${opinion}`,
     max_risk: maxRisk,
     outputs
   };
@@ -664,20 +761,49 @@ export function buildReport(
   return {
     valid: true,
     findings: kept,
-    rejected: parsed.rejected,
+    rejected: [...parsed.rejected, ...duplicates.map(duplicateLine)],
     dropped,
+    duplicates,
     outcome
   };
 }
 
-/** Review markdown without the dropped findings, the status line and a trailing JSON line. */
-export function renderReview(parsed, dropped) {
+/** The Rejected Candidates line of a second-opinion duplicate. */
+function duplicateLine(d) {
+  const title = String(d.title ?? "").replace(/\.$/, "");
+  return `\`${d.location}\` ${title}: duplicate of ${d.of} (${d.source})`;
+}
+
+/**
+ * Review markdown without the dropped findings, the status line and a
+ * trailing JSON line. Duplicates (`[{ id, of, ... }]`) are removed too and
+ * listed under Rejected Candidates.
+ */
+export function renderReview(parsed, dropped, duplicates = []) {
   const remove = new Set();
+  const gone = new Set([...dropped, ...duplicates.map((d) => d.id)]);
   for (const span of parsed.spans) {
-    if (dropped.includes(span.id))
+    if (gone.has(span.id))
       for (let i = span.start; i < span.end; i++) remove.add(i);
   }
   const lines = parsed.lines.filter((_, i) => !remove.has(i));
+  if (duplicates.length > 0) {
+    const extra = duplicates.map((d) => `- ${duplicateLine(d)}`);
+    const heading = lines.findIndex((l) =>
+      /^####\s+Rejected Candidates\s*$/i.test(l)
+    );
+    if (heading === -1) {
+      while (lines.length > 0 && lines.at(-1).trim() === "") lines.pop();
+      lines.push("", "#### Rejected Candidates", "", ...extra);
+    } else {
+      let end = heading + 1;
+      while (end < lines.length && !/^#{1,4}\s/.test(lines[end])) end++;
+      let last = end;
+      while (last > heading + 1 && lines[last - 1].trim() === "") last--;
+      const at = last === heading + 1 ? heading + 1 : last;
+      lines.splice(at, 0, ...(at === heading + 1 ? ["", ...extra] : extra));
+    }
+  }
   while (lines.length > 0 && lines.at(-1).trim() === "") lines.pop();
   while (lines.length > 0 && lines[0].trim() === "") lines.shift();
   // Keep a non-done status, so parsing the rewritten review still fails it.
@@ -716,9 +842,16 @@ export function cmdParse(file, options = {}) {
   const report = buildReport(parsed, {
     minSeverity: options["min-severity"] ?? "low",
     verified: parseBool(options.verified, "verified"),
-    paths: { review: mdOut, findings: findingsOut }
+    paths: { review: mdOut, findings: findingsOut },
+    secondOpinion: options.codex
+      ? readSecondOpinion(resolve(options.codex))
+      : null
   });
-  if (mdOut) writeFileSync(mdOut, renderReview(parsed, report.dropped));
+  if (mdOut)
+    writeFileSync(
+      mdOut,
+      renderReview(parsed, report.dropped, report.duplicates)
+    );
   if (findingsOut) {
     writeFileSync(
       findingsOut,
@@ -730,7 +863,10 @@ export function cmdParse(file, options = {}) {
           min_severity: report.outcome.outputs.min_severity,
           verified: report.outcome.outputs.verified,
           findings: report.findings,
-          rejected: report.rejected
+          rejected: report.rejected,
+          ...(report.outcome.outputs.second_opinion
+            ? { second_opinion: report.outcome.outputs.second_opinion }
+            : {})
         },
         null,
         2
@@ -764,6 +900,10 @@ Options:
   --min-severity <lvl>   Drop findings below low|medium|high|critical (parse, default low)
   --verified <bool>      Whether the verify pass ran (parse, default true)
   --md-out <file>        Write the review markdown without dropped findings (parse)
+  --codex <file>         Result of codex.mjs review (its status file or printed JSON):
+                         findings with a "- Source: codex" line that repeat a finding of the
+                         reviewer at the same file and start line are dropped as duplicates, and
+                         outcome.outputs.second_opinion reports the Codex pass (parse)
   --help                 Show this help
 
 Environment:

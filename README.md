@@ -50,7 +50,15 @@ All skills ship in a single plugin and are invoked as `/esp-skills:<skill>`. See
 
 # Review a pull request for high-signal issues
 /esp-skills:esp-review --target "PR 123"
+
+# Run a plan as a ralph loop: one fresh agent and one commit per milestone
+/esp-skills:esp-ralph path/to/plan.md
+
+# Delegate a read-only task to Codex
+/esp-skills:esp-codex Explain how the config layers are merged
 ```
+
+See [Cost and Tokens](docs/cost-and-tokens.md) for where the tokens of a long run go.
 
 ## Contributing
 

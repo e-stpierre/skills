@@ -12,6 +12,7 @@ The `skills` repository is a collection of modular extensions for AI coding agen
   - `.claude-plugin/plugin.json`: the plugin manifest. Its `skills` array lists every skill that ships
   - `agents/`: subagent prompts, each focused on one task
   - `skills/<category>/<skill-name>/`: one skill per directory (e.g., `skills/git/esp-branch/`), with `SKILL.md` (required) and optional `references/`, `scripts/` and `assets/`. A skill missing from the `skills` array (e.g., work in progress under `skills/in-progress/`) stays in the repository but is not installed
+  - `workflows/`: saved Workflow scripts (`<name>.js`), discovered by Claude Code with no manifest entry and listed as `esp-skills:<name>`. Test-only workflows live under `scripts/tests/fixtures/workflows/` so they never ship
   - `references/`: reference shared by several skills (decision policy, plan format, config schema, run directory)
   - `scripts/`: Node 22 ESM scripts shared by the skills, with no runtime dependencies, and their `node:test` tests in `scripts/tests/`
   - `CHANGELOG.md`: the plugin version history, brief, focused on what changed
@@ -27,6 +28,16 @@ Use US English spelling in all code, comments, documentation, and UI strings (e.
 
 - **Agents**: kebab-case file names prefixed with `esp-` (e.g., `esp-builder.md`)
 - **Skills**: kebab-case directory names prefixed with `esp-` (e.g., `esp-branch/`, `esp-plan/`). The skill `name` in the frontmatter matches the directory name
+- **Workflows**: kebab-case file names prefixed with `esp-` (e.g., `esp-ralph-loop.js`). The `meta.name` matches the file name, and differs from every skill name: a saved workflow is listed as a skill under its own name
+
+### Workflow Scripts
+
+- `meta` comes first and is a pure literal (no variables, calls, spreads or template interpolation) with `name` and `description`; every `phase()` title appears in `meta.phases`
+- No `import`, `require`, `Date.now()`, `Math.random()` or argless `new Date()`: pass times and other inputs through `args`
+- **Agent Type Namespacing**: a workflow names a plugin agent with the full namespace, `agentType: 'esp-skills:esp-iterator'`, never the bare agent name. Built-in types (`general-purpose`, `Explore`, `Plan`) stay bare
+- Test a workflow with the fake harness, `plugins/esp-skills/scripts/tests/helpers/fake-workflow.mjs`, which runs it with scripted agent replies and records every call
+
+`pnpm validate` checks these rules for every `plugins/<plugin>/workflows/*.js`.
 
 ### Documentation Guidelines
 

@@ -699,6 +699,44 @@ describe("index", () => {
     assert.equal(child.date, "2026-11-09");
   });
 
+  test("filters by workflow, so an active loop run is findable", () => {
+    const runs = seed();
+    const loop = join(runs, "2026-11-11-loop");
+    mkdirSync(loop, { recursive: true });
+    writeFileSync(
+      join(loop, "run.json"),
+      JSON.stringify({
+        id: "2026-11-11-loop",
+        type: "skill",
+        workflow: "esp-ralph",
+        status: "running",
+        started_at: NOW
+      })
+    );
+    const ids = (filters) => indexRuns([runs], filters).runs.map((r) => r.id);
+    assert.deepEqual(ids({ workflow: "esp-ralph", status: "running" }), [
+      "2026-11-11-loop"
+    ]);
+    assert.deepEqual(ids({ workflow: "esp-ralph", status: "done" }), []);
+    assert.deepEqual(ids({ workflow: "esp-ship,esp-ralph" }), [
+      "2026-11-11-loop"
+    ]);
+    const out = cli([
+      "index",
+      "--root",
+      runs,
+      "--workflow",
+      "esp-ralph",
+      "--status",
+      "running"
+    ]);
+    assert.equal(out.code, 0, out.stderr);
+    assert.deepEqual(
+      out.json().runs.map((r) => [r.id, r.workflow]),
+      [["2026-11-11-loop", "esp-ralph"]]
+    );
+  });
+
   test("reads no file other than run.json, and skips out-of-range runs unread", () => {
     const runs = seed();
     const read = [];

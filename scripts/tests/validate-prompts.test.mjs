@@ -121,6 +121,30 @@ x
 x
 `;
 
+const WORKFLOW = `// A demo workflow.
+export const meta = {
+  name: "esp-flow",
+  description: "Demo workflow. Run it to test the validator.",
+  phases: [{ title: "Work", detail: "one agent" }],
+  count: -1,
+  on: true,
+  extra: null
+};
+
+const SCHEMA = { type: "object", properties: {}, required: [] };
+phase("Work");
+const note = "phase(\\"Elsewhere\\") and Date.now() in a string";
+// Math.random() in a comment is fine
+const out = await agent(\`Do it \${args?.n ?? 1}\`, {
+  agentType: "esp-demo:esp-helper",
+  schema: SCHEMA
+});
+const other = await agent("x", { agentType: "general-purpose" });
+return { out, other, note, at: new Date(0) };
+`;
+
+const WORKFLOW_PATH = "plugins/esp-demo/workflows/esp-flow.js";
+
 let root;
 
 function write(rel, text) {
@@ -152,6 +176,7 @@ beforeEach(() => {
   );
   write("plugins/esp-demo/agents/esp-helper.md", AGENT);
   write("plugins/esp-demo/README.md", README);
+  write(WORKFLOW_PATH, WORKFLOW);
   write(
     "plugins/esp-demo/.claude-plugin/plugin.json",
     JSON.stringify({ name: "esp-demo", skills: ["./skills/demo/esp-demo"] })
@@ -360,6 +385,81 @@ describe("validate", () => {
       )
     );
     assert.ok(messages.some((m) => m.includes("alphabetical order")));
+  });
+
+  test("workflows are counted", () => {
+    assert.equal(validate(root).counts.workflows, 1);
+  });
+
+  test("workflow meta must come first and be a pure literal", () => {
+    const messages = (text) => {
+      write(WORKFLOW_PATH, text);
+      return errors().map((i) => i.message);
+    };
+    assert.ok(
+      messages(
+        WORKFLOW.replace("count: -1", "count: LIMIT").replace(
+          "// A demo workflow.",
+          "const LIMIT = 1;"
+        )
+      ).some((m) => m.includes("must begin with `export const meta"))
+    );
+    assert.ok(
+      messages(WORKFLOW.replace("count: -1", "count: LIMIT")).some((m) =>
+        m.includes("pure literal; found `LIMIT`")
+      )
+    );
+    for (const value of ["String(1)", "`n${1}`", "...BASE"]) {
+      assert.ok(
+        messages(WORKFLOW.replace("count: -1", `count: ${value}`)).some((m) =>
+          m.includes("pure literal")
+        ),
+        `expected ${value} to be rejected`
+      );
+    }
+    assert.ok(
+      messages(
+        WORKFLOW.replace(
+          '  description: "Demo workflow. Run it to test the validator.",\n',
+          ""
+        ).replace('name: "esp-flow"', 'name: "flow"')
+      ).some((m) => m.includes("meta needs a `description`"))
+    );
+    const named = messages(
+      WORKFLOW.replace('name: "esp-flow"', 'name: "flow"')
+    );
+    assert.ok(named.some((m) => m.includes('does not match "esp-flow"')));
+    assert.ok(named.some((m) => m.includes('lacks the "esp-" prefix')));
+  });
+
+  test("workflow phases, forbidden calls and agent types", () => {
+    write(
+      WORKFLOW_PATH,
+      WORKFLOW.replace('phase("Work");', 'phase("Work");\nphase("Later");')
+        .replace(
+          "return {",
+          "const t = Date.now() + Math.random();\nconst d = new Date();\nconst m = await import('x');\nreturn {"
+        )
+        .replace('"esp-demo:esp-helper"', '"esp-helper"')
+        .replace('"general-purpose"', '"esp-demo:esp-missing"')
+    );
+    const found = errors();
+    const messages = found.map((i) => i.message);
+    assert.ok(found.every((i) => i.rule === "workflow"));
+    assert.ok(messages.includes('phase "Later" is not in meta.phases'));
+    assert.ok(messages.some((m) => m.startsWith("Date.now()")));
+    assert.ok(messages.some((m) => m.startsWith("Math.random()")));
+    assert.ok(messages.some((m) => m.startsWith("new Date()")));
+    assert.ok(messages.some((m) => m.startsWith("dynamic import()")));
+    assert.ok(
+      messages.includes(
+        'agentType needs the plugin namespace: "esp-demo:esp-helper"'
+      )
+    );
+    assert.ok(
+      messages.some((m) => m.includes('"esp-demo:esp-missing" names no agent'))
+    );
+    assert.equal(messages.length, 7, messages.join("\n"));
   });
 
   test("the CLI exits 1 on errors and 2 on a usage error", () => {

@@ -42,7 +42,8 @@
             "verifier": { "$ref": "#/$defs/modelChoice" },
             "reviewer": { "$ref": "#/$defs/modelChoice" },
             "fixer": { "$ref": "#/$defs/modelChoice" },
-            "mechanical": { "$ref": "#/$defs/modelChoice" }
+            "mechanical": { "$ref": "#/$defs/modelChoice" },
+            "relay": { "$ref": "#/$defs/modelChoice" }
           }
         }
       }
@@ -193,7 +194,7 @@
       }
     },
     "review": {
-      "description": "esp-review: review dimensions, minimum severity and finding verification.",
+      "description": "esp-review: review dimensions, minimum severity, finding verification and the second opinion.",
       "type": "object",
       "additionalProperties": false,
       "properties": {
@@ -213,7 +214,11 @@
           "uniqueItems": true
         },
         "min_severity": { "$ref": "#/$defs/severity" },
-        "verify_findings": { "type": "boolean" }
+        "verify_findings": { "type": "boolean" },
+        "second_opinion": {
+          "description": "none: Claude review only. codex: also run codex.mjs review on the same target and verify its findings with the Claude ones.",
+          "enum": ["none", "codex"]
+        }
       }
     },
     "fix-review": {
@@ -470,6 +475,48 @@
               }
             }
           }
+        }
+      }
+    },
+    "ralph": {
+      "description": "esp-ralph: defaults passed to the esp-ralph-loop workflow. The --max-iterations and --allow-subagents arguments override them for one launch.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "max_iterations": {
+          "description": "Most iterations of one launch.",
+          "type": "integer",
+          "minimum": 1
+        },
+        "no_progress_limit": {
+          "description": "Consecutive iterations with no new commit and no progress note before the loop stops.",
+          "type": "integer",
+          "minimum": 1
+        },
+        "allow_subagents": {
+          "description": "Run iterations as general-purpose agents, which may spawn subagents, instead of esp-iterator agents, which cannot.",
+          "type": "boolean"
+        }
+      }
+    },
+    "codex": {
+      "description": "esp-codex: defaults for Codex runs from the esp-codex skill and agent. Their --model, --sandbox and --timeout arguments override them for one run.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "model": {
+          "description": "Codex model passed as --model. null uses the model of the Codex config (~/.codex/config.toml).",
+          "type": ["string", "null"],
+          "minLength": 1
+        },
+        "sandbox": {
+          "description": "Codex sandbox of a task run. Reviews are always read-only.",
+          "enum": ["read-only", "workspace-write"]
+        },
+        "timeout_minutes": {
+          "description": "Minutes before the Codex process tree is killed.",
+          "type": "number",
+          "minimum": 1
         }
       }
     },

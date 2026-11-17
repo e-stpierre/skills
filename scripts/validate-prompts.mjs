@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Validate the prompt files of the repository against their templates:
-// skills, agents, plugin READMEs, plugin skill registration and marketplace
-// order. Section names, order and required
+// skills, agents, plugin READMEs, plugin workflow scripts, plugin skill
+// registration and marketplace order. Section names, order and required
 // sections are read from the templates; the argument conventions mirror
 // esp-create-skill. Judgment checks (description quality, done-conditions)
 // stay with the /normalize skill.
@@ -12,6 +12,7 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
+import { runInNewContext } from "node:vm";
 
 export const TEMPLATES = {
   skill:
@@ -771,6 +772,244 @@ export function validateMarketplace(root) {
   return issues;
 }
 
+// --------------------------------------------------------------- workflows
+
+/** Agent types built into Claude Code that a workflow may name bare. */
+export const BUILTIN_AGENT_TYPES = [
+  "general-purpose",
+  "Explore",
+  "Plan",
+  "statusline-setup"
+];
+
+/**
+ * Blank the comments and string contents of a JavaScript source, keeping
+ * every offset and newline, so code patterns can be matched safely. Quote
+ * characters stay; template literal text is blanked but its `${...}`
+ * expressions are kept as code.
+ */
+export function maskJs(text) {
+  const out = text.split("");
+  const blank = (i) => {
+    if (out[i] !== "\n" && out[i] !== "\r") out[i] = " ";
+  };
+  // Stack of open contexts: "code" (inside ${...}, with its brace depth) or
+  // "template".
+  const stack = [];
+  let depth = 0;
+  let i = 0;
+  const inTemplate = () => stack[stack.length - 1]?.kind === "template";
+  while (i < text.length) {
+    const ch = text[i];
+    const next = text[i + 1];
+    if (inTemplate()) {
+      if (ch === "\\") {
+        blank(i);
+        blank(i + 1);
+        i += 2;
+      } else if (ch === "`") {
+        stack.pop();
+        i++;
+      } else if (ch === "$" && next === "{") {
+        stack.push({ kind: "code", depth });
+        depth = 0;
+        i += 2;
+      } else {
+        blank(i);
+        i++;
+      }
+      continue;
+    }
+    if (ch === "/" && next === "/") {
+      while (i < text.length && text[i] !== "\n") blank(i++);
+    } else if (ch === "/" && next === "*") {
+      const end = text.indexOf("*/", i + 2);
+      const stop = end < 0 ? text.length : end + 2;
+      while (i < stop) blank(i++);
+    } else if (ch === '"' || ch === "'") {
+      i++;
+      while (i < text.length && text[i] !== ch && text[i] !== "\n") {
+        if (text[i] === "\\") blank(i++);
+        blank(i++);
+      }
+      i++;
+    } else if (ch === "`") {
+      stack.push({ kind: "template" });
+      i++;
+    } else if (ch === "{") {
+      depth++;
+      i++;
+    } else if (ch === "}") {
+      if (depth === 0 && stack[stack.length - 1]?.kind === "code") {
+        depth = stack.pop().depth;
+      } else depth--;
+      i++;
+    } else i++;
+  }
+  return out.join("");
+}
+
+function lineAt(text, offset) {
+  return text.slice(0, offset).split("\n").length;
+}
+
+/** Read the string literal starting at `offset` of the original source. */
+function stringAt(text, offset) {
+  const m = text.slice(offset).match(/^(["'])((?:\\.|(?!\1).)*)\1/);
+  return m ? m[2] : null;
+}
+
+/**
+ * Find the `export const meta = {...}` literal: it must be the first
+ * statement and a pure literal (strings, numbers, booleans, null, arrays and
+ * objects with plain keys). Returns { value, line } or { error, line }.
+ */
+export function readWorkflowMeta(text) {
+  const masked = maskJs(text);
+  const start = masked.search(/\S/);
+  const head = masked.slice(start).match(/^export\s+const\s+meta\s*=\s*\{/);
+  if (start < 0 || !head) {
+    return {
+      error: "the script must begin with `export const meta = {...}`",
+      line: 1
+    };
+  }
+  const open = start + head[0].length - 1;
+  let depth = 0;
+  let close = -1;
+  for (let i = open; i < masked.length; i++) {
+    if (masked[i] === "{") depth++;
+    if (masked[i] === "}" && --depth === 0) {
+      close = i;
+      break;
+    }
+  }
+  const line = lineAt(text, start);
+  if (close < 0) return { error: "meta literal is not closed", line };
+  const literal = text.slice(open, close + 1);
+  const tokens = [];
+  const re =
+    /\s+|\/\/[^\n]*|\/\*[\s\S]*?\*\/|"(?:\\.|[^"\\\n])*"|'(?:\\.|[^'\\\n])*'|`[^`]*`|-?\d+(?:\.\d+)?|[A-Za-z_$][\w$]*|[{}[\]:,]|\S+/gy;
+  for (const m of literal.matchAll(re)) {
+    if (/^(\s|\/\/|\/\*)/.test(m[0])) continue;
+    tokens.push({ text: m[0], offset: open + m.index });
+  }
+  for (const [k, t] of tokens.entries()) {
+    const prev = tokens[k - 1]?.text;
+    const next = tokens[k + 1]?.text;
+    let ok = /^["'\d-]|^[{}[\]:,]$/.test(t.text);
+    if (t.text.startsWith("`")) ok = !t.text.includes("${");
+    if (/^[A-Za-z_$]/.test(t.text)) {
+      ok =
+        ["true", "false", "null"].includes(t.text) ||
+        (next === ":" && (prev === "{" || prev === ","));
+    }
+    if (!ok) {
+      return {
+        error: `meta must be a pure literal; found \`${t.text}\``,
+        line: lineAt(text, t.offset)
+      };
+    }
+  }
+  try {
+    return {
+      value: runInNewContext(`(${literal})`, Object.create(null)),
+      line
+    };
+  } catch (e) {
+    return { error: `meta does not parse: ${e.message}`, line };
+  }
+}
+
+export function validateWorkflow(root, file, plugin) {
+  const issues = [];
+  const text = readFileSync(join(root, file), "utf8");
+  checkAscii(issues, file, text, false);
+  const meta = readWorkflowMeta(text);
+  if (meta.error) {
+    issue(issues, file, meta.line, "workflow", meta.error);
+  } else {
+    const { value } = meta;
+    for (const key of ["name", "description"]) {
+      if (typeof value[key] !== "string" || !value[key].trim()) {
+        issue(issues, file, meta.line, "workflow", `meta needs a \`${key}\``);
+      }
+    }
+    const expected = basename(file, ".js");
+    if (typeof value.name === "string" && value.name !== expected) {
+      issue(
+        issues,
+        file,
+        meta.line,
+        "workflow",
+        `meta name "${value.name}" does not match "${expected}"`
+      );
+    }
+    const prefix = `${plugin.name.split("-")[0]}-`;
+    if (typeof value.name === "string" && !value.name.startsWith(prefix)) {
+      issue(
+        issues,
+        file,
+        meta.line,
+        "workflow",
+        `meta name lacks the "${prefix}" prefix`
+      );
+    }
+    const titles = Array.isArray(value.phases)
+      ? value.phases.map((p) => p?.title)
+      : [];
+    const masked = maskJs(text);
+    for (const m of masked.matchAll(/\bphase\(\s*(["'])/g)) {
+      const offset = m.index + m[0].length - 1;
+      const title = stringAt(text, offset);
+      if (title !== null && !titles.includes(title)) {
+        issue(
+          issues,
+          file,
+          lineAt(text, offset),
+          "workflow",
+          `phase "${title}" is not in meta.phases`
+        );
+      }
+    }
+  }
+
+  const masked = maskJs(text);
+  const forbidden = [
+    [/\bimport\s*\(/g, "dynamic import() is not available"],
+    [/\brequire\s*\(/g, "require() is not available"],
+    [/\bDate\s*\.\s*now\b/g, "Date.now() breaks resume; pass times in args"],
+    [/\bMath\s*\.\s*random\b/g, "Math.random() breaks resume"],
+    [/\bnew\s+Date\s*(\(\s*\))?(?!\s*\()/g, "new Date() breaks resume"]
+  ];
+  for (const [re, message] of forbidden) {
+    for (const m of masked.matchAll(re)) {
+      issue(issues, file, lineAt(text, m.index), "workflow", message);
+    }
+  }
+  if (/^\s*import\s/m.test(masked)) {
+    issue(issues, file, 1, "workflow", "import statements are not available");
+  }
+
+  const agents = new Set(plugin.agents.map((a) => basename(a, ".md")));
+  for (const m of masked.matchAll(/\bagentType\s*:\s*(["'])/g)) {
+    const offset = m.index + m[0].length - 1;
+    const type = stringAt(text, offset);
+    if (type === null || BUILTIN_AGENT_TYPES.includes(type)) continue;
+    const [ns, name] = type.includes(":") ? type.split(":") : [null, type];
+    let message = null;
+    if (ns === null) {
+      message = agents.has(type)
+        ? `agentType needs the plugin namespace: "${plugin.name}:${type}"`
+        : `unknown agentType "${type}"`;
+    } else if (ns !== plugin.name || !agents.has(name)) {
+      message = `agentType "${type}" names no agent in ${plugin.dir}/agents/`;
+    }
+    if (message) issue(issues, file, lineAt(text, offset), "workflow", message);
+  }
+  return issues;
+}
+
 // --------------------------------------------------------------- discovery
 
 function walk(root, dir, out = []) {
@@ -802,6 +1041,12 @@ export function discover(root) {
               (f) =>
                 /\/agents\/[^/]+\.md$/.test(f) && f.startsWith(`${dir}/agents/`)
             ),
+            workflows: files.filter(
+              (f) =>
+                f.startsWith(`${dir}/workflows/`) &&
+                f.endsWith(".js") &&
+                f.split("/").length === dir.split("/").length + 2
+            ),
             readme: existsSync(join(root, dir, "README.md"))
               ? `${dir}/README.md`
               : null
@@ -826,6 +1071,7 @@ export function validate(root) {
   const counts = {
     skills: repoSkills.length,
     agents: 0,
+    workflows: 0,
     readmes: 0
   };
   for (const f of repoSkills)
@@ -837,6 +1083,8 @@ export function validate(root) {
       issues.push(...validateSkill(root, f, templates.skill));
     for (const f of p.agents)
       issues.push(...validateAgent(root, f, templates.agent));
+    counts.workflows += p.workflows.length;
+    for (const f of p.workflows) issues.push(...validateWorkflow(root, f, p));
     if (p.readme) {
       counts.readmes++;
       issues.push(...validateReadme(root, p.readme, templates.readme, p));
@@ -873,7 +1121,7 @@ function main(argv) {
       );
     }
     process.stdout.write(
-      `Checked ${counts.skills} skills, ${counts.agents} agents and ${counts.readmes} READMEs: ${errors} errors, ${issues.length - errors} warnings\n`
+      `Checked ${counts.skills} skills, ${counts.agents} agents, ${counts.workflows} workflows and ${counts.readmes} READMEs: ${errors} errors, ${issues.length - errors} warnings\n`
     );
   }
   return errors ? 1 : 0;

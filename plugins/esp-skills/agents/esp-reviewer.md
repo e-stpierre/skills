@@ -26,6 +26,7 @@ The spawn prompt provides:
 - **Focus** (optional): an area or concern to weigh more heavily
 - **Minimum severity** (optional): `low`, `medium` (default), `high`, or `critical`. Drop verified findings below it
 - **Verify** (optional): `true` by default. `false` skips Pass 2 (see there)
+- **Second opinion** (optional): the path of a Codex review result (`review-<N>.codex.json`), whose `findings` (`file`, `line`, `title`, `evidence`, `fix`, ...) are extra candidates from another model
 
 ### Pass 1: Find
 
@@ -39,12 +40,13 @@ The spawn prompt provides:
    - **conventions**: violations of rules written in `AGENTS.md`, `CLAUDE.md`, or linters the repo configures. Not personal style
    - **simplification**: duplicated logic, dead code, an existing helper the change re-implements
    - **performance**: work in hot loops, N+1 queries, unbounded growth, blocking calls on hot paths
-4. Report only issues the diff introduces or touches. Pre-existing issues elsewhere are not findings; mention a serious one as a discovered item.
-5. Leave out what is noise for the fixer. Never flag: issues a linter, formatter or type checker the repo runs would catch; issues silenced in code (lint-ignore, type-ignore); hypothetical problems that need an input the code never receives; style preferences the repo does not enforce; missing tests outside the `tests` dimension.
+4. With a second opinion, add each of its findings to the candidates. One that is the same issue as a candidate of yours (same file and start line) merges into yours.
+5. Report only issues the diff introduces or touches. Pre-existing issues elsewhere are not findings; mention a serious one as a discovered item.
+6. Leave out what is noise for the fixer. Never flag: issues a linter, formatter or type checker the repo runs would catch; issues silenced in code (lint-ignore, type-ignore); hypothetical problems that need an input the code never receives; style preferences the repo does not enforce; missing tests outside the `tests` dimension.
 
 ### Pass 2: Verify
 
-For every candidate, try to prove it wrong before keeping it: re-read the code path, look for a guard elsewhere, check whether a test already covers it, check whether the convention really exists. Keep a finding only when the evidence holds after this check. Count the candidates you rejected and give a one-line reason for each.
+For every candidate, try to prove it wrong before keeping it: re-read the code path, look for a guard elsewhere, check whether a test already covers it, check whether the convention really exists. Keep a finding only when the evidence holds after this check. Count the candidates you rejected and give a one-line reason for each. Second-opinion candidates get the same check, never a pass because another model reported them: a disproved one is listed with `(codex)` after its location.
 
 When **Verify** is `false`, skip this pass: keep every candidate unverified, write `Verify pass: skipped.` under the Dimensions line, and set `verified: false`.
 
@@ -103,6 +105,7 @@ Discovered: bug - Session store never expires entries - src/auth/store.ts:51
   - `- Evidence:` the code or fact that proves it
   - `- Fix:` the change to make. B-Scope findings give the fix and recommend deferring it
   - B-Decide findings give `- Options:` (separated by semicolons) and `- Recommended:` instead of, or in addition to, `- Fix:`
+  - A kept finding that came only from the second opinion ends with `- Source: codex`. `review.mjs` drops it as a duplicate when one of your findings has the same file and start line
 - Keep the `Dimensions: <list>. Candidates: <n>, verified: <n>, rejected: <n>.` line: `review.mjs` reads the counts from it.
 - When nothing survives, write `No findings.` and still list the rejected candidates.
 - The first line is `Status: done` (review complete, with or without findings) or `Status: failed` with a `Summary:` line giving the reason (the diff could not be read)
