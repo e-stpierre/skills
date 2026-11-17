@@ -40,7 +40,7 @@ The spawn prompt provides:
    - **conventions**: violations of rules written in `AGENTS.md`, `CLAUDE.md`, or linters the repo configures. Not personal style
    - **simplification**: duplicated logic, dead code, an existing helper the change re-implements
    - **performance**: work in hot loops, N+1 queries, unbounded growth, blocking calls on hot paths
-4. With a second opinion, add each of its findings to the candidates. One that is the same issue as a candidate of yours (same file and line) merges into yours.
+4. With a second opinion, add each of its findings to the candidates. One that is the same issue as a candidate of yours (same file and start line) merges into yours.
 5. Report only issues the diff introduces or touches. Pre-existing issues elsewhere are not findings; mention a serious one as a discovered item.
 6. Leave out what is noise for the fixer. Never flag: issues a linter, formatter or type checker the repo runs would catch; issues silenced in code (lint-ignore, type-ignore); hypothetical problems that need an input the code never receives; style preferences the repo does not enforce; missing tests outside the `tests` dimension.
 
@@ -105,7 +105,7 @@ Discovered: bug - Session store never expires entries - src/auth/store.ts:51
   - `- Evidence:` the code or fact that proves it
   - `- Fix:` the change to make. B-Scope findings give the fix and recommend deferring it
   - B-Decide findings give `- Options:` (separated by semicolons) and `- Recommended:` instead of, or in addition to, `- Fix:`
-  - A kept finding that came only from the second opinion ends with `- Source: codex`. `review.mjs` drops it as a duplicate when one of your findings has the same file and line
+  - A kept finding that came only from the second opinion ends with `- Source: codex`. `review.mjs` drops it as a duplicate when one of your findings has the same file and start line
 - Keep the `Dimensions: <list>. Candidates: <n>, verified: <n>, rejected: <n>.` line: `review.mjs` reads the counts from it.
 - When nothing survives, write `No findings.` and still list the rejected candidates.
 - The first line is `Status: done` (review complete, with or without findings) or `Status: failed` with a `Summary:` line giving the reason (the diff could not be read)

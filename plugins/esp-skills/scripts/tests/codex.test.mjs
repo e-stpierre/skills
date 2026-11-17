@@ -18,6 +18,7 @@ import {
   cmdRun,
   cmdWait,
   normalizeFindings,
+  readPrompt,
   reviewSchema
 } from "../codex.mjs";
 import {
@@ -253,6 +254,27 @@ describe("run", () => {
     writeFileSync(file, "Task from a file");
     await cmdRun({ prompt: `@${file}`, cwd: dir, out: join(dir, "o.md") }, env);
     assert.equal(calls()[0].stdin, "Task from a file");
+  });
+
+  test("the prompt can come from stdin with --prompt -", () => {
+    const env = scenario({ exec: { last_message: "ok" } });
+    const res = spawnSync(
+      process.execPath,
+      [
+        SCRIPT,
+        "run",
+        "--prompt",
+        "-",
+        "--cwd",
+        dir,
+        "--out",
+        join(dir, "o.md")
+      ],
+      { encoding: "utf8", env, input: "Task from stdin" }
+    );
+    assert.equal(res.status, 0, res.stderr);
+    assert.equal(calls()[0].stdin, "Task from stdin");
+    assert.throws(() => readPrompt("-", () => "  \n"), /stdin holds no prompt/);
   });
 
   test("a Codex error returns failed with the error and its fix", async () => {

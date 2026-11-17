@@ -14,7 +14,7 @@
 - Added the `esp-ralph` skill: builds a ralph loop prompt from an esp-plan plan, a tracker document or a free-text task with `references/ralph-prompt-template.md`, asks only for what it cannot fill, writes it to the run for review, launches the loop and steers it from the same session (`ralph` config section)
 - Added the `esp-ralph-loop` saved workflow and the `esp-iterator` agent: one fresh agent per iteration, a schema-validated status, and stops on complete, blocked, the iteration limit, no progress or repeated agent failures. `runs.mjs index` gains `--workflow`
 - Added `scripts/codex.mjs` (`run`, `run --detach`, `wait`, `review`, `doctor`) on `codex exec` 0.128.0 or later, the `esp-codex` skill and the `esp-codex` relay agent (Haiku, `relay` role), and the `codex` config section
-- `esp-review` gains `-s|--second-opinion codex` (`review.second_opinion`): a read-only Codex review whose findings the reviewer verifies, deduplicated by file and line and tagged `Source: codex`
+- `esp-review` gains `-s|--second-opinion codex` (`review.second_opinion`): a read-only Codex review whose findings the reviewer verifies, deduplicated by file and start line and tagged `Source: codex`
 - Added a workflow test harness (`scripts/tests/helpers/fake-workflow.mjs`) and workflow script checks in `pnpm validate`
 - Documented long native runs, Codex delegation and the allow rules for unattended runs in the README, and token costs in `docs/cost-and-tokens.md`
 

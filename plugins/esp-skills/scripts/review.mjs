@@ -482,18 +482,20 @@ export function parseLocation(location) {
   return { file: m[1], start, end: m[3] ? Number(m[3]) : start };
 }
 
-/** Whether two locations name the same file and line (overlapping ranges). */
+/**
+ * Whether two locations name the same file and start line. A location with no
+ * line never matches: two issues in one file are not duplicates by location.
+ */
 export function sameLocation(a, b) {
   const x = parseLocation(a);
   const y = parseLocation(b);
   if (!x || !y || x.file !== y.file) return false;
-  if (x.start === null || y.start === null) return x.start === y.start;
-  return x.start <= y.end && y.start <= x.end;
+  return x.start !== null && x.start === y.start;
 }
 
 /**
  * Drop second-opinion findings (a `source` such as `codex`) that repeat a
- * finding of the reviewer's own at the same file and line. Returns the kept
+ * finding of the reviewer's own at the same file and start line. Returns the kept
  * findings and `duplicates: [{ id, of, source, location, title }]`.
  */
 export function dedupeFindings(findings) {
@@ -900,7 +902,7 @@ Options:
   --md-out <file>        Write the review markdown without dropped findings (parse)
   --codex <file>         Result of codex.mjs review (its status file or printed JSON):
                          findings with a "- Source: codex" line that repeat a finding of the
-                         reviewer at the same file and line are dropped as duplicates, and
+                         reviewer at the same file and start line are dropped as duplicates, and
                          outcome.outputs.second_opinion reports the Codex pass (parse)
   --help                 Show this help
 

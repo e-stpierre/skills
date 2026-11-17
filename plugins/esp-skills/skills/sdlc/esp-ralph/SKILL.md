@@ -107,11 +107,11 @@ A request to stop, pause or cancel is recorded the same way (`Stop the loop: <re
 6. **Launch**:
    1. With a reused run, set it running again: `runs.mjs update --status running --run-dir <run-dir>`. With `--prompt` and no run, create one as in step 5.1, taking the title and the repository from the prompt's `# Ralph Task:` and `**Repository**:` lines (else the file name and the current repository).
    2. Log the launch as a decision (`phase: launch`, the preset, `max_iterations`, the agent type, `refs`: the prompt path).
-   3. Call the Workflow tool with `name: "esp-skills:esp-ralph-loop"` and `args: { task: "<prompt path>", run_dir: "<run-dir>", max_iterations: <n>, no_progress_limit: <n>, allow_subagents: <bool> }`, adding `model` and `effort` only when set. It returns at once; the loop runs in the background.
+   3. Call the Workflow tool with `name: "esp-skills:esp-ralph-loop"` and `args: { task: "<prompt path>", run_dir: "<run-dir>", max_iterations: <n>, no_progress_limit: <n>, allow_subagents: <bool> }`, adding `plugin_root: "${CLAUDE_PLUGIN_ROOT}"` (the expanded absolute path) with `allow_subagents`, and `model` and `effort` only when set. It returns at once; the loop runs in the background.
    4. Tell the user it started, with the run directory and how to steer and stop it (see Output Guidance). Done when the Workflow call returned a task ID.
 7. **Steer**: until the workflow ends, record each user message about the loop (see Steering).
 8. **Report**: when the workflow's notification arrives, read its return value (`reason`, `blocker`, `run_dir`, `iterations`, `commits`):
-   1. On `max_iterations`, `no_progress` or `agent_failures`, set the run status: `runs.mjs update --status halted --run-dir <run-dir>`. When the workflow itself failed (no return value), use `--status failed` and its error as the blocker. The iterator already set `done` on `complete` and `blocked` on `blocked`.
+   1. Set the run status from the end reason with `runs.mjs update --status <status> --run-dir <run-dir>`: `done` on `complete`, `blocked` on `blocked`, `halted` on `max_iterations`, `no_progress` or `agent_failures`, and `failed` when the workflow itself failed (no return value, its error as the blocker). The last iteration may have set it already; setting it again is harmless.
    2. Log the end reason as a decision (`phase: report`, `source: policy`, the blocker in `rationale` when there is one).
    3. Report the end (see Output Guidance). Done when the run status matches the end reason and the report is sent.
 

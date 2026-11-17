@@ -536,7 +536,7 @@ describe("Codex second opinion", () => {
     "#### Rejected Candidates",
     `#### F4 - high - correctness - A
 
-\`src/math.js:5\`: Off-by-one in sum.
+\`src/math.js:4\`: Off-by-one in sum.
 
 - Evidence: the loop stops one element early
 - Fix: loop to xs.length
@@ -588,14 +588,17 @@ describe("Codex second opinion", () => {
     return { result, path };
   }
 
-  test("locations match on the same file and overlapping lines", () => {
+  test("locations match on the same file and start line", () => {
     assert.deepEqual(parseLocation("./src\\a.js:4-6"), {
       file: "src/a.js",
       start: 4,
       end: 6
     });
-    assert.ok(sameLocation("src/a.js:4-6", "src/a.js:5"));
-    assert.ok(sameLocation("src/a.js", "src/a.js"));
+    assert.ok(sameLocation("src/a.js:4-6", "src/a.js:4"));
+    assert.ok(sameLocation("./src/a.js:4", "src\\a.js:4-9"));
+    assert.ok(!sameLocation("src/a.js:4-6", "src/a.js:5"));
+    assert.ok(!sameLocation("src/a.js:10-120", "src/a.js:50"));
+    assert.ok(!sameLocation("src/a.js", "src/a.js"));
     assert.ok(!sameLocation("src/a.js:4-6", "src/a.js:7"));
     assert.ok(!sameLocation("src/a.js:4", "src/b.js:4"));
     assert.ok(!sameLocation("src/a.js", "src/a.js:4"));
@@ -615,13 +618,13 @@ describe("Codex second opinion", () => {
         id: "F4",
         of: "F2",
         source: "codex",
-        location: "src/math.js:5",
+        location: "src/math.js:4",
         title: "Off-by-one in sum."
       }
     ]);
   });
 
-  test("Codex findings are merged, tagged and deduplicated by file and line", async () => {
+  test("Codex findings are merged, tagged and deduplicated by file and start line", async () => {
     const { result, path } = await codexReview({
       last_message: JSON.stringify(CODEX_REPLY)
     });
@@ -665,7 +668,7 @@ describe("Codex second opinion", () => {
     assert.match(rendered, /#### F5/);
     assert.match(
       rendered,
-      /^- `src\/math\.js:5` Off-by-one in sum: duplicate of F2 \(codex\)$/m
+      /^- `src\/math\.js:4` Off-by-one in sum: duplicate of F2 \(codex\)$/m
     );
     const saved = JSON.parse(readFileSync(json, "utf8"));
     assert.equal(saved.second_opinion.kept, 1);

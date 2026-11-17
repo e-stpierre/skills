@@ -31,11 +31,13 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/config.mjs" get codex
 
 ### Steps
 
-1. **Write the prompt**: put the task text, word for word, in a file outside the repository with a quoted heredoc, so no character is expanded: `cat > "$TMPDIR/esp-codex-<slug>.md" <<'ESP_CODEX_EOF'` (or `/tmp` when `TMPDIR` is unset). A review needs no prompt file.
+1. **Pass the prompt**: give the task text, word for word, on stdin with `--prompt -` and a quoted heredoc, so no character is expanded and no temporary file is needed. A review needs no prompt.
 2. **Run**: with a timeout of 9 minutes or less, run in the foreground with a Bash timeout of 600000 ms:
 
    ```bash
-   node "${CLAUDE_PLUGIN_ROOT}/scripts/codex.mjs" run --prompt "@<prompt file>" --sandbox <mode> --timeout-minutes <n> [--model <m>] [--output-schema <file>] [--cwd <dir>] [--run-dir <path>]
+   node "${CLAUDE_PLUGIN_ROOT}/scripts/codex.mjs" run --prompt - --sandbox <mode> --timeout-minutes <n> [--model <m>] [--output-schema <file>] [--cwd <dir>] [--run-dir <path>] <<'ESP_CODEX_EOF'
+   <the task text>
+   ESP_CODEX_EOF
    node "${CLAUDE_PLUGIN_ROOT}/scripts/codex.mjs" review [target] --timeout-minutes <n> [--model <m>] [--cwd <dir>] [--run-dir <path>]
    ```
 
@@ -53,7 +55,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/config.mjs" get codex
 
 ## Tools Available
 
-- **Bash**: write the prompt file with a quoted heredoc, run `codex.mjs run`, `review` and `wait`, and read the config with `config.mjs get codex`
+- **Bash**: pass the prompt on stdin with a quoted heredoc, run `codex.mjs run`, `review` and `wait`, and read the config with `config.mjs get codex`
 - **Read**: read the `out` file with Codex's last message, and an output schema file the caller names
 
 The relay has no Write, Edit or Agent tool: it cannot change the repository or spawn subagents. Codex itself changes files only under `workspace-write`.

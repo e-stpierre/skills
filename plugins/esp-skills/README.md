@@ -388,7 +388,7 @@ It fills every slot it can from the source, `AGENTS.md`, `CLAUDE.md` and the pac
 
 - `task` (required): the task text, or the path of a prompt file
 - `max_iterations` (default `25`), `no_progress_limit` (default `2`), `run_dir`, `model`, `effort`
-- `allow_subagents` (default `false`): `true` runs `general-purpose` iterations, which may spawn subagents; `esp-iterator` cannot
+- `allow_subagents` (default `false`): `true` runs `general-purpose` iterations, which may spawn subagents; `esp-iterator` cannot. It needs `plugin_root`, the plugin directory: each `general-purpose` iteration reads the loop rules from `<plugin_root>/agents/esp-iterator.md`
 
 Each iteration returns a structured status (`continue`, `complete` or `blocked`, its commits and a progress note) through the workflow `schema`, and the loop ends on `complete`, `blocked`, `max_iterations`, the no-progress limit or two failed iterations in a row. The skill then reports every iteration with its commits.
 
@@ -403,7 +403,7 @@ Claude can hand a declared task or a review to the Codex CLI and read the result
 
 - **`esp-codex` skill**: from a session or a subagent, run a task (`/esp-skills:esp-codex <task>`) or a read-only review (`--review [target]`), and report Codex's answer
 - **`esp-codex` agent**: the relay for workflows, `agent(prompt, { agentType: 'esp-skills:esp-codex', schema })`. It runs `codex.mjs` on Haiku and returns the result; it never does the task itself
-- **Review second opinion**: `esp-review --second-opinion codex` (or `review.second_opinion: codex`) runs a Codex review of the same target first. The reviewer verifies its findings like its own, merges duplicates by file and line, and tags the rest `Source: codex`. A Codex failure degrades to a Claude-only review, logged as a decision
+- **Review second opinion**: `esp-review --second-opinion codex` (or `review.second_opinion: codex`) runs a Codex review of the same target first. The reviewer verifies its findings like its own, merges duplicates by file and start line, and tags the rest `Source: codex`. A Codex failure degrades to a Claude-only review, logged as a decision
 - **Sandbox**: `read-only` by default, `workspace-write` on request (changes are left uncommitted). `codex exec` never asks for approval, and `codex.mjs` sets `approval_policy="never"`, so a command outside the sandbox fails instead of waiting
 - **Waiting**: a run up to 9 minutes runs in one Bash call; a longer one is detached and waited on with `codex.mjs wait` calls of at most 9 minutes
 
@@ -428,12 +428,13 @@ A permission prompt stalls a loop nobody is watching. Allow these rules (in `.cl
       "Workflow(esp-skills:esp-ralph-loop)",
       "Bash(node *esp-skills*)",
       "Bash(git *)",
-      "Bash(gh *)",
-      "Bash(codex *)"
+      "Bash(gh *)"
     ]
   }
 }
 ```
+
+Every Codex call goes through `codex.mjs`, which `Bash(node *esp-skills*)` covers: leave `codex` itself out of the allow list, so no agent can start it outside the sandbox. `Bash(git *)` and `Bash(gh *)` also allow force-pushes and pull request merges, which the iterations are told never to do; narrow them to the subcommands your loop needs (`Bash(git commit *)`, `Bash(gh pr create *)`, ...) for a hard guarantee.
 
 ### Shared References
 

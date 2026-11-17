@@ -122,11 +122,20 @@ function requireRunDir(value) {
   return dir;
 }
 
-/** The prompt text: inline, or `@<file>` for a file's contents. */
-export function readPrompt(value) {
+/**
+ * The prompt text: inline, `@<file>` for a file's contents, or `-` for stdin
+ * (a heredoc, which needs no temporary file and no path translation).
+ */
+export function readPrompt(value, readStdin = () => readFileSync(0, "utf8")) {
   if (value === undefined || value === true || String(value).trim() === "")
-    throw new CodexError("--prompt <text|@file> is required", 2);
+    throw new CodexError("--prompt <text|@file|-> is required", 2);
   const text = String(value);
+  if (text === "-") {
+    const input = readStdin();
+    if (!input.trim())
+      throw new CodexError("--prompt -: stdin holds no prompt", 2);
+    return input;
+  }
   if (!text.startsWith("@")) return text;
   const file = resolve(text.slice(1));
   if (!existsSync(file))
@@ -727,7 +736,7 @@ const USAGE = `Usage: codex.mjs <command> [options]
 
 Commands:
   run       Run a task on Codex and print its result
-            --prompt <text|@file> [--cwd <dir>] [--sandbox read-only|workspace-write]
+            --prompt <text|@file|-> [--cwd <dir>] [--sandbox read-only|workspace-write]
             [--model <m>] [--output-schema <file>] [--timeout-minutes <n>]
             [--out <file>] [--run-dir <dir>] [--detach] [--status-path <file>]
   wait      Wait for a detached run: --status-path <file> [--max-minutes <n>]

@@ -168,7 +168,34 @@ describe("esp-ralph-loop workflow", () => {
       await types({ allow_subagents: "true" }),
       "esp-skills:esp-iterator"
     );
-    assert.equal(await types({ allow_subagents: true }), "general-purpose");
+    assert.equal(
+      await types({ allow_subagents: true, plugin_root: "C:/p" }),
+      "general-purpose"
+    );
+  });
+
+  test("points general-purpose iterations at the iterator rules", async () => {
+    const prompt = async (extra) =>
+      (
+        await runWorkflow(LOOP, {
+          args: { task: "t", max_iterations: 1, ...extra },
+          respond: [step(1)]
+        })
+      ).calls[0].prompt;
+    const general = await prompt({
+      allow_subagents: true,
+      plugin_root: "C:/p"
+    });
+    assert.match(general, /read C:\/p\/agents\/esp-iterator\.md in full/);
+    assert.match(general, /\$\{CLAUDE_PLUGIN_ROOT\} is C:\/p/);
+    assert.doesNotMatch(await prompt({}), /esp-iterator\.md/);
+    await assert.rejects(
+      runWorkflow(LOOP, {
+        args: { task: "t", allow_subagents: true },
+        respond: []
+      }),
+      /args\.plugin_root is required/
+    );
   });
 
   test("passes model and effort to every iteration", async () => {

@@ -3,7 +3,7 @@ export const meta = {
   description:
     "Ralph loop: one fresh esp-iterator agent per iteration does one unit of a task, commits and stops, until the task is complete, blocked or out of iterations. Steering: while it runs, a user message in the launching session is a correction; that session finds the run (runs.mjs index --status running --workflow esp-ralph) and appends it with runs.mjs notes --append <text> --from operator --run-dir <run-dir>. The next iteration applies it, and a stop request ends the loop there",
   whenToUse:
-    "Launched by the esp-ralph skill with the prompt it built; args: task (text or path), max_iterations, run_dir, model, effort, allow_subagents, no_progress_limit",
+    "Launched by the esp-ralph skill with the prompt it built; args: task (text or path), max_iterations, run_dir, model, effort, allow_subagents (needs plugin_root), no_progress_limit",
   phases: [{ title: "Iterate", detail: "one fresh agent per unit of work" }]
 };
 
@@ -31,6 +31,13 @@ const positive = (value, fallback) => {
 const maxIterations = positive(input.max_iterations, 25);
 const noProgressLimit = positive(input.no_progress_limit, 2);
 const allowSubagents = input.allow_subagents === true;
+const pluginRoot = String(input.plugin_root ?? "").trim();
+// A general-purpose iteration does not carry the esp-iterator prompt, so it
+// reads the same rules from the plugin's agent file.
+if (allowSubagents && !pluginRoot)
+  throw new Error(
+    "esp-ralph-loop: args.plugin_root is required with allow_subagents"
+  );
 const NULL_LIMIT = 2;
 
 // A single line naming a text file is a task file; anything else is the task.
@@ -42,6 +49,11 @@ const taskBlock = isTaskFile
 const iterationPrompt = (n, runDir) =>
   [
     `You are iteration ${n} of at most ${maxIterations} of a ralph loop. You start with a fresh context: the task, the files on disk and the run notes are all you know. Do one unit of work, record it, and stop.`,
+    ...(allowSubagents
+      ? [
+          `Loop rules: read ${pluginRoot}/agents/esp-iterator.md in full first and follow its Methodology and Output Guidance as your own. In it, \${CLAUDE_PLUGIN_ROOT} is ${pluginRoot}.`
+        ]
+      : []),
     taskBlock,
     runDir
       ? `Run dir: ${runDir}`
