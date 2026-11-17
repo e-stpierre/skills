@@ -147,6 +147,39 @@ describe("schema and defaults", () => {
     );
   });
 
+  test("codex declares the run defaults and rejects invalid values", () => {
+    const { codex, defaults } = readJson(DEFAULTS_PATH);
+    assert.deepEqual(codex, {
+      model: null,
+      sandbox: "read-only",
+      timeout_minutes: 30
+    });
+    assert.deepEqual(defaults.models.relay, { model: "haiku" });
+    const schema = readJson(SCHEMA_PATH);
+    for (const config of [
+      { codex: { sandbox: "danger-full-access" } },
+      { codex: { timeout_minutes: 0 } },
+      { codex: { model: "" } },
+      { codex: { approval: "never" } },
+      { defaults: { models: { relay: { model: "gpt" } } } }
+    ])
+      assert.notDeepEqual(
+        validate(schema, config).errors,
+        [],
+        JSON.stringify(config)
+      );
+    assert.deepEqual(
+      validate(schema, {
+        codex: {
+          model: "gpt-5.4",
+          sandbox: "workspace-write",
+          timeout_minutes: 45
+        }
+      }).errors,
+      []
+    );
+  });
+
   test("the replaced sections are gone and await-review is not a ship phase", () => {
     const schema = readJson(SCHEMA_PATH);
     for (const key of ["go", "go-light", "build", "await-review"])

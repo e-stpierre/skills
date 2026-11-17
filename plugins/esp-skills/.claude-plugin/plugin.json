@@ -25,6 +25,7 @@
     "./skills/helpers/esp-rubberduck",
     "./skills/style/esp-markdown",
     "./skills/config/esp-config",
-    "./skills/authoring/esp-create-skill"
+    "./skills/authoring/esp-create-skill",
+    "./skills/runtime/esp-codex"
   ]
 }

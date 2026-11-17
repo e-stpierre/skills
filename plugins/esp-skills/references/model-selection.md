@@ -15,6 +15,7 @@ Each spawn site names a role. The role selects a key under `defaults.models` in 
 | `reviewer`   | `esp-review`, `esp-ship`                                  | `esp-skills:esp-reviewer` | `opus`, effort `high`    |
 | `fixer`      | `esp-fix-review`, `esp-ship`                              | `esp-skills:esp-builder`  | `opus`                   |
 | `mechanical` | any skill, for rote work; `esp-ship` branch and PR phases | any                       | `haiku`                  |
+| `relay`      | workflows and skills that delegate to Codex               | `esp-skills:esp-codex`    | `haiku`                  |
 
 `esp-ship` resolves these for you: `ship.mjs next` returns the model of each phase subagent, and `ship.mjs milestone models <id>` the builder and verifier models of a milestone. `builder` has one entry per plan milestone complexity: `low` (`sonnet`), `medium` (`opus`), `high` (`opus`, effort `high`).
 

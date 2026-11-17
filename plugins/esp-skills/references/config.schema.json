@@ -42,7 +42,8 @@
             "verifier": { "$ref": "#/$defs/modelChoice" },
             "reviewer": { "$ref": "#/$defs/modelChoice" },
             "fixer": { "$ref": "#/$defs/modelChoice" },
-            "mechanical": { "$ref": "#/$defs/modelChoice" }
+            "mechanical": { "$ref": "#/$defs/modelChoice" },
+            "relay": { "$ref": "#/$defs/modelChoice" }
           }
         }
       }
@@ -491,6 +492,27 @@
         "allow_subagents": {
           "description": "Run iterations as general-purpose agents, which may spawn subagents, instead of esp-iterator agents, which cannot.",
           "type": "boolean"
+        }
+      }
+    },
+    "codex": {
+      "description": "esp-codex: defaults for Codex runs from the esp-codex skill and agent. Their --model, --sandbox and --timeout arguments override them for one run.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "model": {
+          "description": "Codex model passed as --model. null uses the model of the Codex config (~/.codex/config.toml).",
+          "type": ["string", "null"],
+          "minLength": 1
+        },
+        "sandbox": {
+          "description": "Codex sandbox of a task run. Reviews are always read-only.",
+          "enum": ["read-only", "workspace-write"]
+        },
+        "timeout_minutes": {
+          "description": "Minutes before the Codex process tree is killed.",
+          "type": "number",
+          "minimum": 1
         }
       }
     },

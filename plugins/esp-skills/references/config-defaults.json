@@ -15,7 +15,8 @@
       "verifier": { "model": "sonnet" },
       "reviewer": { "model": "opus", "effort": "high" },
       "fixer": { "model": "opus" },
-      "mechanical": { "model": "haiku" }
+      "mechanical": { "model": "haiku" },
+      "relay": { "model": "haiku" }
     }
   },
   "runs": { "root": "~/.esp-skills/runs", "retention_days": 90 },
@@ -142,6 +143,7 @@
     "no_progress_limit": 2,
     "allow_subagents": false
   },
+  "codex": { "model": null, "sandbox": "read-only", "timeout_minutes": 30 },
   "recap": {
     "roots": ["~/.esp-skills/runs"],
     "default_range_days": 7,
