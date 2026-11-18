@@ -1,8 +1,7 @@
 ---
 name: esp-merge
-description: Merge a pull request once its objective conditions hold
+description: Merge a pull request once its objective conditions hold. Use when asked to merge a PR.
 argument-hint: "[-n|--dry-run] [-m|--method <method>] [-i|--interactive <mode>] [-p|--pr <pr>] [-d|--run-dir <path>]"
-disable-model-invocation: true
 ---
 
 # ESP Merge

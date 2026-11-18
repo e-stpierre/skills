@@ -32,7 +32,7 @@ Agent Skills Standard Fields:
 Claude Code Specific Fields:
 All optional:
 - argument-hint: hint shown during autocomplete for expected arguments.
-- disable-model-invocation: set `true` to prevent Claude from auto-loading. Use for side-effect skills. Default: false.
+- disable-model-invocation: set `true` to prevent Claude from loading it, even when the user names it mid-prompt. Use only for actions that are hard to undo or reach other people. Default: false.
 - user-invocable: set `false` to hide from / menu. Use for background knowledge. Default: true.
 - model: model to use when this skill is active.
 - effort: effort level when active. Overrides session level. Options: low, medium, high, xhigh, max.

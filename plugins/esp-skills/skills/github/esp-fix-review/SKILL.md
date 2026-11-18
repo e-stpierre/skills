@@ -1,8 +1,7 @@
 ---
 name: esp-fix-review
-description: Resolve PR review comments, failing CI checks, or esp-review findings
+description: Resolve PR review comments, failing CI checks, or esp-review findings. Use when asked to fix review feedback or a failing pull request.
 argument-hint: "[-l|--internal] [-w|--wait] [-t|--timeout <minutes>] [-m|--max-rounds <n>] [-r|--reviewers <name>...] [-i|--interactive <mode>] [-p|--pr <pr>] [-e|--findings <path>] [-d|--run-dir <path>]"
-disable-model-invocation: true
 ---
 
 # ESP Fix Review

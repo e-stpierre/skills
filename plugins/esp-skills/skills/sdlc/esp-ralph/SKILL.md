@@ -1,8 +1,7 @@
 ---
 name: esp-ralph
-description: Build a ralph loop prompt from a plan, a tracker document or a task, then launch the esp-ralph-loop workflow
+description: Build a ralph loop prompt from a plan, a tracker document or a task, then launch the esp-ralph-loop workflow. Use when asked to run a ralph loop.
 argument-hint: "[-y|--yes] [-s|--allow-subagents] [-P|--prompt <file>] [-m|--max-iterations <n>] [-a|--model <alias>] [-e|--effort <level>] [-d|--run-dir <path>] [source]"
-disable-model-invocation: true
 ---
 
 # ESP Ralph

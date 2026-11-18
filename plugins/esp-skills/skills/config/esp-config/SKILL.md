@@ -1,8 +1,7 @@
 ---
 name: esp-config
-description: Manage the esp-skills configuration: init, show, get, set, unset, validate, and list sources
+description: Manage the esp-skills configuration: init, show, get, set, unset, validate, and list sources. Use when asked to view or change esp-skills settings.
 argument-hint: "<action> [-P|--project] [-f|--force] [-k|--key <key>] [value]"
-disable-model-invocation: true
 ---
 
 # ESP Config

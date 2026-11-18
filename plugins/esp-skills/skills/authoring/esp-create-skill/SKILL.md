@@ -1,8 +1,7 @@
 ---
 name: esp-create-skill
-description: Create a new Claude Code skill from the action skill template
+description: Create a new Claude Code skill from the action skill template. Use when asked to create or scaffold a skill.
 argument-hint: "-s|--skill <name> [context]"
-disable-model-invocation: true
 ---
 
 # Create Skill
@@ -94,12 +93,9 @@ Read options by name from `Arguments: $ARGUMENTS` in the Values subsection. Posi
 
 ### When to Use Invocation Controls
 
-**`disable-model-invocation: true`** - only the user invokes it:
+**`disable-model-invocation: true`** - only the user invokes it, and only as the first element of the prompt: the model cannot load it even when the user names it mid-prompt. Reserve it for skills that chain actions which are hard to undo or reach other people, with no confirmation the model would stop at (e.g., a full ship-to-merge pipeline).
 
-- Skills whose action the model should never start unprompted (deploy, merge, send a message, change user config)
-- Skills where timing matters
-
-A skill with a routine side effect that the model is told to use (commit, branch, open a PR) stays model-invoked.
+Every other skill stays model-invoked, including those with side effects (commit, branch, open a PR, merge, push review fixes, change config, launch a loop): their own confirmations, dry runs and objective checks guard the action.
 
 **`user-invocable: false`** - only Claude invokes it:
 
