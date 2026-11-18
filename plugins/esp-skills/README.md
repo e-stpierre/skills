@@ -63,7 +63,7 @@ Subagents spawned by the workflow skills. Each ends with a short markdown reply 
 
 | Skill                        | Description                                                                                                                                              |
 | ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `/esp-skills:esp-fix-review` | Wait for the bot reviews and CI checks, then fix, reply to, or defer the comments and failing checks over bounded rounds, or apply `esp-review` findings |
+| `/esp-skills:esp-fix-review` | Fix, reply to, or defer the PR comments and failing checks in one round and push (more rounds with `--max-rounds`), or apply `esp-review` findings     |
 | `/esp-skills:esp-merge`      | Merge a PR under objective conditions, with the method the repository allows, rebasing when behind                                                       |
 
 ### Code Review
@@ -168,7 +168,7 @@ Keys read by the current skills:
 | `fix-review.wait.poll_seconds`               | `60`                                                            | `esp-fix-review`, `esp-ship`              | First poll interval, backing off to 5x                                             |
 | `fix-review.wait.auto_trigger`               | `false`                                                         | `esp-fix-review`, `esp-ship`              | Post the reviewers' trigger comments after a push                                  |
 | `fix-review.wait.checks_grace_seconds`       | `120`                                                           | `esp-fix-review`, `esp-ship`              | An empty check list counts as pending this long after the head commit              |
-| `fix-review.max_rounds`                      | `3`                                                             | `esp-fix-review`, `esp-ship`              | Fix rounds when `--max-rounds` is not given                                        |
+| `fix-review.max_rounds`                      | `3`                                                             | `esp-ship`                                | PR fix rounds when `esp-ship --max-rounds` is not given                            |
 | `fix-review.fix_ci`                          | `true`                                                          | `esp-fix-review`                          | Diagnose and fix failing CI checks                                                 |
 | `fix-review.reply_to_rejected`               | `true`                                                          | `esp-fix-review`                          | Reply with the reason to rejected comments                                         |
 | `fix-review.deferred_items`                  | `follow-up`                                                     | `esp-fix-review`                          | `follow-up` (reply, resolve, discovered item) or `block`                           |
@@ -558,7 +558,7 @@ Arguments follow CLI conventions: every discrete value is a named option with a 
 - `[-l|--internal]` - Fix the findings of an `esp-review` run (`review-<N>.json`) instead of PR comments, without pushing
 - `[-w|--wait]` - Before round 1, wait until every reviewer has reviewed the head commit and no CI check is pending
 - `[-t|--timeout <minutes>]` - Time limit of each wait (default: `fix-review.wait.timeout_minutes`)
-- `[-m|--max-rounds <n>]` - Maximum fix rounds across invocations (default: `fix-review.max_rounds`)
+- `[-m|--max-rounds <n>]` - Maximum fix rounds across invocations, waiting for the re-review between rounds (default: one round, then stop without waiting)
 - `[-r|--reviewers <name>...]` - Only handle, and wait for, these reviewers (names from `fix-review.wait.reviewers`, or logins; default: `fix-review.wait.default_reviewers`)
 - `[-i|--interactive <mode>]` - `off`, `plan` or `all` (`all` asks about B-Decide and B-Scope items and shows a recap before pushing)
 - `[-p|--pr <pr>]` - Pull request number, `#<n>` or URL (default: the PR of the current branch)
@@ -568,12 +568,12 @@ Arguments follow CLI conventions: every discrete value is a named option with a 
 **Examples:**
 
 ```bash
-# Fix the comments and CI failures on the PR of the current branch, up to 3 rounds
+# Fix the comments and CI failures on the PR of the current branch in one round, push, and stop
 /esp-skills:esp-fix-review
 
-# Handle only Codex's comments on PR 42, in one round
-/esp-skills:esp-fix-review --max-rounds 1 --reviewers codex --pr 42
-/esp-skills:esp-fix-review -m 1 -r codex -p 42
+# Handle only Codex's comments on PR 42, over up to 2 rounds with a re-review wait between them
+/esp-skills:esp-fix-review --max-rounds 2 --reviewers codex --pr 42
+/esp-skills:esp-fix-review -m 2 -r codex -p 42
 
 # Wait for Codex and Claude to review the head commit and for the CI checks, at most 10 minutes, then fix
 /esp-skills:esp-fix-review --wait --timeout 10 --reviewers codex --reviewers claude --pr 42
