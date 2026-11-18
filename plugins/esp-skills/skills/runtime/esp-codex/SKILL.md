@@ -29,8 +29,7 @@ Arguments: $ARGUMENTS
 ## Core Principles
 
 - Pass the task to Codex word for word. Do the task through Codex or not at all: when Codex fails, report the failure and its fix, and let the user choose what comes next
-- Default to `read-only`. Use `workspace-write` only when the user asked for it or the task cannot be done without writing (and say so in the report)
-- Wait only through `codex.mjs wait` (step 4): each Bash call stays under the 10-minute Bash limit
+- Default to `read-only`. `--sandbox` sets the mode when given, then a `codex.sandbox` of `workspace-write`. Otherwise use `workspace-write` only when the user asked for it or the task cannot be done without writing (and say so in the report)
 - Codex's answer is a second source, not a verdict: report it as Codex's, and verify a claim before acting on it
 - Run every script with Bash, with the literal `"${CLAUDE_PLUGIN_ROOT}/scripts/..."` path and long option names
 
@@ -46,9 +45,9 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/config.mjs" get codex
 
 If the command exits with code 1 (invalid config), report its error and stop. If `node` is missing, say the skill needs Node 22 and stop.
 
-- `codex.model` (default `null`): Codex model, unless `--model` is given; `null` passes no `--model`
-- `codex.sandbox` (default `read-only`): sandbox of a task run, unless `--sandbox` is given
-- `codex.timeout_minutes` (default `30`): timeout, unless `--timeout` is given
+- `codex.model` (default `null`): Codex model; `null` passes no `--model`
+- `codex.sandbox` (default `read-only`): sandbox of a task run
+- `codex.timeout_minutes` (default `30`): timeout in minutes
 
 ### Codex Failures
 
@@ -67,7 +66,7 @@ The outcome's `failure` names the cause and `fix` the remedy: `missing` (Codex n
       node "${CLAUDE_PLUGIN_ROOT}/scripts/codex.mjs" review [target] --timeout-minutes <n> [--model <m>] [--run-dir <path>]
       ```
 
-   2. With a longer Codex timeout, add `--detach`. It prints `{ status: running, pid, out, status_path }` at once. Tell the user Codex is running, then run `node "${CLAUDE_PLUGIN_ROOT}/scripts/codex.mjs" wait --status-path <status_path> --max-minutes 9`, with a Bash timeout of 600000 ms, and repeat it while it prints `status: running`.
+   2. With a longer Codex timeout, add `--detach`. It prints `{ status: running, pid, out, status_path }` at once. Tell the user Codex is running, then wait only through `node "${CLAUDE_PLUGIN_ROOT}/scripts/codex.mjs" wait --status-path <status_path> --max-minutes 9`, with a Bash timeout of 600000 ms, and repeat it while it prints `status: running`, so each Bash call stays under the 10-minute Bash limit.
    3. Done when the outcome has `status` `done` or `failed`.
 
 5. **Read the result**: from the outcome JSON, take `status`, `summary`, `usage`, `duration_seconds` and, on a failure, `reason`, `failure` and `fix`. Read the `out` file for Codex's full answer; with `--schema`, use `result`; with `--review`, use `findings`. On a failure, see Codex Failures. Done when the answer or the failure is known.

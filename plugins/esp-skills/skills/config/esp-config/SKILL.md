@@ -1,6 +1,6 @@
 ---
 name: esp-config
-description: Manage the esp-skills configuration: init, show, get, set, unset, validate, and list sources. Use when asked to view or change esp-skills settings.
+description: Manage the esp-skills configuration files. Use when asked to view, change, or validate esp-skills settings.
 argument-hint: "<action> [-P|--project] [-f|--force] [-k|--key <key>] [value]"
 ---
 
@@ -33,10 +33,9 @@ Arguments: $ARGUMENTS
 
 ## Core Principles
 
-- Every read and write goes through `config.mjs`, which validates each write before saving it; config files are never edited by hand in this skill
+- Every read and write goes through `config.mjs`, which validates each write before saving it
 - Config files hold no secrets (tokens, passwords, API keys)
 - A failed `set` leaves the file unchanged; report the script's error verbatim, it names the key path and the expected type
-- Only `init`, `set`, and `unset` write files; every other action is read-only
 
 ## Skill-Specific Guidelines
 

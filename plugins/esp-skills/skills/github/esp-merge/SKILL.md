@@ -28,10 +28,8 @@ Arguments: $ARGUMENTS
 
 ## Additional Resources
 
-- For the Halt class and the `ship.halt_on` stop conditions, see [decision-policy.md](../../../references/decision-policy.md): read it before halting
-- For the background wait pattern, see [esp-fix-review](../esp-fix-review/SKILL.md) (Waiting for Reviews and Checks): read it when the runtime's launch mode is unclear
+- For the Halt class, the `ship.halt_on` stop conditions and the reply format (Replies), see [decision-policy.md](../../../references/decision-policy.md): read it before halting or reporting
 - For how the script resolves the method, see [merge-script.md](references/merge-script.md): read it to explain a method choice
-- For the reply format, see [decision-policy.md](../../../references/decision-policy.md) (Replies): read it before the report
 
 ## Core Principles
 
@@ -64,7 +62,7 @@ If a command exits with code 1 (invalid config), report its error and stop. If i
 - `merge.require_resolved_threads` (default `true`): unresolved review threads block the merge
 - `merge.require_green_checks` (default `true`): every check must pass. `false`: only the required checks
 - `merge.use_auto_merge` (default `false`): with checks pending, enable GitHub auto-merge instead of waiting
-- `merge.checks_timeout_minutes` (default `30`): wait for pending checks
+- `merge.checks_timeout_minutes` (default `30`): time limit of the wait for pending checks
 - `worktrees.root`, `worktrees.cleanup` (defaults `~/.esp-skills/worktrees`, `on-merge`): remove the task worktree after the merge, unless cleanup is `never`
 - `defaults.interactive` (default `off`): interactive mode when `--interactive` is not given
 
@@ -149,4 +147,4 @@ Commit: 9b8e7d6c5b4a3f2e1d0c9b8a7f6e5d4c3b2a1f0e
 Summary: Merged #42 at 9b8e7d6 with squash (first allowed method in merge.preference [squash, rebase, merge]).
 ```
 
-The outcome `status` is `merged` after a merge, `done` when the pull request was queued, set to auto-merge, left open by config or `--dry-run`, `awaiting-human` when a condition is unmet (the unmet conditions are in `blockers`: check again or leave open), `halted` when a halt blocks it, and `failed` when the pull request is closed. `merged` replies `Status: done`, and `awaiting-human` replies `Status: needs-decision` with the unmet conditions as blockers.
+The outcome `status` is `merged` after a merge, `done` when the pull request was queued, set to auto-merge, left open by config or `--dry-run`, `awaiting-human` when a condition is unmet (the unmet conditions are in `blockers`: check again or leave open), `halted` when a halt blocks it, and `failed` when the pull request is closed. Map it to the reply status as Replies says, with the unmet conditions as `Blockers:`.

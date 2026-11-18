@@ -37,7 +37,6 @@ Look for technical debt indicators:
 
 - Working code has value - perfect is the enemy of good
 - Prioritize by impact - frequently touched code > rarely touched
-- Understand why patterns exist before flagging them - some "debt" is intentional
 - Base recommendations on concrete requirements, with no premature abstraction for hypothetical future needs
 
 ## Severity Guidelines
@@ -100,7 +99,7 @@ Instructions:
 <!--
 Instructions:
 - Replace {{critical_count}}, {{high_count}}, {{medium_count}}, {{low_count}} with actual counts
-- If count is 0, you can say "0 issues" or omit the category
+- Write "0 issues" for an empty severity
 -->
 
 ## Critical
@@ -118,7 +117,7 @@ Instructions:
 
 <!--
 Instructions:
-- Replace {{category}} with: Architecture, Code Quality, or Performance
+- Replace {{category}} with: Architecture, Code Quality, Patterns, or Performance
 -->
 
 **Location:** {{location}}

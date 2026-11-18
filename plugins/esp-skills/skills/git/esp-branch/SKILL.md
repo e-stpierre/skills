@@ -14,10 +14,12 @@ Create and check out a new branch whose name follows the configured pattern and 
 
 ### Definitions
 
-- **`[-s|--slug <slug>]`** (optional): Read from `-s` or `--slug`. Defaults to a slug derived from the task in the conversation.
-- **`[-t|--type <type>]`** (optional): Read from `-t` or `--type`. Branch type (the `{category}` of the pattern), one of `branch.categories` or any other value. Defaults to the type inferred from the work, else `branch.default_category` (`feature`).
-- **`[-g|--issue <id>]`** (optional): Read from `-g` or `--issue`. GitHub issue number of this work, without `#`. Defaults to an issue referenced in the conversation (`#123`, `issue 123`), else none.
-- **`[-b|--base <branch>]`** (optional): Read from `-b` or `--base`. Branch to create from. Defaults to the current HEAD.
+Read each option by its short or its long name (`-t fix`, `--type fix` or `--type=fix`).
+
+- **`[-s|--slug <slug>]`** (optional): Used as is, lowercased and hyphenated. Defaults to a concise kebab-case summary of the task in the conversation, three to five words.
+- **`[-t|--type <type>]`** (optional): Branch type (the `{category}` of the pattern), one of `branch.categories` or any other value. Defaults to the type inferred from the work, else `branch.default_category` (`feature`).
+- **`[-g|--issue <id>]`** (optional): GitHub issue number of this work, without `#`. Defaults to an issue referenced in the conversation (`#123`, `issue 123`), else none.
+- **`[-b|--base <branch>]`** (optional): Branch to create from. Defaults to the current HEAD.
 
 ### Values
 
@@ -26,7 +28,6 @@ Arguments: $ARGUMENTS
 ## Core Principles
 
 - Run without prompting: every missing value comes from the conversation or the defaults
-- A derived slug is a concise kebab-case summary of the work, three to five words; a given `--slug` is used as is, lowercased and hyphenated
 
 ## Skill-Specific Guidelines
 

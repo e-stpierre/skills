@@ -6,7 +6,7 @@ Triage runs once, on a new run, after the run directory exists and before `ship.
 
 ## Detect
 
-Run `ship.mjs triage --request <context> --run-dir <run-dir> --project-dir <repo-root>`, with `--track <track>` when the flag was given. It prints the facts and the choices it could make, with no writes:
+Run `ship.mjs triage --request <context> --run-dir <run-dir> --project-dir <repo-root>`, with `--track <track>` and `--plan-mode <mode>` when those flags were given. It prints the facts and the choices it could make, with no writes:
 
 - **`input_kind`**: `plan` (the file passes plan-lint), `task-list` (a checkbox progress list whose items name package headings, such as `- [ ] FRC-02: Health probe` and `#### FRC-02: Health probe`), `document` (any other file; `plan_errors` lists the lint errors of a broken plan), `issue` (`#12`, `owner/repo#12` or an issues URL), or `prompt`
 - **`packages`**: for a task list, each package's `id`, `title` and `checked` state
@@ -16,6 +16,14 @@ Run `ship.mjs triage --request <context> --run-dir <run-dir> --project-dir <repo
 - **`needs_judgment`**: `true` for a prompt or an issue without `--track`: judge the track (below)
 
 A plan file with `--track inline` is a usage error (exit 2): a plan always runs on the orchestrated track.
+
+### Plan Modes
+
+`--plan-mode` (config `ship.plan_mode`, default `auto`) changes the plan source of a prompt or an issue only. A plan file is reused and a task list or a document is imported in every mode:
+
+- **`auto`**: judge the track. The orchestrated track generates a plan
+- **`skip`**: no planning model. Judge the track: a small request runs inline, a larger one gets `plan_source: synthesize`
+- **`always`**: the orchestrated track with a generated plan, with no track judgment. With `--track inline` it is a usage error
 
 ## Judge the Track
 
@@ -36,4 +44,4 @@ Run the same command with `--record` (and the judgment flags when you judged). I
 ## Hand Off
 
 - **`nothing_to_do`**: the run ends here, with no branch and no plan. The triage `result` (`status: done`) is the outcome: skip `init` and the loop, then write the summary, set the run status and report as in Instructions steps 9 and 10, ending with a `Status: done` reply and the triage summary
-- **Otherwise**: pass the result to `ship.mjs init`: `--track <track>` and, on the orchestrated track, `--plan-source <plan_source>`. The plan phase then follows plan.md: `reuse` records the plan file (`plan_path`) without a model, and `import` converts the task list or the document with `esp-plan --import <path>`
+- **Otherwise**: pass the result to `ship.mjs init`: `--track <track>` and, on the orchestrated track, `--plan-source <plan_source>`. The plan phase then follows plan.md

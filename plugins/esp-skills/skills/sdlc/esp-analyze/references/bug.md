@@ -82,7 +82,7 @@ Instructions:
 <!--
 Instructions:
 - Replace {{critical_count}}, {{high_count}}, {{medium_count}}, {{low_count}} with actual counts
-- If count is 0, you can say "0 issues" or omit the category
+- Write "0 issues" for an empty severity
 -->
 
 ## Critical

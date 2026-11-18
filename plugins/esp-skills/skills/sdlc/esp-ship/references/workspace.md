@@ -23,12 +23,6 @@ Then record `phase branch --status done`. Errors (exit 1) end the task with `shi
 
 `workspace` is idempotent: once the branch is recorded, for example after a track switch or a resume, it returns `action: use` with the recorded workspace and `cwd`, and changes nothing.
 
-Without the `branch` phase in `ship.phases`, the current branch must not be the default branch: stop with `status: failed` otherwise.
-
 ## Task Worktree
 
 In a worktree workspace, `next` returns the worktree path as `cwd` from then on: every phase works there, and the main checkout stays untouched. `ship.mjs worktree --branch <name> [--from <ref>]` still creates a worktree directly, on a new branch from `origin/<base>` (or `--from`), when a caller needs one outside the branch phase. `esp-merge` removes the worktree after the merge per `worktrees.cleanup`.
-
-## Summary
-
-The outcome (`ship.mjs outcome`) carries `outputs.workspace` (`kind`, `branch`, `location`, `reason`, `dirty_files`, `worktree`, `cleanup`, `decision`). `summary.md` names the workspace in its outcome and, for a worktree, its path and its cleanup (`worktrees.cleanup`: `on-merge`, `on-finish` or `never`).

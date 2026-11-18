@@ -4,7 +4,8 @@ SKILL PROMPT TEMPLATE
 This template defines the exact structure for Claude Code skill prompts.
 
 FILE SIZE LIMIT:
-- Keep SKILL.md under 500 lines. Move detailed reference material to separate files.
+- Keep SKILL.md under 500 lines. Move material only some branches need to references/, behind a
+  pointer that says when to read it.
 
 DIRECTORY STRUCTURE:
 A skill is a directory containing at minimum a SKILL.md file. Optional directories:
@@ -12,7 +13,8 @@ A skill is a directory containing at minimum a SKILL.md file. Optional directori
 - references/ - Additional documentation (REFERENCE.md, domain-specific files)
 - assets/    - Static resources (templates, images, data files, schemas)
 
-Keep file references one level deep from SKILL.md. Avoid deeply nested reference chains.
+Link every supporting file from SKILL.md with the condition for reading it, one level deep.
+Avoid deeply nested reference chains.
 
 YAML FRONTMATTER:
 Every skill requires YAML frontmatter between `---` markers, starting on line 1 of SKILL.md
@@ -32,8 +34,14 @@ Agent Skills Standard Fields:
 Claude Code Specific Fields:
 All optional:
 - argument-hint: hint shown during autocomplete for expected arguments.
-- disable-model-invocation: set `true` to prevent Claude from loading it, even when the user names it mid-prompt. Use only for actions that are hard to undo or reach other people. Default: false.
-- user-invocable: set `false` to hide from / menu. Use for background knowledge. Default: true.
+- disable-model-invocation: set `true` to prevent Claude from loading it, even when the user names it mid-prompt
+  (only the user invokes it, as the first element of the prompt). Reserve it for skills that chain actions
+  which are hard to undo or reach other people, with no confirmation the model would stop at (e.g., a full
+  ship-to-merge pipeline). Every other skill stays model-invoked, including those with side effects (commit,
+  branch, PR, merge, config change): their own confirmations, dry runs and objective checks guard the action.
+  Default: false.
+- user-invocable: set `false` to hide from / menu. Use for background knowledge that is not an actionable
+  command. Default: true. Omit both fields for a skill the user types and Claude also reaches on its own.
 - model: model to use when this skill is active.
 - effort: effort level when active. Overrides session level. Options: low, medium, high, xhigh, max.
 - context: set to `fork` to run in a forked subagent context (no conversation history).
@@ -161,6 +169,7 @@ Instructions:
 - Include constraints, quality standards, and behavioral expectations
 - Include security considerations where relevant
 - Include critical warnings and important notes
+- Keep only principles that change behavior versus the model's default, each stated once
 - State the target behavior positively ("Do X" instead of "Don't do X")
 - Reserve "Don't" for hard guardrails where violation would cause serious issues, and pair it with what to do instead
 -->
@@ -188,7 +197,7 @@ Instructions:
 - Replace {{instructions}} with numbered step-by-step execution instructions
 - Use format: 1. First action, 2. Second action, etc.
 - Provide logical sequence from start to completion
-- End each step on a checkable completion criterion (e.g., "Done when `git branch --show-current` prints the new name")
+- End each step on a checkable completion criterion (e.g., "Done when `git branch --show-current` prints the new name"); prefer an exhaustive one ("Done when every file in scope is checked") over a vague one ("Done when the code is understood")
 - Include verification or validation steps
 -->
 

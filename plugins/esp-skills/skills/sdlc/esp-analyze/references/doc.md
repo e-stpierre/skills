@@ -13,7 +13,6 @@ Check documentation for:
 
 ## Core Principles
 
-- Verify claims against code before marking as incorrect
 - Provide actionable fixes with correct information
 - Before flagging a documented feature as missing from the code, check whether it is a planned feature the documentation describes ahead of the code
 - Different documentation types have different standards (user guides vs API references vs internal docs)
@@ -21,8 +20,8 @@ Check documentation for:
 ## Verification Steps
 
 - Compare API documentation with actual implementations
-- Check if documented features exist
-- Verify code examples compile/run
+- Check that documented features exist
+- Verify code examples compile and run
 - Ensure types match documented signatures
 
 ## Severity Guidelines
@@ -62,7 +61,7 @@ Instructions:
 <!--
 Instructions:
 - Replace {{critical_count}}, {{high_count}}, {{medium_count}}, {{low_count}} with actual counts
-- If count is 0, you can say "0 issues" or omit the category
+- Write "0 issues" for an empty severity
 -->
 
 ## Critical

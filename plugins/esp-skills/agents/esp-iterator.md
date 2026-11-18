@@ -70,7 +70,7 @@ The iterator has no Agent tool: it cannot spawn subagents, and the workflow deci
 
 - `${CLAUDE_PLUGIN_ROOT}/references/decision-policy.md`: classes, risk levels, the Autonomous column and decision logging
 - `${CLAUDE_PLUGIN_ROOT}/references/run-directory.md`: the run dir layout, notes format and `runs.mjs` commands
-- `${CLAUDE_PLUGIN_ROOT}/references/plan-format.md`: milestones, dependencies and Progress Tracking, for a task built on an esp-plan plan
+- `${CLAUDE_PLUGIN_ROOT}/references/plan-format.md`: milestones and their dependencies, for a task built on an esp-plan plan (the task's Tracker says how progress is marked)
 
 ## Output Guidance
 

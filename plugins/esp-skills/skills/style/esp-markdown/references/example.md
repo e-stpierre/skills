@@ -20,10 +20,12 @@ Reliable and scalable storage designed for high-throughput workloads. Provides c
 
 #### Summary Comparison
 
-| Feature      | Block Storage                     | File Storage                      |
-| ------------ | --------------------------------- | --------------------------------- |
-| Storage Type | Block device                      | File system                       |
-| Access Mode  | RWO; RWX with `Block` volume mode | RWX with `Filesystem` volume mode |
+| Storage Type | Access Mode                       | Shared Across Nodes | Typical Use                   |
+| ------------ | --------------------------------- | ------------------- | ----------------------------- |
+| Block        | RWO; RWX with `Block` volume mode | No                  | Virtual machine disks, DBs    |
+| File         | RWX with `Filesystem` volume mode | Yes                 | Shared configuration, uploads |
+| Object       | HTTP API                          | Yes                 | Backups, media, logs          |
+| Ephemeral    | RWO                               | No                  | Caches, scratch space         |
 
 ## Quick Start
 

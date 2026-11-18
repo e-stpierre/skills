@@ -8,7 +8,7 @@ argument-hint: "<question>"
 
 ## Overview
 
-Answer a question directly. The skill is read-only: it gathers context when the answer needs it and leaves the codebase, the files and the environment exactly as they were.
+Answer a question about the code or a concept directly, leaving the codebase, the files and the environment exactly as they were.
 
 ## Arguments
 
@@ -22,8 +22,7 @@ Arguments: $ARGUMENTS
 
 ## Core Principles
 
-- Read-only: gather context with read-only tools (Read, Grep, Glob) and read-only commands. Every edit, new file, and command with side effects is out of scope, even when the answer suggests one: describe the change in the answer instead
-- Lead with the answer, then the support; add an example when it clarifies
+- Read-only: gather context with read-only tools (Read, Grep, Glob) and read-only commands. When the answer calls for an edit, a new file, or a command with side effects, describe it in the answer and leave it undone
 
 ## Instructions
 
@@ -32,4 +31,4 @@ Arguments: $ARGUMENTS
 
 ## Output Guidance
 
-A direct text answer, as brief as the question allows.
+A direct text answer, as brief as the question allows: the answer first, then its support, with an example when it clarifies.

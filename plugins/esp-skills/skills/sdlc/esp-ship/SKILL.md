@@ -48,11 +48,10 @@ Arguments: $ARGUMENTS
   - For the pull request, the review wait, the fix rounds and the merge, see [pr-tail.md](references/pr-tail.md)
   - For the branch, the worktree and the preflight of the tree, see [workspace.md](references/workspace.md)
   - For the gate commands, the scoped checks and the final gates, see [gates.md](references/gates.md)
-- For the classes, the stop conditions and asking outside an interactive session, see [decision-policy.md](../../../references/decision-policy.md): read it before asking or halting
+- For the classes, the stop conditions, asking outside an interactive session and the reply every subagent ends with (Replies), see [decision-policy.md](../../../references/decision-policy.md): read it before asking, halting, or acting on the first subagent reply
 - For the subagent models, see [model-selection.md](../../../references/model-selection.md): read it when `next` gives no model
 - For `summary.md`, see [summary-template.md](../../../references/summary-template.md): read it in step 9
 - For the run directory commands, see [run-directory.md](../../../references/run-directory.md): read it when a `runs.mjs` call fails
-- For the reply every subagent ends with, see Replies in [decision-policy.md](../../../references/decision-policy.md): read it before acting on a subagent reply
 
 ## Core Principles
 
@@ -81,26 +80,21 @@ If a command exits with code 1 (invalid config), report its error and stop. If i
 
 - **`pr.base`** (`null`: the repository default branch) and **`defaults.interactive`**: the base and the interactive mode
 - **`ship.halt_on`**: the stop conditions honored (see decision-policy.md)
-- **`defaults.models.<role>`**: subagent models, already resolved by `ship.mjs` (see model-selection.md)
+- **`defaults.models.<role>`**: a subagent model, only when `next` gives none (`ship.mjs` resolves the others, see model-selection.md)
 
 The phase skills read their own sections (`plan`, `review`, `fix-review`, `merge`, `branch`, `commit`, `worktrees`) from the live config. `ship.mjs` keeps its own frozen copy in `ship.json`.
 
 ### Task State
 
-`scripts/ship.mjs` owns `<run-dir>/ship.json`, and `ship.mjs milestone <cmd>` owns `<run-dir>/state.json`. Every command takes `--run-dir <path>`. `node "${CLAUDE_PLUGIN_ROOT}/scripts/ship.mjs" --help` lists them all with their options:
+`scripts/ship.mjs` owns `<run-dir>/ship.json`, and `ship.mjs milestone <cmd>` owns `<run-dir>/state.json`. Every command takes `--run-dir <path>`. `node "${CLAUDE_PLUGIN_ROOT}/scripts/ship.mjs" --help` lists every command with its options. The ones with rules of their own:
 
-- **`init`**: create the state from `--request`, `--track`, `--base` and the flags, resolve the phases of the track, freeze the config. A second call prints the state, and `--resume` lifts an `awaiting-human` stop
-- **`next`**: what to run now, `{ action, track, phase, sub, skill, role, model, effort, cwd, ... }`
-- **`phase <name> --status started|done|skipped|failed`**: record a phase and its facts (`--plan`, `--branch`, `--base-sha`, `--commit`, `--pr`, `--summary`, `--gates`)
 - **`budget`**, **`scope`**, **`gate-failure`**, **`switch-track`**: the inline limits and the move to the orchestrated track (see inline.md)
-- **`workspace`**, **`worktree`**: pick and apply the workspace of the branch phase, or create a task worktree directly (see workspace.md)
-- **`final-gates --result pass|fail`**: record a run of the full gates after the build (see gates.md)
-- **`review-gate`**: decide the internal review of `--review auto` from the diff of the build (see review.md)
-- **`review-loop`**, **`pr-loop`**: the internal review rounds and the pull request rounds
-- **`milestone init|next|start|finish|models|reuse|agent|gates|show`**: the milestone loop (see milestones.md)
-- **`record <step>`**: store the facts of a step (`review-<N>`, `fix-review-<N>`, `fix-review-wait`, `fix-review`, `merge`, `build-<id>`) in the `steps` list of `ship.json`, from the JSON a script printed (stdin or `--json`). The phase skills record their own step under esp-ship
-- **`stop`**, **`halt`**: record a stop, or halt under a `ship.halt_on` key. Both print the state as JSON
-- **`pr-body`**, **`outcome`**: the pull request body from the run artifacts, and the outcome of the run for `summary.md` and the report
+- **`workspace`**, **`worktree`**: see workspace.md
+- **`final-gates`**: see gates.md
+- **`review-gate`**: see review.md
+- **`milestone <cmd>`**: see milestones.md
+- **`record <step>`**: the phase skills and the builders record their own step under esp-ship
+- **`stop`**, **`halt`**: both print the state as JSON
 
 `next` actions:
 
@@ -128,7 +122,7 @@ Spawn each subagent phase with the Agent tool, `subagent_type: general-purpose`,
 ```markdown
 You run one phase of an esp-ship task. Read <plugin-root>/skills/<path>/SKILL.md and follow its Instructions as if
 invoked with: <arguments>. In that file, ${CLAUDE_PLUGIN_ROOT} means <plugin-root>.
-Work in <cwd>. You are a subagent: never ask questions (interactive mode off); wait in the foreground, at most
+Work in <cwd>. You are a subagent: return any question in your reply (interactive mode off); wait in the foreground, at most
 10 minutes per command, when the skill says to wait in the background.
 <extra context>
 End with the reply that file's Output Guidance describes (Status, Summary, ... lines), and nothing after it.
@@ -147,7 +141,7 @@ The milestone builders and verifiers are not phase subagents: this session spawn
 
 ### Interactive Checkpoints
 
-Only in `plan` or `all` mode, standalone and not headless. This session does the asking, logs each answer with `runs.mjs decision` (`source: operator`), and passes it to the next subagent in its prompt:
+Only in `plan` or `all` mode (step 1 resolves the mode to `off` when headless or in a subagent). This session does the asking, logs each answer with `runs.mjs decision` (`source: operator`), and passes it to the next subagent in its prompt:
 
 - **After the plan, or after the inline context phase** (`plan`, `all`): approve the plan (title, milestones, risks, open questions) or the approach and the files, or give feedback. Feedback runs the plan again with `--amend`
 - **Before each internal fix** (`all`): the findings by class (`outputs.by_class` of the `review-<N>` step in `ship.json`, details in its `outputs.findings_path`). Fix as recommended, or choose for the B items
@@ -156,19 +150,19 @@ Only in `plan` or `all` mode, standalone and not headless. This session does the
 
 ### User Messages
 
-A message the user sends while the task runs is read at the next phase or milestone boundary. Record it with `runs.mjs notes --append <text> --from operator` (add `--milestone <id>` when it concerns one milestone only): every later builder reads it from `notes.md` at the start of its milestone. Pass it also to the next phase subagent in `<extra context>`, or apply it in this session on the inline track. A message that says to stop is `ship.mjs halt --key scope-change` (or `destructive-action` when it names one). A message that changes the plan runs the plan phase again with `--amend` and the message before the next milestone. On the inline track, a message that widens the task is a `design` escalation (see inline.md).
+A message the user sends while the task runs is read at the next phase or milestone boundary. Record it with `runs.mjs notes --append <text> --from operator` (add `--milestone <id>` when it concerns one milestone only): every later builder reads it from `notes.md` at the start of its milestone. Pass it also to the next phase subagent in `<extra context>`, or apply it in this session on the inline track. A message that says to stop is `ship.mjs halt --key scope-change` (or `destructive-action` when it names one). A message that changes the plan runs the plan phase again with `--amend` and the message before the next milestone (see Amending in [plan.md](references/plan.md)). On the inline track, a message that widens the task is a `design` escalation (see inline.md).
 
 ## Instructions
 
 1. **Parse arguments**: read each option by its short or long name (`-w` or `--worktree`, `-m 2` or `--max-rounds 2`, `--track=inline` too), and the trailing `[context]`. Collect every `-r`/`--reviewers` value into one comma-separated list. Resolve the interactive mode: `-i`/`--interactive`, else `defaults.interactive`, `off` when headless or in a subagent. `--resume` without `--run-dir`, `--resume` on a run without `ship.json`, an unknown `--track`, `--plan-mode`, `--review` or `--model` value, or no `[context]` on a new run is a usage error: report it and stop.
-2. **Load configuration** (see Configuration).
+2. **Load configuration** (see Configuration). Done when the four sections are read.
 3. **Preflight**: a git repository, and `gh auth status` succeeds unless `--no-pr`. A dirty working tree is fine (the branch phase moves the task to a worktree, see [workspace.md](references/workspace.md)), except with `--branch` naming the current branch, or with `ship.dirty_tree: fail`. Otherwise report it and stop with `status: failed`.
-4. **Resolve the run**: with `--run-dir`, use it (`runs.mjs create --run-dir <path>` is a no-op on an existing run). Otherwise `runs.mjs create <slug> --title <task title> --workflow esp-ship --repo <owner/name or repo path>`. Resolve the base: `pr.base`, else the repository default branch.
-5. **Triage** (new runs only): run `ship.mjs triage` on the request, with `--plan-mode <mode>` when `-L` or `--plan-mode` was given, and pick the track and the plan source (see [triage.md](references/triage.md)). Done when `ship.mjs triage --record` has logged the choices. With `nothing_to_do`, skip to step 9 with the triage facts (`result` of `--record`, also in `<run-dir>/triage.json`).
-6. **Initialize**: `ship.mjs init --request <request text> --track <track> --base <base> --project-dir <repo-root>`, with `--plan-source <source>` from triage, `--plan-mode` and `--review-mode` when given, and the long form of each other flag that was given (`--no-pr`, `--no-merge`, `--worktree`, `--max-rounds`, `--interactive`, `--reviewers`). For a resume, run `ship.mjs init --resume` without `--request`. Done when `init` prints the state.
+4. **Resolve the run**: with `--run-dir`, use it (`runs.mjs create --run-dir <path>` is a no-op on an existing run). Otherwise `runs.mjs create <slug> --title <task title> --workflow esp-ship --repo <owner/name or repo path>`. Resolve the base: `pr.base`, else the repository default branch. Done when the run directory exists and the base is named.
+5. **Triage** (new runs only): run `ship.mjs triage` on the request and pick the track and the plan source (see [triage.md](references/triage.md)). Done when `ship.mjs triage --record` has logged the choices. With `nothing_to_do`, skip to step 9 with the triage facts (`result` of `--record`, also in `<run-dir>/triage.json`).
+6. **Initialize**: `ship.mjs init --request <request text> --track <track> --base <base> --project-dir <repo-root>`, with `--plan-source <source>` from triage, `--plan-mode` and `--review-mode` when given, and the long form of each other flag that was given (`--no-pr`, `--no-merge`, `--worktree`, `--max-rounds`, `--interactive`, `--reviewers`). For a resume, run `ship.mjs init --resume` without `--request`. When the printed `phases` have no `branch`, the current branch must not be the default branch: stop with `status: failed` otherwise. Done when `init` prints the state.
 7. **Loop**: run `ship.mjs next` and act on `action` (see Task State and Phase Map). Before each phase, handle user messages and the interactive checkpoints. Done when `next` returns `finish`.
 8. **Outcome**: `ship.mjs outcome`. Pass `--summary` when the default one does not say enough. Done when it prints the outcome JSON.
-9. **Summary and run status**: write `<run-dir>/summary.md` per the summary template (`workflow: esp-ship`, the track in the outcome, `status` is the outcome status), from the outcome and `decisions.jsonl`, naming each skipped phase with its reason (`outputs.skipped_phases`), until `runs.mjs check` passes on it. Set `runs.mjs update --status` to the outcome status (`merged`, `done`, `awaiting-human`, `halted`, `failed`).
+9. **Summary and run status**: write `<run-dir>/summary.md` per the summary template (`workflow: esp-ship`, the track in the outcome, `status` is the outcome status), from the outcome and `decisions.jsonl`, naming the workspace (`outputs.workspace`) and each skipped phase with its reason (`outputs.skipped_phases`, `outputs.review_gate`), until `runs.mjs check` passes on it. Set `runs.mjs update --status` to the outcome status (`merged`, `done`, `awaiting-human`, `halted`, `failed`).
 10. **Report** (see Output Guidance), ending with the reply.
 
 ## Output Guidance

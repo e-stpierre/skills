@@ -7,10 +7,9 @@ workflow. Every iteration is a fresh esp-iterator agent that reads the whole fil
 FILLING RULES:
 - Replace every {{slot}} and delete every HTML comment, this one included. The written prompt
   holds no placeholder and no comment
-- Write only what is specific to this task. Every generic loop rule (its Steps and Rules) lives
-  in agents/esp-iterator.md, which each iteration already follows
-- The iteration reports its status through the workflow schema: the prompt carries no loop
-  signal (a JSON completion or failure block, or a completion promise)
+- Write only what is specific to this task. The generic loop rules (the Steps and Rules of
+  agents/esp-iterator.md) and the iteration status (the workflow schema) live elsewhere: the
+  prompt carries neither, so no loop signal such as a completion block or promise
 - Write paths as absolute paths. Keep each section short: a sentence or a few bullets
 - Some slot comments end with a "Default:": the value to use when nothing else answers the slot
 -->
@@ -35,7 +34,7 @@ For a free-text task: "None: the task is described below", then the task in a fe
 
 <!--
 Where progress lives and how a unit is marked:
-- done (e.g. "check its box in the `## Progress Tracking` checklist")
+- done (e.g. "a run note says `Done: M<n>`", or "check its box in the checklist")
 - in progress (e.g. "a run note says `Started: <unit>`")
 - whether the tracker file is local (git-ignored or outside the repo: never committed)
 For a free-text task: "The run notes: a unit is done when a note says `Done: <unit>`,
@@ -86,8 +85,8 @@ besides the code (docs, changelog). Leave out the generic steps of esp-iterator.
 
 <!--
 The commands that prove a unit, e.g. "the unit's Validation lines" or a fixed list such as
-`node --test <files>`. Say what to scope (only the tests related to the change) and what
-never to run per unit (e.g. the full suite or format and lint, left to the finish step).
+`node --test <files>`. Say what to scope (only the tests related to the change) and what to
+leave to the finish step (e.g. the full suite, format and lint).
 -->
 
 ## Commit
@@ -114,8 +113,8 @@ Default: "Follow the repository's AGENTS.md".
 {{questions}}
 
 <!--
-Where a blocker or a costly choice goes and the bar for raising one, e.g. "Append an operator
-question to the run notes only for a choice that changes the design or cannot be undone;
+Where a blocker or a costly choice goes and the bar for raising one, e.g. "Append a question
+for the user to the run notes only for a choice that changes the design or cannot be undone;
 decide everything else alone and log it as a decision". Default: that sentence.
 -->
 
@@ -124,8 +123,8 @@ decide everything else alone and log it as a decision". Default: that sentence.
 {{completion}}
 
 <!--
-When the loop is done, as a checkable condition, e.g. "Every box of Progress Tracking is
-checked and the pull request URL is recorded in the plan header".
+When the loop is done, as a checkable condition, e.g. "Every milestone has a `Done: M<n>`
+note and a run note records the pull request URL".
 -->
 
 ## Finish

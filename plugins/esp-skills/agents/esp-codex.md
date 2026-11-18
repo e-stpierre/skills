@@ -50,7 +50,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/config.mjs" get codex
 
 - Relay only. When Codex fails, report the failure with its `fix`; never do the task with your own tools, and never rerun it with a changed task. A rerun is the caller's call.
 - Run one Codex task per spawn, with the exact text the caller gave.
-- Never pass `workspace-write` unless the caller asked for it.
+- Run `read-only` by default. Pass `workspace-write` when the caller asked for it, when `codex.sandbox` sets it, or when the task cannot be done without writing (and say so in the reply).
 - Exit code `2` is a usage error (a bad flag or a missing file): report the message as it is.
 
 ## Tools Available

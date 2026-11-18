@@ -61,10 +61,10 @@ Subagents spawned by the workflow skills. Each ends with a short markdown reply 
 
 ### GitHub
 
-| Skill                        | Description                                                                                                                                              |
-| ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `/esp-skills:esp-fix-review` | Fix, reply to, or defer the PR comments and failing checks in one round and push (more rounds with `--max-rounds`), or apply `esp-review` findings     |
-| `/esp-skills:esp-merge`      | Merge a PR under objective conditions, with the method the repository allows, rebasing when behind                                                       |
+| Skill                        | Description                                                                                                                                        |
+| ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/esp-skills:esp-fix-review` | Fix, reply to, or defer the PR comments and failing checks in one round and push (more rounds with `--max-rounds`), or apply `esp-review` findings |
+| `/esp-skills:esp-merge`      | Merge a PR under objective conditions, with the method the repository allows, rebasing when behind                                                 |
 
 ### Code Review
 
@@ -380,7 +380,7 @@ Long work runs on native Claude Code features, with no external harness. It need
 
 `esp-ralph` builds the loop prompt from `references/ralph-prompt-template.md` (in the skill directory): source, tracker, unit, pick rule, required reading, procedure, verify commands, commit convention, conventions, where questions go, completion and finish step. The generic loop rules (one unit per iteration, resume an in-progress unit, split a unit that does not fit, never leave the branch broken, blocked handling, never merge or force-push) live in the `esp-iterator` agent, so a prompt holds only what is specific to its task. The skill detects one of three presets:
 
-- **`plan`**: an esp-plan plan (`plan.mjs parse` succeeds). One milestone per iteration; its Progress Tracking checklist, or `Done: M<n>` run notes, track the progress
+- **`plan`**: an esp-plan plan (`plan.mjs parse` succeeds). One milestone per iteration; `Done: M<n>` run notes track the progress (or the plan's own Progress Tracking checklist, when it has one)
 - **`tracker`**: a document that tracks its own work (a checklist, a task list, a findings document with one status line per item). One item per iteration, marked in the document
 - **`task`**: free text. The skill splits it into a short list of units, tracked in the run notes
 

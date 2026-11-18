@@ -14,9 +14,11 @@ Create a pull request with the GitHub CLI, with a title and description sized to
 
 ### Definitions
 
-- **`[-D|--draft]`** (optional): Present as `-D` or `--draft`: create the PR as a draft. Defaults to `pr.draft` (`false`).
-- **`[-b|--base <branch>]`** (optional): Read from `-b` or `--base`. Target branch of the PR. Defaults to `pr.base`, or the repository default branch when `pr.base` is `null`.
-- **`[-d|--run-dir <path>]`** (optional): Read from `-d` or `--run-dir`. Run directory of the task (from `esp-ship`). With `pr.body_from_run`, the body is rendered from its artifacts, and the PR URL is recorded in its `run.json`. Defaults to none.
+Read each option by its short or its long name (`-b main`, `--base main` or `--base=main`).
+
+- **`[-D|--draft]`** (optional): Create the PR as a draft. Defaults to `pr.draft` (`false`).
+- **`[-b|--base <branch>]`** (optional): Target branch of the PR. Defaults to `pr.base`, or the repository default branch when `pr.base` is `null`.
+- **`[-d|--run-dir <path>]`** (optional): Run directory of the task (from `esp-ship`). With `pr.body_from_run`, the body is rendered from its artifacts, and the PR URL is recorded in its `run.json`. Defaults to none.
 
 ### Values
 
@@ -24,7 +26,6 @@ Arguments: $ARGUMENTS
 
 ## Core Principles
 
-- The PR size sets the description length: a small change gets a small description
 - The title conveys the primary change; the description gives the why and the context, since the diff already shows the what
 
 ## Skill-Specific Guidelines
@@ -41,13 +42,15 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/config.mjs" get defaults.language
 If a command exits with code 1 (invalid config), report its error and stop. If it cannot run at all (no `node`), continue with the defaults.
 
 - `pr.base` (default `null`): base branch; `null` uses the repository default branch (`gh repo view --json defaultBranchRef`)
-- `pr.draft` (default `false`): open the PR as a draft even without `-D` or `--draft`
+- `pr.draft` (default `false`): open every PR as a draft
 - `pr.attribution` (default `true`): append the AI attribution line to the body
 - `pr.body_from_run` (default `true`): with `--run-dir`, build the body from the run artifacts
 - `pr.body_sections` (default `summary, milestones, decisions, review-resolution, follow-ups`): sections of a body built from the run, in order
 - `defaults.language` (default `en-US`): language of the PR title and body
 
 ### Size Categories
+
+The size of the change sets the length of a body written from the diff:
 
 - **Small** (under 50 changed lines, one focused change): a one-line description, then the attribution line
 - **Larger** (50 lines or more): `## Summary` and `## Details`, then the attribution line
@@ -78,7 +81,7 @@ gh pr create --title "<title>" --body "## Summary
 1. Load the `pr` configuration (see Configuration) and resolve the base branch per the `--base` Definition.
 2. Verify the current branch is not the base branch; when it is, report it and stop.
 3. Push the current branch (`git push -u origin HEAD`) when `git status -sb` shows no upstream or commits ahead of it. Done when `git status -sb` shows the branch up to date with its upstream.
-4. Fetch the base and read the scope: `git fetch origin <base>`, `git log origin/<base>..HEAD --oneline`, and `git diff origin/<base>...HEAD --stat`.
+4. Fetch the base and read the scope: `git fetch origin <base>`, `git log origin/<base>..HEAD --oneline`, and `git diff origin/<base>...HEAD --stat`. Done when you know every commit in the PR and its changed-line count.
 5. Write the title and body in `defaults.language`:
    - **From the run** (with `--run-dir` and `pr.body_from_run`): write a 1-2 sentence summary of why the change exists, then render the body with `node "${CLAUDE_PLUGIN_ROOT}/scripts/runs.mjs" pr-body --run-dir <path> --summary "<summary>" --out <path>/pr-body.md`. It applies `pr.body_sections` and `pr.attribution`.
    - **From the diff** (otherwise): pick the size category from the stat and write the body per Size Categories, ending with the attribution line unless `pr.attribution` is `false`.

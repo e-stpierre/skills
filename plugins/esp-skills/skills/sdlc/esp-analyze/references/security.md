@@ -2,63 +2,22 @@
 
 ## Analysis Criteria
 
-Check for common security issues:
+Check for these issues, grouped by the OWASP Top 10 (2025 edition) category each one maps to:
 
-**Injection:**
-
-- SQL injection
-- Command injection
-- XSS (Cross-Site Scripting)
-- Template injection
-- Path traversal
-
-**Authentication/Authorization:**
-
-- Hardcoded credentials
-- Weak authentication
-- Missing authorization checks
-- Session management issues
-- Insecure token storage
-
-**Data Exposure:**
-
-- Sensitive data in logs
-- Secrets in code/config
-- Insecure data transmission
-- Improper error messages
-
-**Dependencies:**
-
-- Known vulnerable packages
-- Outdated dependencies
-- Unused but risky dependencies
-
-**Configuration:**
-
-- Debug mode in production
-- Insecure defaults
-- Missing security headers
-- CORS misconfigurations
+- **Access control (A01)**: missing authorization checks, IDOR, path traversal, CORS misconfigurations, SSRF
+- **Configuration (A02)**: debug mode in production, insecure defaults, missing security headers
+- **Supply chain (A03)**: known vulnerable, outdated, or unused but risky dependencies
+- **Cryptography and data exposure (A04)**: weak crypto, secrets in code or config, insecure data transmission or storage
+- **Injection (A05)**: SQL, command, template and XSS injection
+- **Design (A06)**: logic flaws and missing security requirements
+- **Authentication (A07)**: hardcoded credentials, weak authentication, session management issues, insecure token storage
+- **Integrity (A08)**: insecure deserialization, unsigned or unverified data and updates
+- **Logging and errors (A09, A10)**: sensitive data in logs, missing security logs, improper error messages, failing open on exceptional conditions
 
 ## Core Principles
 
-- Verify exploitability before reporting critical/high severity
-- Be specific with exact vulnerability type and exploitation scenario
-- Rate by real exploitability and impact, reserving Critical for what the severity guidelines define; weigh defense in depth when assessing severity
-- Check if framework features mitigate the issue before reporting
-
-## OWASP Top 10 Coverage
-
-- **A01:2021 Broken Access Control**: Missing auth checks, IDOR, path traversal
-- **A02:2021 Cryptographic Failures**: Weak crypto, hardcoded secrets, insecure storage
-- **A03:2021 Injection**: SQL, command, XSS, template injection
-- **A04:2021 Insecure Design**: Logic flaws, missing security requirements
-- **A05:2021 Security Misconfiguration**: Debug mode, default creds, exposed configs
-- **A06:2021 Vulnerable Components**: Outdated deps, known CVEs
-- **A07:2021 Auth Failures**: Weak auth, session issues, credential stuffing
-- **A08:2021 Data Integrity Failures**: Insecure deserialization, unsigned data
-- **A09:2021 Logging Failures**: Missing logs, sensitive data in logs
-- **A10:2021 SSRF**: Server-side request forgery
+- Rate by real exploitability and impact: verify exploitability before rating Critical or High, reserve Critical for what the severity guidelines define, and weigh defense in depth
+- Name the exact vulnerability type and its exploitation scenario
 
 ## Severity Guidelines
 
@@ -99,7 +58,7 @@ Instructions:
 <!--
 Instructions:
 - Replace {{critical_count}}, {{high_count}}, {{medium_count}}, {{low_count}} with actual counts
-- If count is 0, you can say "0" or omit the category
+- Write "0" for an empty severity
 -->
 
 ## Critical Vulnerabilities
