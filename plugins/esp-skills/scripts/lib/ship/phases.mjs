@@ -24,6 +24,7 @@ import {
   GATE_FAILURE_LIMIT,
   git,
   INTERACTIVE_MODES,
+  MODEL_ALIASES,
   PHASE_STATUSES,
   parseJsonOption,
   positiveInt,
@@ -177,17 +178,45 @@ export function applyTrack(state, track, config) {
 // init and resume
 // ---------------------------------------------------------------------------
 
+/** The --model alias, or null; a value outside MODEL_ALIASES is a usage error. */
+function modelOption(value) {
+  const model = stringOption(value);
+  if (model !== null && !MODEL_ALIASES.has(model))
+    throw new ShipError(
+      `--model must be one of ${[...MODEL_ALIASES].join(", ")}`,
+      2
+    );
+  return model;
+}
+
+/**
+ * The request of a new run: --request, else the title of the plan already in
+ * the run directory (a run started by esp-plan), else its path.
+ */
+function requestOf(dir, options) {
+  const given = stringOption(options.request)?.trim();
+  if (given) return given;
+  const latest = latestPlan(dir).path;
+  if (!latest)
+    throw new ShipError(
+      "init needs --request <text>, or a run directory that holds a plan",
+      2
+    );
+  const { plan } = readPlan(latest);
+  return plan?.title?.trim() || latest;
+}
+
 export function cmdInit(options, env = process.env) {
   const dir = runDirOf(options);
   const path = statePath(dir);
   if (existsSync(path)) {
-    if (options.resume) return resumeRun(dir, env);
+    if (options.resume) return resumeRun(dir, env, options);
     return { state_path: path, created: false, ...readState(dir) };
   }
   if (options.resume)
     throw new ShipError(`No ship.json in ${dir}: nothing to resume`, 2);
-  const request = stringOption(options.request)?.trim();
-  if (!request) throw new ShipError("init needs --request <text>", 2);
+  const request = requestOf(dir, options);
+  const model = modelOption(options.model);
   const track = stringOption(options.track) ?? "orchestrated";
   if (!TRACKS.includes(track))
     throw new ShipError(`--track must be one of ${TRACKS.join(", ")}`, 2);
@@ -248,12 +277,19 @@ export function cmdInit(options, env = process.env) {
     summary: null,
     interactive,
     reviewers: stringOption(options.reviewers),
+    // --model pins the builder of every milestone; milestone models, reuse
+    // and agent read it from here, so a resume keeps it.
+    builder_model: model,
     created_at: at,
     updated_at: at,
     config_snapshot: snapshot,
     flags: {
       no_pr: Boolean(options["no-pr"]),
-      no_merge: Boolean(options["no-merge"])
+      no_merge: Boolean(options["no-merge"]),
+      // --parallel forces milestone batches (milestone next reads it).
+      parallel: Boolean(options.parallel),
+      // --draft opens the pull request as a draft (else pr.draft).
+      draft: Boolean(options.draft)
     },
     phases: [],
     skipped_phases: {},
@@ -267,7 +303,6 @@ export function cmdInit(options, env = process.env) {
       done: 0,
       commits: 0
     },
-    pr_draft_until_reviewed: settings.pr_draft_until_reviewed,
     max_files_changed: settings.max_files_changed,
     escalate: settings.escalate,
     max_milestones: settings.max_milestones,
@@ -290,9 +325,11 @@ export function cmdInit(options, env = process.env) {
 /**
  * Resume a run. An awaiting-human stop is lifted and the phases it left
  * unfinished are restored, keeping the completed work. Halted and failed
- * runs stay stopped.
+ * runs stay stopped. --model and --parallel, when given, replace the ones
+ * recorded at init.
  */
-export function resumeRun(dir, env = process.env) {
+export function resumeRun(dir, env = process.env, options = {}) {
+  const model = modelOption(options.model);
   const path = statePath(dir);
   let resumed = null;
   // Time spent stopped does not count against the wall-time budget.
@@ -304,6 +341,8 @@ export function resumeRun(dir, env = process.env) {
   const state = updateState(
     dir,
     (s) => {
+      if (model) s.builder_model = model;
+      if (options.parallel === true) s.flags = { ...s.flags, parallel: true };
       if (s.halt) return;
       if (s.stop?.status !== "awaiting-human") return;
       resumed = s.stop;

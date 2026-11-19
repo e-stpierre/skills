@@ -1,8 +1,7 @@
 ---
 name: esp-create-skill
-description: Create a new Claude Code skill from the action skill template
+description: Create a new Claude Code skill from the action skill template. Use when asked to create or scaffold a skill.
 argument-hint: "-s|--skill <name> [context]"
-disable-model-invocation: true
 ---
 
 # Create Skill
@@ -24,29 +23,18 @@ Arguments: $ARGUMENTS
 
 ## Additional Resources
 
-- For the section structure, the frontmatter fields and the string substitutions, see [action-skill-template.md](references/action-skill-template.md): read it in full before writing SKILL.md
+- For the section structure, the directory structure, the size limit, the frontmatter fields (invocation controls included) and the string substitutions, see [action-skill-template.md](references/action-skill-template.md): read it in full before writing SKILL.md
 
 ## Core Principles
 
 - The template is the structure: its sections, in its order, with its exact names
 - Use US English spelling. Code files are ASCII only; markdown files may add minimal functional emojis
-- Keep SKILL.md under 500 lines: material only some branches need goes to `references/` behind a pointer that says when to read it
 - The description decides invocation: a user-invoked skill (`disable-model-invocation: true`) gets a one-line human summary; a model-invoked skill front-loads what it is, then one trigger per distinct case, no synonyms. The listing truncates it at 250 characters
-- Write steps that end on a checkable done-condition, and state each target behavior positively; keep a prohibition only for a hard guardrail, paired with what to do instead
+- Write steps that end on a checkable, exhaustive done-condition ("every file in scope checked"), and state each target behavior positively; keep a prohibition only for a hard guardrail, paired with what to do instead
+- Give each rule one home: point to the shared reference, template or script `--help` that owns it instead of restating it, and cut any sentence the model would follow untold
+- Name a recurring behavior with one existing word (a _relay_, a _tight_ loop) and reuse that word instead of re-explaining the behavior
 
 ## Skill-Specific Guidelines
-
-### Directory Structure
-
-```text
-plugins/<plugin-name>/skills/<category>/<skill-name>/
-  SKILL.md        # Required - main skill definition, name matches the directory
-  references/     # Optional - reference docs loaded on demand
-  scripts/        # Optional - executable code
-  assets/         # Optional - templates, schemas, static files
-```
-
-Link every supporting file from SKILL.md with the condition for reading it, one level deep.
 
 ### Argument Conventions
 
@@ -92,26 +80,11 @@ Examples:
 
 Read options by name from `Arguments: $ARGUMENTS` in the Values subsection. Positional substitutions (`$ARGUMENTS[N]`, `$N`) shift when an option is added or omitted, so options-based skills do not use them.
 
-### When to Use Invocation Controls
-
-**`disable-model-invocation: true`** - only the user invokes it:
-
-- Skills whose action the model should never start unprompted (deploy, merge, send a message, change user config)
-- Skills where timing matters
-
-A skill with a routine side effect that the model is told to use (commit, branch, open a PR) stays model-invoked.
-
-**`user-invocable: false`** - only Claude invokes it:
-
-- Background knowledge that is not an actionable command (e.g., a `legacy-system-context` skill explaining how a system works)
-
-Omit both for a skill the user types and Claude also reaches on its own.
-
 ### Forked Context Skills
 
 Add `context: fork` when a skill should run in isolation without conversation history: its content becomes the subagent's prompt, so reserve it for skills with explicit task instructions.
 
-### Avoid Tables
+### Lists Over Tables
 
 A skill is read in raw form, where a table is hard to scan and easy to break. Write a list of `**Key**: effect` items, or one sentence per option, so each item keeps every value its row would hold, for example `- **merge.method** (default repo): the merge method`.
 
@@ -123,15 +96,12 @@ Keep a table only when the reader compares several attributes across many rows a
 2. **Create the directory** `plugins/<plugin-name>/skills/<category>/<skill-name>/` in the plugin the user names, else `esp-skills`, reusing an existing category when one fits. When the plugin's `.claude-plugin/plugin.json` has a `skills` array, add `./skills/<category>/<skill-name>` to it so the skill ships.
 3. **Read the template** [action-skill-template.md](references/action-skill-template.md) in full.
 4. **Write SKILL.md** from the template and `[context]`: frontmatter on line 1 with the fields that apply, every required section, the optional ones that apply, and every value defined as an option per [Argument Conventions](#argument-conventions). Supporting files go under `references/`, `scripts/` or `assets/`, each linked from SKILL.md.
-5. **Validate** until every check passes:
-   - No `{{` placeholder and no template `<!--` instruction comment remains
-   - The frontmatter `name` matches the directory name, and the `description` follows the invocation rule in Core Principles
-   - Section names and order match the template, with the `(optional)` marker dropped from kept headings; Skill-Specific Guidelines are `###` subsections
-   - Every supporting file is linked with the condition for reading it, and every link resolves
-   - Every step ends on a checkable done-condition, and no table remains outside a true grid
-   - `argument-hint` (quoted) matches the Definitions option for option, in the order of [Argument Conventions](#argument-conventions)
-   - Every option has a unique short name, no reserved letter is reused, shared options use the plugin-wide letters, and the body reads each option by both names
-   - The file is under 500 lines, US English, and ASCII apart from functional emojis
+5. **Validate**: when the repository has `pnpm validate`, run it and fix every error it reports (it checks the mechanical rules: placeholders, name, sections, links, arguments and option letters, tables, size, ASCII). Then check what no script can, until every check passes:
+   - The `description` follows the invocation rule in Core Principles
+   - Every step ends on a checkable done-condition, and any table left is a true grid
+   - The options follow the order of [Argument Conventions](#argument-conventions), and the body reads each option by both names
+   - The prose is US English, and each rule has one home
+   - Without `pnpm validate`, check the template's structure and the Argument Conventions by hand as well
 
 ## Output Guidance
 

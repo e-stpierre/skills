@@ -448,6 +448,24 @@ describe("init", () => {
     assert.equal(s.pr_rounds.max, 2);
     assert.equal(s.interactive, "plan");
     assert.equal(s.phase_status.merge, "skipped");
+    assert.equal(s.builder_model, null);
+    assert.deepEqual(s.flags, {
+      no_pr: false,
+      no_merge: true,
+      parallel: false,
+      draft: false
+    });
+    assert.equal("pr_draft_until_reviewed" in s, false);
+    rmSync(join(runDir, "ship.json"));
+    init("--model", "sonnet", "--parallel", "--draft");
+    const flagged = state();
+    assert.equal(flagged.builder_model, "sonnet");
+    assert.equal(flagged.flags.parallel, true);
+    assert.equal(flagged.flags.draft, true);
+    examplePlan();
+    for (const p of ["plan", "branch", "build", "final-gates", "review"])
+      ship("phase", p, "--status", "done");
+    assert.equal(ship("next").json().draft, true);
     rmSync(join(runDir, "ship.json"));
     initInline("--no-merge");
     const light = state();
@@ -465,6 +483,7 @@ describe("init", () => {
     assert.equal(bad("--interactive", "sometimes"), 2);
     assert.equal(bad("--track", "sideways"), 2);
     assert.equal(bad("--base-sha", "nope"), 2);
+    assert.equal(bad("--model", "gpt"), 2);
     assert.equal(ship("init", "--resume").code, 2);
     init();
     const again = ship("init");
@@ -572,8 +591,8 @@ describe("next and phase", () => {
     ship("phase", "review", "--status", "done");
     next = ship("next").json();
     assert.equal(next.phase, "pr");
-    assert.equal(next.draft, true);
-    assert.equal(next.mark_ready, true);
+    assert.equal(next.draft, false);
+    assert.equal(next.mark_ready, undefined);
     ship("phase", "pr", "--status", "done", "--pr", PR);
     assert.equal(runJson().pr, PR);
     next = ship("next").json();
@@ -905,14 +924,13 @@ describe("helpers", () => {
       role: null,
       model: null
     });
-    assert.deepEqual(
-      prOptions({ pr_draft_until_reviewed: false }, { pr: { draft: true } }),
-      { draft: true, mark_ready: false }
-    );
-    assert.deepEqual(prOptions({ pr_draft_until_reviewed: false }, {}), {
-      draft: false,
-      mark_ready: false
+    assert.deepEqual(prOptions({ flags: {} }, { pr: { draft: true } }), {
+      draft: true
     });
+    assert.deepEqual(prOptions({ flags: { draft: true } }, {}), {
+      draft: true
+    });
+    assert.deepEqual(prOptions({ flags: {} }, {}), { draft: false });
     const big = {
       milestones: ["M1", "M2", "M3"],
       max_milestones: 2,
@@ -1217,6 +1235,19 @@ describe("stop, halt and resume", () => {
     assert.equal(next.action, "run");
     assert.equal(next.phase, "branch");
     assert.equal(next.resumed, true);
+  });
+
+  test("a resume keeps --model and --parallel, or replaces them when given", () => {
+    init("--model", "haiku");
+    ship("stop", "--status", "awaiting-human", "--reason", "open question");
+    let resumed = ship("init", "--resume").json();
+    assert.equal(resumed.builder_model, "haiku");
+    assert.equal(resumed.flags.parallel, false);
+    ship("stop", "--status", "awaiting-human", "--reason", "again");
+    resumed = ship("init", "--resume", "--model", "opus", "--parallel").json();
+    assert.equal(resumed.builder_model, "opus");
+    assert.equal(resumed.flags.parallel, true);
+    assert.equal(ship("init", "--resume", "--model", "gpt").code, 2);
   });
 
   test("a resume leaves a failed stop and a halt in place", () => {
@@ -2040,6 +2071,22 @@ describe("parallel milestones", () => {
     assert.equal(on.parallel.reason, "ship.parallel is on");
   });
 
+  test("the --parallel recorded by init forces a batch", () => {
+    plan(milestone("M1"), milestone("M2"));
+    userConfig({
+      worktrees: { root: join(tmp, "worktrees") },
+      ship: { parallel: "off" }
+    });
+    init("--parallel");
+    assert.equal(ship("milestone", "init", "--base", SHA1).code, 0);
+    assert.equal(milestones().parallel, false);
+    assert.deepEqual(ship("milestone", "next").json().batch, ["M1", "M2"]);
+    assert.deepEqual(
+      ship("milestone", "next", "--parallel=false").json().batch,
+      ["M1"]
+    );
+  });
+
   test("ship.max_parallel caps the batch", () => {
     plan(milestone("M1"), milestone("M2"), milestone("M3"));
     initWith({ ship: { max_parallel: 2 } });
@@ -2415,6 +2462,34 @@ describe("milestone models", () => {
       { model: "opus", effort: "low" }
     );
     assert.equal(ship("milestone", "models", "M1", "--model", "gpt").code, 2);
+  });
+
+  test("the --model recorded by init pins the builder of models, reuse and agent", () => {
+    writeFileSync(
+      join(runDir, "plan.md"),
+      planText(1, [
+        milestone("M1"),
+        milestone("M2", { depends: "M1", complexity: "high" })
+      ])
+    );
+    init("--model", "haiku");
+    ship("milestone", "init", "--base", SHA1);
+    assert.deepEqual(ship("milestone", "models", "M2").json().builder, {
+      model: "haiku"
+    });
+    // An explicit --model still wins.
+    assert.deepEqual(
+      ship("milestone", "models", "M2", "--model", "opus").json().builder,
+      { model: "opus" }
+    );
+    ship("milestone", "start", "M1", "--base", SHA1);
+    ship("milestone", "agent", "M1", "--agent-id", "a1");
+    assert.equal(milestones().builder.model, "haiku");
+    ship("milestone", "finish", "M1", "--status", "done", "--commit", SHA2);
+    // M2 is high complexity, but the pinned model matches the builder.
+    const r = ship("milestone", "reuse", "M2", "--agent-id", "a1");
+    assert.equal(r.code, 0, r.stderr);
+    assert.equal(r.json().decision, "reuse");
   });
 });
 

@@ -8,7 +8,7 @@ argument-hint: "[-a|--amend] [-I|--import <path>] [-t|--type <type>] [-i|--inter
 
 ## Overview
 
-Explore the codebase and write an implementation plan that `esp-ship` can parse: milestones with IDs, goals, complexity, dependencies, files, tasks, acceptance criteria and validation commands. Use it to plan a feature, bug fix or chore before building it, with `--import` to convert a task list or a design document without exploring, or with `--amend` to change the remaining milestones of an existing plan without touching completed ones. The plan is written to a run directory, and the skill ends with a short markdown reply.
+Explore the codebase and write an implementation plan in plan format 1, the milestones `esp-ship` parses and builds. Use it to plan a feature, bug fix or chore before building it, to convert a task list or a design document (`--import`), or to change the remaining milestones of an existing plan (`--amend`). The plan is written to a run directory, and the skill ends with a short markdown reply.
 
 ## Arguments
 
@@ -17,7 +17,7 @@ Explore the codebase and write an implementation plan that `esp-ship` can parse:
 - **`[-a|--amend]`** (optional): Amend the latest plan in the run directory instead of writing a new one. `[context]` is then the amendment, as text or a file path. Requires `--run-dir` and excludes `--import` (step 1).
 - **`[-I|--import <path>]`** (optional): Convert a task list (a checkbox progress list plus one heading per package) or a design document into a plan, with no codebase exploration: one milestone per unchecked package, checked packages listed in `## Out of Scope`, the source path in the `source` frontmatter key.
 - **`[-t|--type <type>]`** (optional): Plan type: `feature`, `bug`, `chore` or `auto`. Defaults to `plan.default_type` (`auto`).
-- **`[-i|--interactive <mode>]`** (optional): When to stop and ask: `off` (never), `plan` or `all` (ask for open choices and approve the plan before finishing). Defaults to `defaults.interactive` (`off`). Headless sessions always use `off`.
+- **`[-i|--interactive <mode>]`** (optional): When to stop and ask: `off` (never), `plan` or `all` (ask about B-Scope questions and approve the plan before finishing; other choices take the recommended option, see Asking and Deciding). Defaults to `defaults.interactive` (`off`). Headless sessions always use `off`.
 - **`[-d|--run-dir <path>]`** (optional): Run directory owned by a parent skill (esp-ship). Without it, the skill creates its own run under `runs.root`.
 - **`[context]`** (optional): The task: free text, an issue URL, or a document path. With `--amend`, the amendment.
 
@@ -30,15 +30,13 @@ Arguments: $ARGUMENTS
 - For the plan format, the parser and the amendment rules, see [plan-format.md](../../../references/plan-format.md): read it in step 7, or in step 11 when amending
 - For the plan of each type, see [references/feature.md](references/feature.md), [references/bug.md](references/bug.md) and [references/chore.md](references/chore.md): read the one matching the type in step 7
 - For classifying choices and when to ask, see [decision-policy.md](../../../references/decision-policy.md): read it before asking or deciding (see Asking and Deciding)
-- For the explorer model, see [model-selection.md](../../../references/model-selection.md): read it when `defaults.models.explorer` is not set
 
 ## Core Principles
 
 - Explore the codebase before planning, and follow its existing patterns and conventions
 - Every milestone is one coherent, reviewable commit that changes code and can be verified by its validation commands
-- Write plans to the run directory only, never inside the repository, and never commit them
+- Write plans to the run directory only: they stay outside the repository and out of git
 - Run every script with Bash, with the literal `"${CLAUDE_PLUGIN_ROOT}/scripts/..."` path. `run.json` and `decisions.jsonl` are written by `runs.mjs` only
-- A plan is done only when plan-lint passes
 - Plans size the work only as milestones and their complexity, with no time estimates or deadlines
 
 ## Skill-Specific Guidelines
@@ -50,19 +48,23 @@ Read the `plan` section and the shared defaults once at the start:
 ```bash
 node "${CLAUDE_PLUGIN_ROOT}/scripts/config.mjs" get plan
 node "${CLAUDE_PLUGIN_ROOT}/scripts/config.mjs" get defaults
+node "${CLAUDE_PLUGIN_ROOT}/scripts/config.mjs" get ship.budgets.orchestrated.max_milestones
 ```
+
+With `--run-dir`, add `--run-dir <path>` to each `config.mjs get`: it reads the run's frozen config snapshot (an esp-ship run) in place of the user and project layers, and the live config when the run has none.
 
 If a command exits with code 1 (invalid config), report its error and stop. If it cannot run at all (no `node`), continue with the defaults.
 
 - `plan.default_type` (default `auto`): plan type when `--type` is not given
 - `plan.explore_agents` (default `feature: 3`, `bug: 2`, `chore: 2`): explore subagents per plan type (`0` explores inline)
+- `ship.budgets.orchestrated.max_milestones` (default `12`): most milestones in a plan, completed ones included; `esp-ship` halts on a larger plan
 - `defaults.interactive` (default `off`): interactive mode when `--interactive` is not given
 - `defaults.models.explorer` (default `sonnet`): model and effort passed to each Explore subagent
 - `defaults.language` (default `en-US`): language of the plan prose
 
 ### Run Directory
 
-esp-plan writes the plan into a run directory, ends with a short reply, and in a headless session or a subagent it hands questions back to its caller (see Asking and Deciding). The list abbreviates `node "${CLAUDE_PLUGIN_ROOT}/scripts/runs.mjs"` as `runs.mjs` (same for `plan.mjs`). Every `runs.mjs` call except `create` takes `--run-dir <path>`:
+The list abbreviates `node "${CLAUDE_PLUGIN_ROOT}/scripts/runs.mjs"` as `runs.mjs` (same for `plan.mjs`). Every `runs.mjs` call except `create` takes `--run-dir <path>`:
 
 - **Own run (no `--run-dir`)**: `runs.mjs create <slug> --title <title> --workflow esp-plan --repo <repo-root>` (prints `run_dir`)
 - **Latest plan**: `runs.mjs plan` (`{ path, version }`, version 0 when there is none)
@@ -87,8 +89,8 @@ Classify every open choice with the decision policy:
 
 ## Instructions
 
-1. **Parse arguments**: read each option by its short or long name (`-a` or `--amend`, `-t` or `--type`, and so on; `--type=<value>` works too) and `[context]`. Fail with a usage message if `--amend` is given without `--run-dir`, or together with `--import`. When `[context]` is an existing file path, read it; when it is an issue URL, fetch it with `gh issue view` if available.
-2. **Load configuration** (see Configuration) and resolve the interactive mode: the option, else `defaults.interactive`, and always `off` in headless sessions.
+1. **Parse arguments**: read each option by its short or long name (`-a` or `--amend`, `-t` or `--type`, and so on; `--type=<value>` works too) and `[context]`. Fail with a usage message if `--amend` is given without `--run-dir`, or together with `--import`. When `[context]` is an existing file path, read it; when it is an issue URL, fetch it with `gh issue view` if available. Done when the mode (new, import or amend) and the task are known.
+2. **Load configuration** (see Configuration) and resolve the interactive mode: the option, else `defaults.interactive`, and always `off` in a headless session or a subagent.
 3. **Resolve the run directory**: use `--run-dir` when given. Otherwise derive a short title from the task and run `runs.mjs create`, and use the printed `run_dir`. Done when the run directory exists.
 4. **Amend mode** (`--amend`): skip to step 11.
 5. **Import mode** (`--import <path>`): convert the source without exploring the codebase (no Explore subagent), log the import as a decision (`source: policy`, the source path in the rationale), then continue at step 12.
@@ -97,12 +99,12 @@ Classify every open choice with the decision policy:
 6. **Detect the plan type** when it is `auto`: `feature` for new functionality, `bug` for defects and unexpected behavior, `chore` for refactoring, dependencies and maintenance. Log the detected type as a low-risk decision.
 7. **Load the type reference** (`references/<type>.md`) and the plan format ([plan-format.md](../../../references/plan-format.md)).
 8. **Explore the codebase**: launch `plan.explore_agents.<type>` Explore subagents in parallel, each with a distinct focus (affected modules, existing patterns and tests, integration points), passing the `explorer` model and effort. With `0`, explore inline. Done when you know every file each milestone will touch, the patterns it follows, and the validation commands (test, lint, build) the project uses.
-9. **Gather requirements**: settle every requirements question of the type reference from the context and the exploration. Ask about one that stays open only in `plan` or `all` mode; otherwise follow Asking and Deciding.
-10. **Write `plan.md`** in the run directory, following the plan format: frontmatter with `version: 1`, the type-specific context sections, then milestones in dependency order, each one commit with explicit files and validation commands. Continue at step 12.
-11. **Amend**: follow the four steps of Amendments in [plan-format.md](../../../references/plan-format.md). Fail when `runs.mjs plan` returns version 0; with no `state.json`, no milestone is completed. Done when `plan.mjs diff` passes and one decision logged the amendment. Continue at step 12.
-12. **Plan-lint**: run `plan.mjs lint` on the written file. Fix every error and lint again until `valid` is true. Resolve each warning, or state in the report why it stays. A shared-file warning is resolved by a real `Depends`, or by moving the shared files to an earlier milestone (see Parallel Milestones).
+9. **Gather requirements**: settle every requirements question of the type reference from the context and the exploration. Classify each question that stays open per Asking and Deciding: decide A-Fix and B-Decide yourself, and ask only B-Scope ones (in `plan` or `all` mode). Done when every question is settled, decided, answered or stated in `## Open Questions`.
+10. **Write `plan.md`** in the run directory, following the plan format: frontmatter with `version: 1`, the type-specific context sections, then milestones in dependency order, each one commit with explicit files and validation commands. Keep the plan within `max_milestones`: combine related milestones before going over it. When the work truly needs more, say so in `## Risks` and `## Open Questions` (split the work into several plans). Done when every milestone has every field and subsection of the plan format, and its `**Files**` lists every file step 8 found it touches. Continue at step 12.
+11. **Amend**: follow the four steps of Amendments in [plan-format.md](../../../references/plan-format.md), keeping the completed and remaining milestones together within `max_milestones` (as in step 10). Fail when `runs.mjs plan` returns version 0; with no `state.json`, no milestone is completed. Done when `plan.mjs diff` passes and one decision logged the amendment. Continue at step 12.
+12. **Plan-lint**: run `plan.mjs lint <plan-file> --max-milestones <max_milestones>` on the written file. Fix every error and lint again until `valid` is true. Resolve each warning, or state in the report why it stays. A shared-file warning is resolved by a real `Depends`, or by moving the shared files to an earlier milestone (see Parallel Milestones).
     - **Parallel batches**: when the plan has two or more milestones, run `plan.mjs batches <plan-file>` (with `--run-dir <run-dir>` for an amendment, so completed milestones are left out) and write its `summary` lines as a list in a `## Parallel Batches` context section, just before `## Milestones` (replace the section of a copied version). Lint again, and for an amendment run `plan.mjs diff` again.
-13. **Interactive approval** (`plan` or `all`): present the summary and ask for approval before the reply. Apply requested changes to the same file (the version is final only once approved) and lint again.
+13. **Interactive approval** (`plan` or `all`): present the summary and ask for approval before the reply. Apply requested changes to the same file (the version is final only once approved) and lint again. Done when the user approves.
 14. **Update an own run's status**: `runs.mjs update --status done`, or `awaiting-human` when a question is open (see Asking and Deciding).
 15. **Report** the summary, then end with the reply (see Output Guidance): `Status: done` (or `needs-decision` with the `Question:` line), and a `Summary:` naming the plan path, its version and the milestone IDs. For an import, name the source; for an amendment, the amendment decision ID and the affected milestones.
 
@@ -127,4 +129,4 @@ Status: done
 Summary: Planned Add OAuth login in 2 milestones (M1, M2): <run-dir>/plan.md, version 1, feature
 ```
 
-For an amendment, list the changed, added and removed milestones and the amendment decision ID instead of the full milestone list.
+Show the `Next:` line only for an own run (no `--run-dir` given). For an amendment, list the changed, added and removed milestones and the amendment decision ID instead of the full milestone list.

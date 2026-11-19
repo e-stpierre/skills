@@ -1080,19 +1080,20 @@ export function buildContext(options, env = process.env, io = {}) {
   const projectDir = resolve(
     options["project-dir"] ?? findRepoRoot(process.cwd()) ?? process.cwd()
   );
-  let config;
-  try {
-    ({ config } = loadConfig({ projectDir, env }));
-  } catch (err) {
-    if (err instanceof ConfigError)
-      throw new FixReviewError(err.message, err.exitCode ?? 1);
-    throw err;
-  }
   const runDir = options["run-dir"]
     ? resolve(expandHome(options["run-dir"]))
     : null;
   if (runDir && !existsSync(join(runDir, "run.json")))
     throw new FixReviewError(`Not a run directory (no run.json): ${runDir}`, 2);
+  // A run's frozen config snapshot replaces the user and project layers.
+  let config;
+  try {
+    ({ config } = loadConfig({ projectDir, runDir, env }));
+  } catch (err) {
+    if (err instanceof ConfigError)
+      throw new FixReviewError(err.message, err.exitCode ?? 1);
+    throw err;
+  }
   const statePath = options.state
     ? resolve(expandHome(options.state))
     : runDir

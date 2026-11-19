@@ -13,7 +13,9 @@
 //
 // With a branch name it applies the choice. Without one, when the task needs a
 // new branch, it returns `action: name-branch` and the skill picks the name
-// (branch.pattern) before calling again with --branch.
+// (branch.pattern) before calling again with --branch. --new-branch never
+// reuses the current branch (it may already carry an open pull request), and
+// replaces a recorded workspace that only reused it.
 
 import { mkdirSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
@@ -148,7 +150,8 @@ export function workspaceFacts(repoDir, { base = null, branch = null } = {}) {
 
 /**
  * Pick the workspace from the facts. Returns { workspace, action, branch,
- * location, reason }. Actions: `name-branch` (the caller picks a new branch
+ * location, reason, from_current }. `from_current` marks the current branch
+ * reused without --branch; `newBranch` names a new branch instead. Actions: `name-branch` (the caller picks a new branch
  * name), `use` (the branch is already checked out here), `checkout` (an
  * existing branch), `create` (a new branch from the base), `worktree` (a task
  * worktree on the branch). Throws when the tree is dirty and cannot be left
@@ -156,7 +159,7 @@ export function workspaceFacts(repoDir, { base = null, branch = null } = {}) {
  */
 export function decideWorkspace(
   facts,
-  { dirtyTree = "worktree", useWorktree = false } = {}
+  { dirtyTree = "worktree", useWorktree = false, newBranch = false } = {}
 ) {
   if (!DIRTY_TREE_MODES.includes(dirtyTree))
     throw new ShipError(
@@ -214,13 +217,14 @@ export function decideWorkspace(
       (facts.base || facts.default_branch) &&
       facts.current !== facts.base &&
       facts.current !== facts.default_branch;
-    return feature
+    return feature && !newBranch
       ? {
           workspace: "existing-branch",
           action: "use",
           branch: facts.current,
           location: "local",
-          reason: `the current branch ${facts.current} is not the base`
+          reason: `the current branch ${facts.current} is not the base`,
+          from_current: true
         }
       : {
           workspace: "checkout",
@@ -229,9 +233,11 @@ export function decideWorkspace(
           location: null,
           reason: !facts.current
             ? "detached HEAD"
-            : !(facts.base || facts.default_branch)
-              ? `the base is unknown, so ${facts.current} may be the trunk`
-              : `the current branch ${facts.current} is the base or the default branch`
+            : feature
+              ? `--new-branch: a new branch instead of the current branch ${facts.current}`
+              : !(facts.base || facts.default_branch)
+                ? `the base is unknown, so ${facts.current} may be the trunk`
+                : `the current branch ${facts.current} is the base or the default branch`
         };
   }
   if (branch === facts.current)
@@ -308,10 +314,18 @@ export function cmdWorkspace(options, env = process.env) {
   const state = readState(dir);
   const config = configOf(state.config_snapshot);
   const repoDir = state.repo_dir;
-  const branchOption = stringOption(options.branch) ?? state.branch;
+  // --new-branch replaces a workspace that only reused the current branch:
+  // nothing changed in git, so the decision can be taken again.
+  const newBranch = options["new-branch"] === true;
+  const redecide =
+    newBranch &&
+    state.workspace?.from_current === true &&
+    state.workspace.branch === state.branch;
+  const branchOption =
+    stringOption(options.branch) ?? (redecide ? null : state.branch);
   checkRefName(repoDir, branchOption, "--branch");
   checkRefName(repoDir, state.base, "the base");
-  if (state.branch && state.workspace?.branch)
+  if (state.branch && state.workspace?.branch && !redecide)
     return {
       ...state.workspace,
       action: "use",
@@ -325,7 +339,8 @@ export function cmdWorkspace(options, env = process.env) {
   });
   const choice = decideWorkspace(facts, {
     dirtyTree,
-    useWorktree: state.use_worktree
+    useWorktree: state.use_worktree,
+    newBranch
   });
   const base = facts.base;
   const previous = state.workspace;
@@ -362,6 +377,7 @@ export function cmdWorkspace(options, env = process.env) {
     dirty_files: facts.dirty,
     worktree: null,
     cleanup: choice.workspace === "worktree" ? cleanupOf(config) : null,
+    from_current: choice.from_current === true,
     decision
   };
   if (choice.action === "name-branch") {
@@ -370,6 +386,7 @@ export function cmdWorkspace(options, env = process.env) {
       (s) => {
         s.base ??= base;
         s.workspace = workspace;
+        if (redecide) s.branch = null;
         if (choice.workspace === "worktree") s.use_worktree = true;
       },
       env

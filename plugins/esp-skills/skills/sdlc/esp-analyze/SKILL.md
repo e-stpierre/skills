@@ -64,6 +64,7 @@ In the instructions below, `{output_dir}` is the resolved `analyze.output_dir`.
      ```
 
    - Load the `analyze` configuration (see Configuration)
+   - Done when the type is valid and `{output_dir}` is resolved
 
 2. **Load the type reference**: read `references/<type>.md` (see Additional Resources).
 
@@ -71,17 +72,19 @@ In the instructions below, `{output_dir}` is the resolved `analyze.output_dir`.
    - If `[context]` names files or directories, analyze those; otherwise the entire codebase
    - Exclude test files, node_modules, build outputs, and vendor directories
    - For `doc`: find all documentation files (README, docs/, \*.md)
+   - Done when the list of files in scope is known
 
 4. **Understand project context**
    - Check for linter configs (ESLint, Prettier, Ruff)
    - Read CLAUDE.md and AGENTS.md (if present) for project-specific guidelines
    - Read representative code to learn the conventions the findings are judged against
+   - Done when you can state the conventions each finding will be judged against
 
 5. **Analyze for issues**: apply every analysis criterion of the type reference to every file in scope, and verify each candidate per the Core Principles before keeping it. Done when each criterion has been checked across the whole scope.
 
 6. **Categorize findings**: rate each one with the severity guidelines of the type reference. Done when every kept finding has exactly one severity.
 
-7. **Generate the report**: save it to `{output_dir}/{type}.md`, creating `{output_dir}` when it is missing and replacing an earlier report of the same type, with the report template of the type reference: the date in the header, findings grouped by severity, each with its location and fix. Done when every kept finding appears under its severity with every template field filled, and the summary counts match the findings.
+7. **Generate the report**: save it to `{output_dir}/{type}.md`, creating `{output_dir}` when it is missing and replacing an earlier report of the same type, with the report template of the type reference: the date in the header, findings grouped by severity, each with its location and fix. Done when every kept finding appears under its severity with every template field filled, no `{{` placeholder or instruction comment remains, and the summary counts match the findings.
 
 8. **Present results**: the severity counts and the report path (see Output Guidance).
 

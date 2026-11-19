@@ -10,5 +10,5 @@
     }
   },
   "globs": ["**/*.md"],
-  "ignores": ["agentic", "**/node_modules", ".git"]
+  "ignores": ["agentic", "local", "**/node_modules", ".git"]
 }

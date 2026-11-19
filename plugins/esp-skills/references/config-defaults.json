@@ -30,8 +30,7 @@
   "commit": {
     "style": "plain",
     "co_author": true,
-    "plan_step_prefix": true,
-    "review_fixes": "separate"
+    "plan_step_prefix": true
   },
   "pr": {
     "base": null,
@@ -90,7 +89,8 @@
     "require_resolved_threads": true,
     "require_green_checks": true,
     "use_auto_merge": false,
-    "checks_timeout_minutes": 30
+    "checks_timeout_minutes": 30,
+    "poll_seconds": 30
   },
   "ship": {
     "plan_mode": "auto",
@@ -109,7 +109,6 @@
     "internal_review_rounds": 2,
     "worktree": false,
     "dirty_tree": "worktree",
-    "pr_draft_until_reviewed": true,
     "halt_on": [
       "critical-security",
       "gates-exhausted",

@@ -1,8 +1,8 @@
 ---
 name: esp-markdown
 description: >-
-  Markdown rules the formatter cannot fix. MUST be used before creating,
-  editing, or reviewing any .md file.
+  Markdown rules the formatter cannot fix. MUST be used before writing or
+  reviewing any .md file.
 ---
 
 # Markdown
@@ -46,12 +46,12 @@ A numbered heading uses a number and a period, or no number at all.
 - Color circles or squares to indicate criticality levels (green/yellow/orange/red)
 - Other emojis with a clear functional purpose: the list above is not exhaustive
 
-**Invalid uses:**
+**Plain text instead:**
 
-- Number emojis in place of plain numbers: write `1.`, `2.`, `3.`
-- Emojis in headings: headings are plain text unless there is an exceptional reason
-- Decorative emojis on every section
-- A check mark on every item of a list: a plain list says the same
+- Plain numbers (`1.`, `2.`, `3.`), never number emojis
+- Plain-text headings, unless there is an exceptional reason
+- Undecorated sections: an emoji marks one item that differs, not every section
+- A plain list when every item would carry the same check mark
 
 ```text
 <!-- Bad: a decorative emoji and a number emoji in headings, counts written as headings -->
@@ -205,8 +205,7 @@ A section title is a heading, which provides semantic structure and navigation; 
 ### Document structure
 
 - Start with a top-level heading (`# Title`)
-- Use hierarchical headings (`##`, `###`, `####`) for sections
-- Separate sections with a single blank line
+- Nest headings one level at a time (`##` then `###`), skipping none (MD001)
 - Use a table only for a true grid: several attributes compared across many rows. Skill and agent files follow the table rule of esp-create-skill
 - Place references and links at the end of the document, except in skill and agent files, whose template places them
 

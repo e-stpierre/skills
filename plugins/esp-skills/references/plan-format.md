@@ -84,7 +84,7 @@ Each milestone is one coherent, reviewable commit. `esp-ship` implements one mil
 | `#### Acceptance Criteria` | Objective checks the verifier can confirm                                                             |
 | `#### Validation`          | Commands that prove the milestone, each item starting with the command in backticks                   |
 
-No other `**Field**` or `####` subsection is allowed in a milestone. Plan-lint warns on milestones with more than 12 tasks or 20 files.
+No other `**Field**` or `####` subsection is allowed in a milestone. Plan-lint warns on milestones with more than 12 tasks or 20 files, and, with `--max-milestones <n>` (`esp-plan` passes `ship.budgets.orchestrated.max_milestones`), on a plan with more than `n` milestones, completed ones included.
 
 ## Parallel Batches
 

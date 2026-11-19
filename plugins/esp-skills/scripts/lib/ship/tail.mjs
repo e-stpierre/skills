@@ -46,11 +46,12 @@ export const OUTCOME_STATUSES = [
 // Pull request rounds
 // ---------------------------------------------------------------------------
 
-/** Draft handling for the pull request phase. */
+/**
+ * Draft handling for the pull request phase: --draft (recorded at init), else
+ * pr.draft. The pull request opens as a draft or ready from the start.
+ */
 export function prOptions(state, config) {
-  const draft = Boolean(config.pr?.draft);
-  const untilReviewed = Boolean(state.pr_draft_until_reviewed);
-  return { draft: draft || untilReviewed, mark_ready: untilReviewed && !draft };
+  return { draft: Boolean(state.flags?.draft) || Boolean(config.pr?.draft) };
 }
 
 /**
@@ -324,9 +325,12 @@ export function buildOutcome(
           .map(([id, m]) => [id, m.commit])
       )
     : {};
+  // Review-fix titles in both commit.style forms: fix(review): and fix(ci):
+  // (conventional), Fix review findings: and Fix CI: (plain), and fixup!.
   const reviewFixCommits = commits.filter(
     (c) =>
       /^fix(\(review\)|\(ci\))?:/.test(c.subject) ||
+      /^Fix (review findings|CI):/.test(c.subject) ||
       c.subject.startsWith("fixup!")
   );
   const discovered = [];

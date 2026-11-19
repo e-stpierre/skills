@@ -1036,7 +1036,7 @@ Options:
   --method <m>            repo, squash, rebase or merge (default: merge.method)
   --wait                  check: poll while checks are pending
   --wait-minutes <n>      check --wait timeout (default: merge.checks_timeout_minutes)
-  --poll-seconds <n>      check --wait interval (default 30)
+  --poll-seconds <n>      check --wait interval (default: merge.poll_seconds)
   --dry-run               merge: evaluate only, never merge
   --halt <reason>         merge: record a Halt and report halted, never merge
   --run-dir <path>        Run directory: halt signals and decisions
@@ -1079,24 +1079,42 @@ function positiveNumber(raw, name, min) {
   return value;
 }
 
+/**
+ * `check --wait` timeout and poll interval: the CLI options, else
+ * merge.checks_timeout_minutes and merge.poll_seconds.
+ */
+export function waitSettings(options, merge = {}) {
+  return {
+    timeoutMinutes:
+      options["wait-minutes"] !== undefined
+        ? positiveNumber(options["wait-minutes"], "wait-minutes", 0)
+        : (merge.checks_timeout_minutes ?? 30),
+    pollSeconds:
+      options["poll-seconds"] !== undefined
+        ? positiveNumber(options["poll-seconds"], "poll-seconds", 1)
+        : (merge.poll_seconds ?? 30)
+  };
+}
+
 /** Shared context: config, run dir, client, clock. */
 export function buildContext(options, env = process.env, io = {}) {
   const projectDir = resolve(
     options["project-dir"] ?? findRepoRoot(process.cwd()) ?? process.cwd()
   );
-  let config;
-  try {
-    ({ config } = loadConfig({ projectDir, env }));
-  } catch (err) {
-    if (err instanceof ConfigError)
-      throw new MergeError(err.message, err.exitCode ?? 1);
-    throw err;
-  }
   const runDir = options["run-dir"]
     ? resolve(expandHome(options["run-dir"]))
     : null;
   if (runDir && !existsSync(join(runDir, "run.json")))
     throw new MergeError(`Not a run directory (no run.json): ${runDir}`, 2);
+  // A run's frozen config snapshot replaces the user and project layers.
+  let config;
+  try {
+    ({ config } = loadConfig({ projectDir, runDir, env }));
+  } catch (err) {
+    if (err instanceof ConfigError)
+      throw new MergeError(err.message, err.exitCode ?? 1);
+    throw err;
+  }
   if (
     options.method &&
     options.method !== "repo" &&
@@ -1132,19 +1150,8 @@ export async function run(argv, env = process.env, io = {}) {
   switch (command) {
     case "check": {
       if (!options.wait) return { output: report(ctx, target) };
-      const timeoutMinutes =
-        options["wait-minutes"] !== undefined
-          ? positiveNumber(options["wait-minutes"], "wait-minutes", 0)
-          : (merge.checks_timeout_minutes ?? 30);
-      const pollSeconds =
-        options["poll-seconds"] !== undefined
-          ? positiveNumber(options["poll-seconds"], "poll-seconds", 1)
-          : 30;
       return {
-        output: await waitForChecks(ctx, target, {
-          timeoutMinutes,
-          pollSeconds
-        })
+        output: await waitForChecks(ctx, target, waitSettings(options, merge))
       };
     }
     case "method": {

@@ -8,7 +8,7 @@
 
 ## Tracker
 
-The `Status:` line of each finding: `open`, `in progress` or `fixed (<short SHA>)`. Add the line under `Decision:` when it is missing. The document is git-ignored: never commit it.
+The `Status:` line of each finding: `open`, `in progress` or `fixed (<short SHA>)`. Add the line under `Decision:` when it is missing. The document is git-ignored and stays out of every commit.
 
 ## Unit
 
@@ -16,7 +16,7 @@ One finding.
 
 ## Pick Rule
 
-The first finding with `Decision: fix` and a status other than `fixed`, in severity order (critical, high, medium, low), then in document order. Skip every `defer` and `wontfix` finding, and never change a `Decision:` line.
+The first finding with `Decision: fix` and a status other than `fixed`, in severity order (critical, high, medium, low), then in document order. Skip every `defer` and `wontfix` finding, and keep every `Decision:` line as the user set it.
 
 ## Required Reading
 
@@ -41,16 +41,16 @@ One commit per finding with `esp-commit`, titled with the finding's subject, not
 ## Conventions
 
 - Use `esp-branch`, `esp-commit` and `esp-pr` for every git operation
-- Never edit `migrations/` or `.github/workflows/`: a finding that needs it is blocked
+- Leave `migrations/` and `.github/workflows/` unchanged: a finding that needs a change there is blocked
 - Follow the repository's `AGENTS.md`
 
 ## Questions
 
-The bar is high: append an operator question to the run notes only when a fix would change a public API, a stored data format or an authentication flow. Then keep the finding `open`, note the question, and move on to the next finding. Decide everything else alone and log it as a decision.
+The bar is high: append a question for the user to the run notes only when a fix would change a public API, a stored data format or an authentication flow. Then keep the finding `open`, note the question, and move on to the next finding. Decide everything else alone and log it as a decision.
 
 ## Completion
 
-Every finding with `Decision: fix` is `fixed`, or open with an operator question in the run notes, and the pull request is open.
+Every finding with `Decision: fix` is `fixed`, or open with a question for the user in the run notes, and the pull request is open.
 
 ## Finish
 

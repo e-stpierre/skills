@@ -21,7 +21,7 @@ Tell the user what happened across their runs, what was risky, or why a decision
 - **`[-l|--last <span>]`** (optional): Shortcut for `--since`: `<N>d`, `<N>w` or `<N>h` (for example `3d`).
 - **`[-g|--repo <name>]`** (optional): Only runs of this repository, matched on the end of the `run.json` `repo` (`api` matches `o/api`).
 - **`[-t|--status <status>...]`** (optional): `run.json` statuses (`merged`, `halted`, `awaiting-human`, ...). Repeat the option or pass a comma-separated list.
-- **`[-x|--run-risk <level>]`** (optional): Only runs whose `max_risk` is at least `low`, `medium` or `high`. A run filter in every mode, apart from the risk report's decision threshold (step 5).
+- **`[-x|--run-risk <level>]`** (optional): Only runs whose `max_risk` is at least `low`, `medium` or `high`. A run filter in every mode.
 - **`[context]`** (optional): Empty for a recap of the range; a run ID or run directory path for the recap of one run; a question ("why did we rotate refresh tokens?") for Q&A. With `--risks`, extra words narrow the report.
 
 ### Values
@@ -59,14 +59,12 @@ If the command exits with code 1 (invalid config), report its error and stop. If
 
 ### Script
 
-`scripts/recap.mjs` takes the filters above by their long names only (`--since`, `--until`, `--last`, `--all`, `--repo`, `--status`, and `--risk` for `--run-risk`), plus `--limit <N>`: pass `-s 2026-11-01` as `--since 2026-11-01`. Every item it returns carries a `source` path.
+For the commands and options, run `node "${CLAUDE_PLUGIN_ROOT}/scripts/recap.mjs" --help`. What the help does not say:
 
-- `collect`: `range`, `count`, `fan_out`, `batches` (run paths per subagent), and one digest per run: title, workflow, repo, status, PR, outcome, decision counts by risk, critical findings, steps, commits
-- `show <run-id|path>`: one run in full: `run.json`, summary sections, decisions, step records, commits, critical findings, latest plan path
-- `risks [--min-risk <level>]`: decisions at or above the level (default `high`), critical review findings, and halted, blocked, failed or waiting runs
-- `sources --question <text>`: Q&A candidates in source order: matching decisions and summary sections, then per matching run the repo, branch, commits and files for git, and the PR URLs
-
-Exit codes: `0` success, `1` failure (for example an unknown run), `2` usage error.
+- The script takes long option names only: pass `-s 2026-11-01` as `--since 2026-11-01`, and `--run-risk` as `--risk`
+- Every item it returns carries a `source` path
+- The steps use these output fields: `roots`, `range`, `fan_out` and `batches` (run paths per subagent) from `collect`, and the `git` entries (repo, branch, commits, files) from `sources`
+- Exit codes: `0` success, `1` failure (for example an unknown run), `2` usage error
 
 ### Workflow Names
 
@@ -78,14 +76,14 @@ When `collect` returns `fan_out: true`, spawn one subagent per entry of `batches
 
 ## Instructions
 
-1. **Parse arguments**: read each option by its short or long name (`-k` or `--risks`, `-l` or `--last`, and so on; `--last=<span>` works too) and `[context]`. The mode is risk report with `--risks`; one-run recap when `[context]` is a run ID or an existing run directory; Q&A when `[context]` is any other text; otherwise recap.
+1. **Parse arguments**: read each option by its short or long name (`-k` or `--risks`, `-l` or `--last`, and so on; `--last=<span>` works too) and `[context]`. The mode is risk report with `--risks`; one-run recap when `[context]` is a run ID or an existing run directory; Q&A when `[context]` is any other text; otherwise recap. Done when the mode and the filters are known.
 2. **Load configuration** (see Configuration).
 3. **Recap mode**:
    1. Run `recap.mjs collect` with the filters. With no run, say which roots and range were read (`roots`, `range`) and suggest `--all` or a wider `--last`.
    2. With `fan_out: true`, digest the batches in subagents (see Fan-Out). Otherwise use the digests as they are, and run `show` on a run only when its digest leaves out something the user asked for.
    3. Write the recap (see Output Guidance): done when every run in range has its bullet and every statement its source.
-4. **One-run recap**: run `recap.mjs show <run-id|path>`. Use the summary sections first; read the plan or a step record only when the summary does not answer.
-5. **Risk report**: run `recap.mjs risks` with the filters, plus `--min-risk medium` (or `low`) when the user asks for lower-risk decisions too; `--min-risk` sets the decision threshold, apart from the `--run-risk` run filter. For each item, open its source only when the line in the output is not enough to explain it. Group by run.
+4. **One-run recap**: run `recap.mjs show <run-id|path>`. Use the summary sections first; read the plan or a step record only when the summary does not answer. Done when the recap covers the run's outcome, its decisions worth attention and its critical findings, each with its source.
+5. **Risk report**: run `recap.mjs risks` with the filters, plus `--min-risk medium` (or `low`) when the user asks for lower-risk decisions too; `--min-risk` sets the decision threshold, apart from the `--run-risk` run filter. For each item, open its source only when the line in the output is not enough to explain it. Group by run. Done when every item of the output is in the report with its source.
 6. **Q&A**: go through the sources in this order and stop as soon as the question is answered:
    1. Run `recap.mjs sources --question "<question>"` with the filters. When it finds nothing in range, run it again with `--all` before giving up.
    2. Decisions: read the top matches; their `rationale` and `alternatives` often answer "why".

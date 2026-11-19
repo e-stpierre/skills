@@ -21,6 +21,7 @@ import {
 const HERE = dirname(fileURLToPath(import.meta.url));
 const SCRIPT = join(HERE, "..", "ship.mjs");
 const RUNS = join(HERE, "..", "runs.mjs");
+const GATES = join(HERE, "..", "gates.mjs");
 const NOW = "2026-11-08T12:00:00.000Z";
 
 let tmp;
@@ -338,6 +339,41 @@ describe("milestone gates", () => {
   });
 });
 
+describe("gates.mjs resolve", () => {
+  test("without a run: configured gates, else detected from the project", () => {
+    const r = cli(GATES, ["resolve", "--project-dir", repo]);
+    assert.equal(r.code, 0, r.stderr);
+    const out = r.json();
+    assert.equal(out.scope, "full");
+    assert.deepEqual(out.commands, {
+      test: "pnpm test",
+      lint: "pnpm lint",
+      typecheck: "pnpm tsc --noEmit"
+    });
+    assert.equal(out.sources.typecheck, "config");
+  });
+
+  test("--run-dir uses the run's plan and frozen config, like milestone gates", () => {
+    built();
+    // A live config change after init does not reach the run.
+    writeConfig({ gates: { typecheck: "tsc -b", always: [] } });
+    const args = ["--milestone", "M2", "--project-dir", repo];
+    const r = cli(GATES, ["resolve", ...args, "--run-dir", runDir]);
+    assert.equal(r.code, 0, r.stderr);
+    assert.deepEqual(r.json(), ok("milestone", "gates", ...args));
+    assert.equal(r.json().commands.typecheck, "pnpm tsc --noEmit");
+    const live = cli(GATES, ["resolve", "--project-dir", repo]).json();
+    assert.equal(live.gates.typecheck, "tsc -b");
+  });
+
+  test("usage errors exit 2", () => {
+    assert.equal(cli(GATES, []).code, 2);
+    assert.equal(cli(GATES, ["frobnicate"]).code, 2);
+    assert.equal(cli(GATES, ["resolve", "--bogus", "x"]).code, 2);
+    assert.equal(cli(GATES, ["--help"]).code, 0);
+  });
+});
+
 describe("final-gates phase", () => {
   test("runs after the build, before the review, in the main session", () => {
     built();
@@ -375,7 +411,7 @@ describe("final-gates phase", () => {
     assert.equal(fix.round, 1);
     assert.equal(fix.role, "fixer");
     assert.equal(fix.step, "final-gates-fix-1");
-    assert.match(fix.commit_title, /^fix\(gates\)/);
+    assert.equal(fix.commit_title, "Fix gate failures: <what changed>");
     assert.equal(state().phase_status["final-gates"], "started");
     const again = ok("next");
     assert.equal(again.phase, "final-gates");
@@ -395,6 +431,16 @@ describe("final-gates phase", () => {
       decisions().map((d) => d.decision),
       ["Fix the final gates (round 1)"]
     );
+  });
+
+  test("the fixer commit title follows commit.style", () => {
+    writeFileSync(
+      join(home, "config.json"),
+      JSON.stringify({ version: 1, commit: { style: "conventional" } })
+    );
+    built();
+    const fix = ok("final-gates", "--result", "fail", "--reason", "lint fails");
+    assert.equal(fix.commit_title, "fix(gates): <what changed>");
   });
 
   test("a pass after the fixer round completes the phase", () => {

@@ -1,8 +1,7 @@
 ---
 name: esp-ralph
-description: Build a ralph loop prompt from a plan, a tracker document or a task, then launch the esp-ralph-loop workflow
+description: Build a ralph loop prompt from a plan, a tracker document or a task, then launch the esp-ralph-loop workflow. Use when asked to run a ralph loop.
 argument-hint: "[-y|--yes] [-s|--allow-subagents] [-P|--prompt <file>] [-m|--max-iterations <n>] [-a|--model <alias>] [-e|--effort <level>] [-d|--run-dir <path>] [source]"
-disable-model-invocation: true
 ---
 
 # ESP Ralph
@@ -42,7 +41,7 @@ Arguments: $ARGUMENTS
 
 - The prompt holds only what is specific to the task: the generic loop rules live in `esp-iterator.md`, and the iteration status comes from the workflow schema
 - Ask only for what the source and the repository leave open
-- The prompt lives in the run directory (`<run-dir>/prompt.md`), never in the repository
+- The prompt lives in the run directory (`<run-dir>/prompt.md`), outside the repository
 - The loop runs in the background. This session stays the user's channel to it: it records every correction in `notes.md` and reports the end
 - Run every script with Bash, with the literal `"${CLAUDE_PLUGIN_ROOT}/scripts/..."` path and long option names
 - Log each decision this session makes with `runs.mjs decision`, when it is made
@@ -65,7 +64,10 @@ If the command exits with code 1 (invalid config), report its error and stop. If
 
 ### Presets
 
-- **`plan`**: `node "${CLAUDE_PLUGIN_ROOT}/scripts/plan.mjs" parse <source>` exits `0`. The unit is one milestone. The tracker is the plan's `## Progress Tracking` checklist when it has one (a context section), otherwise `Done: M<n>` run notes; in-progress marks and milestone notes always go to the run notes, never into the plan, whose milestones allow no other `####` subsection (`plan.mjs parse` must keep passing). The pick rule is the first unchecked milestone whose Depends are checked, the verify commands are the milestone's Validation lines, and the completion is every box checked (plus the pull request, when the plan ends with one)
+- **`plan`**: `node "${CLAUDE_PLUGIN_ROOT}/scripts/plan.mjs" parse <source>` exits `0`. The unit is one milestone, picked as the first one not done whose Depends are done, and verified by its Validation lines
+  - **Tracker**: `Done: M<n>` run notes (esp-plan writes no checklist), with `Started: M<n>`, milestone notes and the pull request URL in the run notes too, so the plan stays unchanged and `plan.mjs parse` keeps passing
+  - **Variant**: a plan with its own `## Progress Tracking` checklist (a context section) marks done milestones by checking their boxes instead
+  - **Completion**: every milestone done (plus the pull request, when the plan ends with one)
 - **`tracker`**: any other readable document with a checklist (`plan.mjs tasks <source>` returns packages) or one status line per item (`Status:`, `Decision:`, `[ ]`). The units are its items, the tracker is the document itself, and the pick rule, filters and status vocabulary come from how the document marks its items
 - **`task`**: free text, or a path that holds neither. Write the task in a few sentences under Source and split it into a short numbered list of units under Unit. Progress goes to the run notes (`Started: <unit>`, `Done: <unit>`)
 
@@ -131,10 +133,10 @@ The review summary, five lines:
 **Prompt**: `~/.esp-skills/runs/2026-11-16-csv-export/prompt.md`
 
 - **Source**: `plan.md` (preset `plan`, 4 milestones, 1 done)
-- **Unit**: one milestone, the first unchecked one whose Depends are checked
-- **Tracker**: Progress Tracking checklist, Notes per milestone
+- **Unit**: one milestone, the first one not done whose Depends are done
+- **Tracker**: `Done: M<n>` run notes, notes per milestone in the run notes
 - **Verify**: each milestone's Validation lines, related tests only
-- **Finish**: `pnpm check`, then `esp-pr`; complete when every box is checked and the PR is open
+- **Finish**: `pnpm check`, then `esp-pr`; complete when every milestone is done and the PR is open
 ```
 
 The end report:

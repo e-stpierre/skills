@@ -383,9 +383,16 @@ export function readPlan(file) {
   return { path, ...parsePlan(readFileSync(path, "utf8"), { file: path }) };
 }
 
-/** Lint report for one plan file. */
-export function lintPlan(file) {
+/**
+ * Lint report for one plan file. With `maxMilestones`, a plan with more
+ * milestones than that gets a warning (esp-ship halts on its milestone budget).
+ */
+export function lintPlan(file, { maxMilestones } = {}) {
   const { path, plan, errors, warnings } = readPlan(file);
+  if (maxMilestones !== undefined && plan.milestones.length > maxMilestones)
+    warnings.push(
+      `plan has ${plan.milestones.length} milestones, more than the budget of ${maxMilestones}: combine milestones`
+    );
   return {
     file: path,
     valid: errors.length === 0,
@@ -1058,6 +1065,7 @@ const USAGE = `Usage: node plan.mjs <command> [args] [options]
 Commands:
   parse <file>            Print the plan as JSON (exit 1 with errors when it is invalid)
   lint <file>             Check the plan format; prints { valid, errors, warnings, milestones }
+                          (--max-milestones <n> warns when the plan has more)
   diff <previous> <next>  Compare two plan versions for an amendment; completed milestones
                           must be unchanged. Prints { changed, added, removed, affects, ... }
   tasks <file>            Parse a task list (checkbox progress list + package headings):
@@ -1071,6 +1079,7 @@ Commands:
 Options:
   --completed <M1,M2>     Completed milestone IDs (diff, batches)
   --max-parallel <n>      batches: most milestones per batch (default: no limit)
+  --max-milestones <n>    lint: warn when the plan has more milestones (default: no limit)
   --run-dir <path>        diff, batches: read completed milestones from <run-dir>/state.json;
                           import, synthesize: write <run-dir>/plan.md
   --out <file>            import, synthesize: write this file (default: print the plan)
@@ -1116,8 +1125,18 @@ export function run(argv) {
       return { output: plan };
     }
     case "lint": {
-      if (!args[0]) throw new PlanError("Usage: lint <file>", 2);
-      const report = lintPlan(args[0]);
+      if (!args[0])
+        throw new PlanError("Usage: lint <file> [--max-milestones <n>]", 2);
+      const maxMilestones = options["max-milestones"];
+      if (
+        maxMilestones !== undefined &&
+        !(Number.isInteger(Number(maxMilestones)) && Number(maxMilestones) >= 1)
+      )
+        throw new PlanError("--max-milestones must be an integer >= 1", 2);
+      const report = lintPlan(args[0], {
+        maxMilestones:
+          maxMilestones === undefined ? undefined : Number(maxMilestones)
+      });
       return { output: report, exitCode: report.valid ? 0 : 1 };
     }
     case "diff": {

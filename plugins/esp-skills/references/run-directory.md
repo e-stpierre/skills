@@ -56,3 +56,5 @@ Writers of `decisions.jsonl`, `notes.md` and `run.json` hold a lock file next to
 - `scripts/review.mjs --help`, `scripts/fix-review.mjs --help`, `scripts/wait-for-review.mjs --help`, `scripts/merge-ready.mjs --help`: the review, fix-review, wait and merge steps
 - `scripts/recap.mjs --help`: esp-recap run selection, digests, risk report and Q&A sources
 - `scripts/plan.mjs --help`: plan parsing, lint and amendment checks
+- `scripts/gates.mjs --help`: the gate commands of a project (configured or detected) and the checks of a scope, with or without a run
+- `scripts/config.mjs --help`: the config layers, and `--run-dir` for the frozen snapshot of a run

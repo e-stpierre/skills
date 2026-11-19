@@ -6,7 +6,8 @@
 //   2. User config: ~/.esp-skills/config.json (ESP_SKILLS_HOME overrides ~/.esp-skills)
 //   3. Project config: <repo>/.esp-skills/config.json
 //   4. A frozen snapshot (loadConfig({ snapshot }), esp-ship's config.snapshot.json):
-//      replaces layers 2 and 3 (defaults still fill missing keys)
+//      replaces layers 2 and 3 (defaults still fill missing keys). With
+//      --run-dir <path>, the snapshot of that run, when it has one
 // Skill arguments are applied by the calling skill, on top of the resolved value.
 //
 // Exit codes: 0 success, 1 invalid config or failed operation, 2 usage error.
@@ -116,8 +117,33 @@ export function findRepoRoot(start = process.cwd()) {
   }
 }
 
+/**
+ * The frozen config snapshot of a run directory, or null: the snapshot path
+ * recorded in state.json or ship.json, else config.snapshot.json when present.
+ */
+export function runSnapshot(runDir) {
+  if (!runDir) return null;
+  const dir = resolve(expandHome(String(runDir)));
+  if (!existsSync(dir) || !statSync(dir).isDirectory())
+    throw new ConfigError(`Run directory not found: ${dir}`);
+  for (const name of ["state.json", "ship.json"]) {
+    const path = join(dir, name);
+    if (!existsSync(path)) continue;
+    const recorded = readJson(path)?.config_snapshot;
+    if (typeof recorded === "string" && recorded !== "")
+      return resolve(dir, expandHome(recorded));
+  }
+  const frozen = join(dir, "config.snapshot.json");
+  return existsSync(frozen) ? frozen : null;
+}
+
 /** Resolve the file locations of every layer. */
-export function layerPaths({ projectDir, snapshot, env = process.env } = {}) {
+export function layerPaths({
+  projectDir,
+  snapshot,
+  runDir,
+  env = process.env
+} = {}) {
   const espHome = env.ESP_SKILLS_HOME
     ? resolve(env.ESP_SKILLS_HOME)
     : join(homedir(), ".esp-skills");
@@ -128,7 +154,7 @@ export function layerPaths({ projectDir, snapshot, env = process.env } = {}) {
     defaults: DEFAULTS_PATH,
     user: join(espHome, "config.json"),
     project: join(project, ".esp-skills", "config.json"),
-    snapshot: snapshot ? resolve(snapshot) : null
+    snapshot: snapshot ? resolve(snapshot) : runSnapshot(runDir)
   };
 }
 
@@ -311,9 +337,13 @@ Commands:
   set <key> <value>    Set a key in the user (or --project) file; value is JSON or a string
   unset <key>          Remove a key from the user (or --project) file
   validate [file]      Validate one file, or every layer and the merged result
+                       (--file <path> is the same as the positional file)
 
 Options:
   --project-dir <dir>       Project root (default: nearest git root, else cwd)
+  --run-dir <path>          get, show, sources, validate: use the frozen config snapshot of
+                            that run in place of the user and project layers, when it has one
+  --file <path>             validate: the file to validate
   --project                 Target the project file for init, set and unset
   --force                   Overwrite an existing file on init
   --help                    Show this help`;
@@ -330,6 +360,15 @@ export function parseArgs(argv) {
       options.projectDir = value;
     } else if (arg.startsWith("--project-dir=")) {
       options.projectDir = arg.slice("--project-dir=".length);
+    } else if (arg === "--run-dir" || arg === "--file") {
+      const value = argv[++i];
+      if (value === undefined)
+        throw new ConfigError(`${arg} requires a value`, 2);
+      options[arg === "--file" ? "file" : "runDir"] = value;
+    } else if (arg.startsWith("--run-dir=")) {
+      options.runDir = arg.slice("--run-dir=".length);
+    } else if (arg.startsWith("--file=")) {
+      options.file = arg.slice("--file=".length);
     } else if (arg === "--project") {
       options.project = true;
     } else if (arg === "--force") {
@@ -363,7 +402,7 @@ export function run(argv) {
     case "unset":
       return { output: cmdUnset(args[0], options) };
     case "validate":
-      return { output: cmdValidate(args[0], options) };
+      return { output: cmdValidate(options.file ?? args[0], options) };
     default:
       throw new ConfigError(`Unknown command: ${command}\n\n${USAGE}`, 2);
   }

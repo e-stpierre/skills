@@ -1,8 +1,7 @@
 ---
 name: esp-config
-description: Manage the esp-skills configuration: init, show, get, set, unset, validate, and list sources
-argument-hint: "<action> [-P|--project] [-f|--force] [-k|--key <key>] [value]"
-disable-model-invocation: true
+description: Manage the esp-skills configuration files. Use when asked to view, change, or validate esp-skills settings.
+argument-hint: "<action> [-P|--project] [-f|--force] [-k|--key <key>] [-F|--file <path>] [-d|--run-dir <path>] [value]"
 ---
 
 # ESP Config
@@ -21,11 +20,13 @@ Manage the esp-skills configuration through the plugin's `config.mjs` script: cr
   - `get` - Print one section or dotted key (e.g., `pr`, `pr.draft`, `defaults.models.reviewer`)
   - `set` - Set a key to a value in the user or project file
   - `unset` - Remove a key from the user or project file
-  - `validate` - Validate every layer, or one file when `--key` is a file path
+  - `validate` - Validate every layer and the merged result, or one file with `--file`
   - `sources` - List the config layers and which ones are in use
 - **`[-P|--project]`** (optional): Read from `-P` or `--project`. Target the project file (`<repo>/.esp-skills/config.json`) instead of the user file (`~/.esp-skills/config.json`) for `init`, `set`, and `unset`.
 - **`[-f|--force]`** (optional): Read from `-f` or `--force`. Overwrite an existing file on `init`.
-- **`[-k|--key <key>]`** (optional): Read from `-k` or `--key`. Section or dotted key; required for `get`, `set` and `unset`. For `validate`, a file path to validate instead of every layer.
+- **`[-k|--key <key>]`** (optional): Read from `-k` or `--key`. Section or dotted key; required for `get`, `set` and `unset`.
+- **`[-F|--file <path>]`** (optional): Read from `-F` or `--file`. For `validate`, the config file to validate instead of every layer. Ignored by the other actions.
+- **`[-d|--run-dir <path>]`** (optional): Read from `-d` or `--run-dir`. For `show`, `get`, `sources` and `validate`, resolve the config of that run: its frozen snapshot (see Layers) in place of the user and project layers, or the normal layers when the run has none. Never changes what `init`, `set` and `unset` write.
 - **`[value]`** (optional): The trailing free text, the value for `set`. Parsed as JSON when valid (`true`, `3`, `null`, `["a"]`), otherwise used as a plain string.
 
 ### Values
@@ -34,10 +35,9 @@ Arguments: $ARGUMENTS
 
 ## Core Principles
 
-- Every read and write goes through `config.mjs`, which validates each write before saving it; config files are never edited by hand in this skill
+- Every read and write goes through `config.mjs`, which validates each write before saving it
 - Config files hold no secrets (tokens, passwords, API keys)
 - A failed `set` leaves the file unchanged; report the script's error verbatim, it names the key path and the expected type
-- Only `init`, `set`, and `unset` write files; every other action is read-only
 
 ## Skill-Specific Guidelines
 
@@ -48,7 +48,7 @@ The script merges these layers, lowest to highest precedence:
 1. Built-in defaults: `${CLAUDE_PLUGIN_ROOT}/references/config-defaults.json`
 2. User config: `~/.esp-skills/config.json` (the `ESP_SKILLS_HOME` environment variable overrides `~/.esp-skills`)
 3. Project config: `<repo>/.esp-skills/config.json`, where `<repo>` is the nearest git root
-4. Frozen snapshot (esp-ship only): esp-ship freezes the merged config in its run directory on the first call (`config.snapshot.json`, recorded in `ship.json`), so a resumed run keeps the config it started with. The snapshot replaces the user and project layers for that run; defaults still fill missing keys
+4. Frozen snapshot (esp-ship runs): esp-ship freezes the merged config in its run directory on the first call (`config.snapshot.json`, recorded in `ship.json`), so a resumed run keeps the config it started with. `config.mjs --run-dir <path>` reads it: the snapshot replaces the user and project layers, and defaults still fill missing keys. The phase skills esp-ship runs (esp-plan, esp-review, esp-fix-review, esp-pr, esp-merge) pass their `--run-dir` to `config.mjs get`, and the run's scripts (`merge-ready.mjs`, `fix-review.mjs`, `wait-for-review.mjs`, `gates.mjs`) read it from their own `--run-dir`, so the whole run uses the frozen config. A `set` during a run changes only later runs
 
 Skill arguments override the resolved values in the skill that receives them. Objects merge key by key; arrays and scalar values replace the lower layer.
 
@@ -58,16 +58,16 @@ Files are validated against `${CLAUDE_PLUGIN_ROOT}/references/config.schema.json
 
 ## Instructions
 
-1. Parse the arguments into the action, the flags, the key and the value. If the action is missing or unknown, list the valid actions and stop. If `get`, `set` or `unset` has no `-k|--key`, or `set` has no value, report the missing argument and stop. Done when the action and every value it needs are known.
+1. Parse the arguments into the action, the flags, the key, the file, the run directory and the value. If the action is missing or unknown, list the valid actions and stop. If `get`, `set` or `unset` has no `-k|--key`, or `set` has no value, report the missing argument and stop. `--file` on another action than `validate` is ignored. Done when the action and every value it needs are known.
 2. Build the command; the script takes the key and the value as positionals:
 
    ```bash
-   node "${CLAUDE_PLUGIN_ROOT}/scripts/config.mjs" <action> [key] [value] [--project] [--force]
+   node "${CLAUDE_PLUGIN_ROOT}/scripts/config.mjs" <action> [key] [value] [--project] [--force] [--file <path>] [--run-dir <path>]
    ```
 
-   - Pass `-P|--project` as `--project` and `-f|--force` as `--force`; the script takes long names only
+   - Pass `-P|--project` as `--project`, `-f|--force` as `--force`, `-F|--file` as `--file` and `-d|--run-dir` as `--run-dir`; the script takes long names only
    - Quote the value so the shell passes it as one argument (e.g., `'["squash","merge"]'`)
-   - For `validate` with a file path, pass the path in the key position
+   - For `get` and `show`, also run `sources` with the same `--run-dir`, for the provenance line of the report
 
 3. Run the command from the current working directory so the project layer resolves to the current repository.
 4. Read the exit code:
@@ -80,10 +80,10 @@ Files are validated against `${CLAUDE_PLUGIN_ROOT}/references/config.schema.json
 
 Keep the output short.
 
-**On `get` or `show`:**
+**On `get` or `show`:** the script prints only the JSON value. Build the first line yourself from `sources`: the key (or `config` for `show`) and the layers marked `used`, in order. It names the layers in use, not which layer set each key.
 
 ````text
-pr (merged from defaults, user)
+pr (layers in use: defaults, user)
 
 ```json
 { "base": null, "draft": true, "attribution": true }

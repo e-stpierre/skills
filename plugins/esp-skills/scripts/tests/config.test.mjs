@@ -20,6 +20,7 @@ import {
   getValue,
   loadConfig,
   parseValue,
+  runSnapshot,
   setValue
 } from "../config.mjs";
 import { validate } from "../lib/json-schema.mjs";
@@ -94,7 +95,6 @@ describe("schema and defaults", () => {
     assert.equal(ship.internal_review_rounds, 2);
     assert.equal(ship.worktree, false);
     assert.equal(ship.dirty_tree, "worktree");
-    assert.equal(ship.pr_draft_until_reviewed, true);
     assert.equal(ship.halt_on.length, 5);
     assert.deepEqual(ship.inline, { max_files_changed: 10, escalate: true });
     assert.deepEqual(ship.budgets, {
@@ -359,6 +359,60 @@ describe("cli get and show", () => {
   });
 });
 
+describe("run directory snapshot", () => {
+  const live = () => {
+    writeJson(join(home, "config.json"), { pr: { draft: true } });
+    writeJson(join(project, ".esp-skills", "config.json"), {
+      pr: { base: "trunk" }
+    });
+  };
+
+  test("--run-dir uses the run's config.snapshot.json in place of the user and project layers", () => {
+    live();
+    const runDir = join(root, "run");
+    writeJson(join(runDir, "config.snapshot.json"), {
+      pr: { base: "release" }
+    });
+    const pr = cli("get", "pr", "--run-dir", runDir);
+    assert.equal(pr.code, 0, pr.stderr);
+    assert.equal(pr.json().base, "release");
+    assert.equal(pr.json().draft, false);
+    const shown = cli("show", "--run-dir", runDir);
+    assert.equal(shown.json().pr.base, "release");
+    const sources = cli("sources", "--run-dir", runDir).json();
+    assert.deepEqual(
+      sources.filter((l) => l.used).map((l) => l.layer),
+      ["defaults", "snapshot"]
+    );
+  });
+
+  test("--run-dir prefers the snapshot path recorded in ship.json", () => {
+    const runDir = join(root, "run");
+    const recorded = join(root, "elsewhere", "frozen.json");
+    writeJson(recorded, { pr: { base: "recorded" } });
+    writeJson(join(runDir, "config.snapshot.json"), { pr: { base: "file" } });
+    writeJson(join(runDir, "ship.json"), { config_snapshot: recorded });
+    assert.equal(runSnapshot(runDir), recorded);
+    assert.equal(cli("get", "pr", "--run-dir", runDir).json().base, "recorded");
+  });
+
+  test("--run-dir without a snapshot falls back to the live layers", () => {
+    live();
+    const runDir = join(root, "run");
+    mkdirSync(runDir, { recursive: true });
+    assert.equal(runSnapshot(runDir), null);
+    const pr = cli("get", "pr", "--run-dir", runDir).json();
+    assert.equal(pr.base, "trunk");
+    assert.equal(pr.draft, true);
+  });
+
+  test("--run-dir of a missing directory fails", () => {
+    const result = cli("get", "pr", "--run-dir", join(root, "none"));
+    assert.equal(result.code, 1);
+    assert.match(result.stderr, /Run directory not found/);
+  });
+});
+
 describe("invalid config", () => {
   test("a wrong type fails with the key path, expected type and source", () => {
     writeJson(join(home, "config.json"), { pr: { draft: "yes" } });
@@ -478,6 +532,18 @@ describe("cli init, set, unset, validate", () => {
     assert.match(bad.stderr, /merge\.method/);
     writeJson(file, { merge: { method: "squash" } });
     assert.equal(cli("validate", file).code, 0);
+  });
+
+  test("validate --file checks the named file", () => {
+    const file = join(root, "candidate.json");
+    writeJson(file, { merge: { method: "fast-forward" } });
+    const bad = cli("validate", "--file", file);
+    assert.equal(bad.code, 1);
+    assert.match(bad.stderr, /merge.method/);
+    writeJson(file, { merge: { method: "squash" } });
+    const good = cli("validate", "--file", file);
+    assert.equal(good.code, 0, good.stderr);
+    assert.deepEqual(good.json().files, [file]);
   });
 
   test("validate reports a missing file", () => {

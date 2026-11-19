@@ -10,7 +10,7 @@ Resolve them once per run:
 node "${CLAUDE_PLUGIN_ROOT}/scripts/ship.mjs" milestone gates --run-dir <run-dir> --project-dir <repo-root>
 ```
 
-It prints `{ gates, sources, scope, commands, fallback, reason }`. Each gate comes from `ship.gates.<name>` (`source: config`). Without a configured command, it comes from the project files (`source: detected`): the `package.json` scripts with the package manager of the lockfile, `pyproject.toml`, `Cargo.toml`, `go.mod` or a `Makefile`. With neither, the gate has no command (`source: none`) and is skipped. With `--run-dir`, it reads the frozen config and the plan of the run.
+It prints `{ gates, sources, scope, commands, fallback, reason }`. Each gate comes from `ship.gates.<name>` (`source: config`). Without a configured command, it comes from the project files (`source: detected`): the `package.json` scripts with the package manager of the lockfile, `pyproject.toml`, `Cargo.toml`, `go.mod` or a `Makefile`. With neither, the gate has no command (`source: none`) and is skipped. With `--run-dir`, it reads the frozen config and the plan of the run. `scripts/gates.mjs resolve` takes the same options and prints the same result; the phase skills (esp-fix-review, esp-merge) use it, since they also run outside esp-ship.
 
 ## Scoped Checks
 
@@ -29,7 +29,7 @@ The `final-gates` phase of the orchestrated track runs after `build` and before 
 2. Run every command of `commands`.
 3. Record the run with `ship.mjs final-gates --result pass|fail --gates '{"test":"pass","lint":"fail"}' [--reason "<gate>: <first error>"]` and act on `action`:
    - **`continue`**: every gate passes. The phase is done; go on with `ship.mjs next`
-   - **`fix`**: spawn one `esp-skills:esp-builder` as the `fixer` role (`role`, `model` and `effort` from the output), with the failing gates and their output, step `final-gates-fix-<round>`, and the commit title `fix(gates): <what changed>`. Then run `ship.mjs next`: it returns `final-gates` again, so the full gates run once more
+   - **`fix`**: spawn one `esp-skills:esp-builder` as the `fixer` role (`role`, `model` and `effort` from the output), with the failing gates and their output, step `final-gates-fix-<round>`, and the commit title `commit_title` from the output, per `commit.style` (`plain`: `Fix gate failures: <what changed>`, `conventional`: `fix(gates): <what changed>`). Then run `ship.mjs next`: it returns `final-gates` again, so the full gates run once more
    - **`halt`**: the gates still fail after the fixer round. Run `ship.mjs halt --key gates-exhausted --reason "<reason>"`
    - **`continue-failing`**: `gates-exhausted` is not in `ship.halt_on`. The phase is recorded `failed` with a decision, and the run goes on
 
@@ -38,6 +38,6 @@ The `final-gates` phase of the orchestrated track runs after `build` and before 
 - **Inline track**: this session runs the checks that cover the change while it implements, then the full gates once before the one commit (see inline.md)
 - **Builders and verifiers**: the scoped checks of their milestone, never the full suite unless their gate commands are the full gates (see milestones.md)
 - **After a parallel batch**: the combined checks of the integrated milestones (`milestone gates --files <a,b>`) run once in the main tree, then the full gates in `final-gates` (see milestones.md)
-- **Review fixes** (internal and pull request rounds): the fixer runs the scoped checks of the files it touches (`milestone gates --files <a,b>`) while it fixes, then the full gates once before its commit (internal rounds, which come after `final-gates`) or before its push (pull request rounds). Pass both command sets in its spawn prompt
+- **Review fixes** (internal and pull request rounds): the fixer runs the scoped checks of the files it touches (`gates.mjs resolve --run-dir <run-dir> --files <a,b>`, the same as `milestone gates --files`) while it fixes, then the full gates once before its commit (internal rounds, which come after `final-gates`) or before its push (pull request rounds)
 
 Make a gate pass by fixing the code, with the gate command unchanged: never disable, skip or weaken a gate. Report a failure that is pre-existing and unrelated to the change as a blocker, and leave its cause untouched.

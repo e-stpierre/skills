@@ -7,14 +7,14 @@ The inline track runs in this session: no subagent, no plan file, exactly one im
 Before each inline phase:
 
 - `ship.mjs budget`: `action: halt` runs `ship.mjs halt --key budget`
-- Operator messages (see SKILL.md). A message that widens the task is a `design` escalation
+- Operator messages (see User Messages in SKILL.md)
 
 ## Context
 
 1. `phase context --status started`.
 2. Read the request (`gh issue view` for an issue, the file for a path), `AGENTS.md` or `CLAUDE.md`, and the code the change touches.
 3. Decide the approach and list every file to change, tests included. Run `ship.mjs scope --estimate <n>`. On `action: escalate`, escalate (`files`). A design decision escalates too (`design`, see Escalation). Small choices are B-Decide: apply the recommended option and log it.
-4. In `plan` or `all` mode, show the approach and the files, and continue on approval.
+4. In `plan` or `all` mode, run the approach checkpoint (see Interactive Checkpoints in SKILL.md), and continue on approval.
 5. `phase context --status done --summary "<1-2 sentences: what changes and why>"`.
 
 ## Implement
@@ -35,7 +35,7 @@ Escalate (when `ship.inline.escalate` is on) on one of these triggers:
 
 To escalate:
 
-1. In `plan` or `all` mode, standalone and not headless: ask first, with "switch to the orchestrated track" recommended and "continue inline" as the alternative (for `design`, offer the design options too). Log the answer with `runs.mjs decision` (`source: operator`). On "continue", go on, and treat the same trigger as answered for the rest of the task.
+1. In `plan` or `all` mode: ask first, with "switch to the orchestrated track" recommended and "continue inline" as the alternative (for `design`, offer the design options too). Log the answer with `runs.mjs decision` (`source: operator`). On "continue", go on, and treat the same trigger as answered for the rest of the task.
 2. **Switch the track**: `ship.mjs switch-track --to orchestrated --trigger <t> --reason <text>`. The branch and the uncommitted work stay where they are, and the shared phases keep their progress. Then go back to the loop: `next` returns the plan phase, and the planner gets the reason as context.
 
 With `ship.inline.escalate` off: over the file limit, log a low-risk decision and continue (`action: continue-over-limit`). A design decision follows the decision policy (B-Decide applies the recommendation, B-Scope halts with `scope-change` when it is in `ship.halt_on`). A second gate failure halts with `gates-exhausted`.

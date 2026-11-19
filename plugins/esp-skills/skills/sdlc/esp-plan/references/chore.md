@@ -11,7 +11,7 @@ Scope is the chore's main risk: list what is excluded in `## Out of Scope`, incl
 
 ## Requirements Questions
 
-Settle these from the context and the exploration; when one stays open, follow Asking and Deciding in the skill:
+Settle each one while gathering requirements:
 
 - The chore title and what needs to be done
 - What is in scope and out of scope
@@ -23,7 +23,3 @@ Settle these from the context and the exploration; when one stays open, follow A
 - **Refactoring**: code organization, consistent patterns, duplication, naming
 - **Cleanup**: dead code, unused files, imports, deprecated features
 - **Configuration**: build configs, CI/CD settings, environment settings, tooling
-
-## Task Organization
-
-Order tasks by dependency, and keep each one inside the defined scope and verifiable when complete.

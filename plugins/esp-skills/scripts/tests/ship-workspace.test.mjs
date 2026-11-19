@@ -148,6 +148,12 @@ describe("decideWorkspace", () => {
     assert.equal(d.workspace, "existing-branch");
     assert.equal(d.action, "use");
     assert.equal(d.branch, "feature/x");
+    assert.equal(d.from_current, true);
+    const fresh = decideWorkspace(facts({ current: "feature/x" }), {
+      newBranch: true
+    });
+    assert.equal(fresh.action, "name-branch");
+    assert.match(fresh.reason, /--new-branch/);
   });
 
   test("an unknown base never uses the current branch as is", () => {
@@ -284,7 +290,24 @@ describe("ship.mjs workspace", () => {
     assert.equal(out.kind, "existing-branch");
     assert.equal(out.action, "use");
     assert.equal(out.branch, "feature/current");
+    assert.equal(out.from_current, true);
     assert.equal(state().base_sha, git("rev-parse", "main"));
+  });
+
+  test("--new-branch replaces a reused current branch with a new one", () => {
+    git("switch", "-qc", "feature/current");
+    commit("b.txt", "b\n", "work");
+    init();
+    assert.equal(workspace().branch, "feature/current");
+    const named = workspace("--new-branch");
+    assert.equal(named.action, "name-branch");
+    assert.equal(state().branch, null);
+    const out = workspace("--branch", "feature/other");
+    assert.equal(out.action, "create");
+    assert.equal(git("branch", "--show-current"), "feature/other");
+    assert.equal(out.base_sha, git("rev-parse", "origin/main"));
+    // Once a branch was created, --new-branch changes nothing.
+    assert.equal(workspace("--new-branch").branch, "feature/other");
   });
 
   test("dirty tree goes to a task worktree and keeps the changes", () => {

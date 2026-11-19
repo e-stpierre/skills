@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.11.0
+
+- **Breaking removals**:
+  - `ship.pr_draft_until_reviewed`: esp-ship opens the pull request draft or ready from the start, with the new `-D|--draft` (else `pr.draft`, default `false`). A draft run stops before the merge with `awaiting-human`
+  - `commit.review_fixes` and the `fixup` mode: review fixes are always normal commits
+- esp-ship: `--run-dir` without context ships the plan of a run started by esp-plan; `--model`, `--parallel` and `--draft` are kept on `--resume`; an open pull request on the current branch is checked before building on it, and `ship.mjs workspace --new-branch` names a new branch instead; `-i all` adds a checkpoint before each pull request fix round; branch names follow the slug rules of esp-branch; review, CI and gate fix titles follow `commit.style` (`Fix review findings:`, `Fix CI:`, `Fix gate failures:`, or `fix(review)`, `fix(ci)`, `fix(gates)`)
+- The frozen config snapshot of an esp-ship run is honored by its phase skills: `config.mjs get|show|sources|validate --run-dir <path>` reads the snapshot in place of the user and project layers, esp-plan, esp-review, esp-fix-review, esp-pr and esp-merge pass their `--run-dir` to it, and `merge-ready.mjs`, `fix-review.mjs` and `wait-for-review.mjs` read it from their own `--run-dir`
+- Added `scripts/gates.mjs resolve`: the gate commands (configured `ship.gates.*`, else detected) and the checks of a scope, as `ship.mjs milestone gates` prints them, without a ship run. esp-merge (gates after a rebase) and esp-fix-review (checks of the fixed files) use it
+- esp-fix-review writes its commit messages in `defaults.language`
+- esp-review, esp-fix-review and esp-merge document `-i plan` as `off`
+- esp-merge: `merge.delete_branch` also deletes the merged local branch (except one checked out in another worktree); new `merge.poll_seconds` (default `30`) for `merge-ready.mjs check --wait`
+- esp-branch normalizes the slug, validates the name and stops when the branch already exists
+- esp-commit refuses to commit on the default branch unless asked, and on a detached HEAD
+- esp-pr updates an existing open pull request on the branch instead of opening a duplicate, applies the title rules of `commit.style`, and fixes the attribution URL
+- esp-plan plans within `ship.budgets.orchestrated.max_milestones`, makes feature milestones verifiable, and prints `Next:` only for its own run; `plan.mjs lint --max-milestones <n>` warns on a larger plan
+- esp-config: `-F|--file <path>` validates one file (replacing a file path in `--key`), `-d|--run-dir <path>` reads a run's frozen config, and the `get`/`show` report builds its layer line from `sources`
+
 ## 0.10.0
 
 - **Breaking, standalone plugin**: esp-skills no longer depends on an external harness. Long work runs on native Claude Code features (saved workflows, background sessions, Monitor, Remote Control). Resuming a run created before 0.10.0 is not supported

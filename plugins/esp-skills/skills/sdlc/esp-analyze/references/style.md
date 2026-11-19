@@ -6,22 +6,28 @@ Look for normalization gaps, since the codebase should have one way of doing eac
 
 **Naming:**
 
-- Inconsistent naming conventions
-- Mixed camelCase/snake_case
+- Mixed conventions for the same kind of name:
+  - **Functions**: `getUserData` vs `get_user_data` vs `GetUserData`
+  - **Variables**: `isLoading` vs `loading` vs `is_loading`
+  - **Constants**: `MAX_RETRIES` vs `maxRetries` vs `MaxRetries`
+  - **Components**: `UserCard` vs `userCard` vs `User_Card`
+  - **Files**: `UserCard.tsx` vs `user-card.tsx` vs `userCard.tsx`
 - Inconsistent abbreviations
 
 **Patterns:**
 
-- Different ways of handling the same thing
-- Inconsistent error handling patterns
-- Mixed async patterns (callbacks vs promises vs async/await)
+- Different ways of handling the same thing:
+  - **Error handling**: try/catch vs .catch() vs error boundaries
+  - **Async**: async/await vs .then() vs callbacks
+  - **State updates**: setState vs reducer vs signals
+  - **Props**: destructuring vs props.x
+  - **Exports**: named vs default vs barrel files
 - Inconsistent component patterns
 
 **Structure:**
 
 - Inconsistent file organization
 - Mixed import styles
-- Inconsistent export patterns
 
 **Formatting:**
 
@@ -31,29 +37,10 @@ Look for normalization gaps, since the codebase should have one way of doing eac
 
 ## Core Principles
 
-- Respect existing patterns - work with the codebase, not against it
 - Majority pattern wins - align outliers to dominant pattern
 - Automated tools first - focus on what automation misses (ESLint/Prettier handle formatting)
 - Some inconsistency is acceptable for legacy code or external dependencies
 - Flag only deviations from a pattern the codebase already establishes, never a personal preference
-
-## What to Check
-
-### Naming Conventions
-
-- **Functions**: `getUserData` vs `get_user_data` vs `GetUserData`
-- **Variables**: `isLoading` vs `loading` vs `is_loading`
-- **Constants**: `MAX_RETRIES` vs `maxRetries` vs `MaxRetries`
-- **Components**: `UserCard` vs `userCard` vs `User_Card`
-- **Files**: `UserCard.tsx` vs `user-card.tsx` vs `userCard.tsx`
-
-### Patterns
-
-- **Error handling**: try/catch vs .catch() vs error boundaries
-- **Async**: async/await vs .then() vs callbacks
-- **State updates**: setState vs reducer vs signals
-- **Props**: destructuring vs props.x
-- **Exports**: named vs default vs barrel files
 
 ## Severity Guidelines
 
@@ -92,7 +79,7 @@ Instructions:
 <!--
 Instructions:
 - Replace {{critical_count}}, {{high_count}}, {{medium_count}}, {{low_count}} with actual counts
-- If count is 0, you can say "0 issues" or omit the category
+- Write "0 issues" for an empty severity
 -->
 
 ## Project Standards

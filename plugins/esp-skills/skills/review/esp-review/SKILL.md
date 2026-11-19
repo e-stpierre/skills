@@ -23,7 +23,7 @@ Read each option by its short or its long name (`-t main`, `--target main` or `-
   - `<ref>` (`main`, `origin/main`): commits on HEAD that are not on `<ref>`, from the merge base
   - `<base>..<head>` or `<base>...<head>`: an explicit range
   - `PR <number>`, `#<number>`, or a pull request URL: a GitHub pull request, through `gh`
-- **`[-i|--interactive <mode>]`** (optional): `off`, `plan` or `all`. Only `all` stops after the review to settle B-Decide and B-Scope findings with the user. Defaults to `defaults.interactive` (`off`). Headless sessions always use `off`.
+- **`[-i|--interactive <mode>]`** (optional): `off`, `plan` or `all`. Only `all` stops after the review to settle B-Decide and B-Scope findings with the user; `plan` behaves like `off` in this skill. Defaults to `defaults.interactive` (`off`). Headless sessions always use `off`.
 - **`[-s|--second-opinion <tool>]`** (optional): `none` or `codex`. `codex` also runs a read-only Codex review of the same target, whose findings the reviewer verifies with its own. Defaults to `review.second_opinion` (`none`).
 - **`[-d|--run-dir <path>]`** (optional): Run directory owned by a parent skill (esp-ship). The diff, the review and the findings are saved there, and the outcome is recorded as step `review-<N>` in `ship.json`. Without it, the skill writes them to a temporary directory and creates no run.
 
@@ -35,13 +35,12 @@ Arguments: $ARGUMENTS
 
 - For the reviewer's method, finding format and severity scale, see [esp-reviewer.md](../../../agents/esp-reviewer.md): read it in step 7 when the reviewer runs inline
 - For `codex.mjs` and Codex failures, see [esp-codex](../../runtime/esp-codex/SKILL.md): read it when the Codex second opinion fails with an unknown cause
-- For the finding classes, see [decision-policy.md](../../../references/decision-policy.md): read it before classifying findings or for a discovered item
+- For the finding classes and the reply format (Replies), see [decision-policy.md](../../../references/decision-policy.md): read it before the interactive review or the report
 - For the reviewer model and effort, see [model-selection.md](../../../references/model-selection.md): read it when `defaults.models.reviewer` is not set
 
 ## Core Principles
 
-- Review only the diff. Pre-existing issues outside the changed lines are not findings; a serious one becomes a discovered item (see decision-policy.md)
-- High signal only: the review holds verified findings and rejected candidates, nothing else
+- The reviewer owns the review: `esp-reviewer.md` defines the method, the scope (only the diff), the finding format and the severity scale. This skill resolves the diff, runs the reviewer, and parses its reply
 - Read-only and routes nothing: the skill writes only into the run or temporary directory, and the caller decides where the review goes (terminal, PR comment, file, CI log)
 - Run every script with Bash, with the literal `"${CLAUDE_PLUGIN_ROOT}/scripts/..."` path. Counts, the findings file and the outcome always come from `review.mjs`, never from a hand count
 
@@ -55,6 +54,8 @@ Read the `review` section and the shared defaults once at the start:
 node "${CLAUDE_PLUGIN_ROOT}/scripts/config.mjs" get review
 node "${CLAUDE_PLUGIN_ROOT}/scripts/config.mjs" get defaults
 ```
+
+With `--run-dir`, add `--run-dir <path>` to each `config.mjs get`: it reads the run's frozen config snapshot (an esp-ship run) in place of the user and project layers, and the live config when the run has none.
 
 With the Codex second opinion on, also read `config.mjs get codex`.
 
@@ -93,7 +94,7 @@ Build one self-contained prompt for the reviewer:
 - The convention files to honor: `AGENTS.md` and `CLAUDE.md` at the repo root and in every ancestor directory of a changed file
 - With a `done` Codex result: `codex_path` as the reviewer's **Second opinion** input (see Codex Second Opinion)
 
-Then run it in a fresh context. The choice depends only on the runtime, never on the size of the diff: a small diff still goes to the subagent, because the fresh context keeps the review from being anchored on this session. The review itself needs only file reading and search, so the inline branch works on any runtime.
+Then run it in a fresh context. The choice depends only on the runtime, never on the size of the diff: a small diff still goes to the subagent, because the fresh context keeps the review from being anchored on this session.
 
 - **Subagent available** (the session has a subagent tool and is not itself a subagent): spawn `esp-skills:esp-reviewer` in the foreground with the `model` and `effort` from `defaults.models.reviewer`, and wait for its reply before the next step. With `--run-dir`, record the model with `runs.mjs update --model reviewer=<alias>[:<effort>]` before spawning.
 - **Otherwise** (a runtime without subagents, or already inside a subagent): read `agents/esp-reviewer.md` in the plugin root and follow its Methodology and Output Guidance in this session, read-only.
@@ -106,7 +107,7 @@ On with `--second-opinion codex` or `review.second_opinion: codex`. Codex runs b
 
 - **Paths**: next to `review_path`, `codex_out` is `review-<N>.codex.md` and `codex_path` is `review-<N>.codex.json`. `codex.mjs` writes the diff it reviewed and its schema beside `codex_out`, and its final result into `codex_path`
 - **Run**: start `codex.mjs review` detached on the same `--target` and wait for it (see Scripts). It always runs read-only, with the esp-review finding schema
-- **Verify**: when the status is `done`, pass `codex_path` to the reviewer as its Second opinion. `esp-reviewer.md` owns the method: each Codex finding is a candidate verified like its own, a disproved one is rejected with `(codex)`, and a kept one that only Codex found ends with `- Source: codex`
+- **Verify**: when the status is `done`, pass `codex_path` to the reviewer as its Second opinion. `esp-reviewer.md` owns how its candidates are verified and marked
 - **Merge**: pass `--codex <codex_path>` to every `review.mjs parse`, which removes the duplicates the reviewer kept and reports the pass
 - **Failure**: when Codex ends `failed` (not installed, login, model, timeout), the review continues Claude-only. With `--run-dir`, log it with `runs.mjs decision` (`phase: review`, `source: agent`, `risk: low`, the decision `Continued with a Claude-only review`, the Codex summary as the rationale, `codex_path` in `refs`). The outcome summary then ends with `Codex second opinion failed (...): Claude-only review.`. Suggest `codex.mjs doctor` in the reply
 

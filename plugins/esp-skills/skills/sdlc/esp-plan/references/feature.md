@@ -12,7 +12,7 @@ Put feature-level validation in the acceptance criteria of the last milestone th
 
 ## Requirements Questions
 
-Settle these from the context and the exploration; when one stays open, follow Asking and Deciding in the skill:
+Settle each one while gathering requirements:
 
 - The feature title and overview
 - Functional requirements (what it should do)
@@ -23,21 +23,22 @@ Settle these from the context and the exploration; when one stays open, follow A
 
 ## Architecture Considerations
 
-- Follow the existing patterns of the codebase and reuse its components
+- Reuse the codebase's existing components
 - Define data models and API shapes at the integration points
 - Design for the stated requirements, with extensibility only where they call for it
 
 ## Milestone Design
 
 - Each milestone delivers visible progress and is testable on its own
-- Order by dependency (foundational first)
 - Typically 2-5 milestones per feature
 - Write tasks as specific, actionable steps with the file paths they change, and put the tests beside the implementation they cover
+
+- Give every milestone objective acceptance criteria the verifier can confirm; a milestone whose outcome cannot be checked is folded into another one
+- Put documentation in the milestone whose behavior it describes, not in a separate documentation milestone
+- Plan polish or optimization only as concrete, verifiable changes (a named fix, a measured target), never as an open-ended milestone
 
 Common milestone patterns:
 
 1. Core infrastructure and data models
 2. Basic functionality (happy path)
 3. Edge cases and error handling
-4. Polish and optimization
-5. Documentation and cleanup
