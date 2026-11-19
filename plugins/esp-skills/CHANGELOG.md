@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.11.0
 
 - **Breaking removals**:
   - `ship.pr_draft_until_reviewed`: esp-ship opens the pull request draft or ready from the start, with the new `-D|--draft` (else `pr.draft`, default `false`). A draft run stops before the merge with `awaiting-human`
