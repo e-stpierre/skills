@@ -16,7 +16,7 @@ export const BODY_SECTIONS = [
   "follow-ups"
 ];
 export const ATTRIBUTION =
-  "\u{1F916} Generated with [Claude Code](https://claude.com/product/claude-code)";
+  "\u{1F916} Generated with [Claude Code](https://claude.com/claude-code)";
 const RISK_RANK = { high: 0, medium: 1, low: 2 };
 const SKIPPED_DECISION_PHASES = new Set(["fix-review", "merge"]);
 

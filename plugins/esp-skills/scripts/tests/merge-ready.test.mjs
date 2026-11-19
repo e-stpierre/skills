@@ -24,7 +24,8 @@ import {
   report,
   resolveMethod,
   run,
-  waitForChecks
+  waitForChecks,
+  waitSettings
 } from "../merge-ready.mjs";
 import { appendDecision, checkFile } from "../runs.mjs";
 
@@ -692,6 +693,25 @@ describe("check", () => {
     });
     assert.equal(out.outcome, "ready");
     assert.equal(out.polls, 2);
+  });
+
+  test("--wait reads merge.poll_seconds unless --poll-seconds is given", () => {
+    assert.deepEqual(waitSettings({}, {}), {
+      timeoutMinutes: 30,
+      pollSeconds: 30
+    });
+    assert.deepEqual(
+      waitSettings({}, { poll_seconds: 5, checks_timeout_minutes: 10 }),
+      { timeoutMinutes: 10, pollSeconds: 5 }
+    );
+    assert.equal(
+      waitSettings({ "poll-seconds": "2" }, { poll_seconds: 5 }).pollSeconds,
+      2
+    );
+    assert.throws(
+      () => waitSettings({ "poll-seconds": "0" }, {}),
+      /--poll-seconds must be a number >= 1/
+    );
   });
 
   test("--wait times out while checks stay pending", async () => {

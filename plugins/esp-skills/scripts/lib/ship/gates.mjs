@@ -6,12 +6,18 @@
 
 import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { expandHome, loadConfig } from "../../config.mjs";
+import {
+  ConfigError,
+  expandHome,
+  loadConfig,
+  runSnapshot
+} from "../../config.mjs";
 import { readPlan } from "../../plan.mjs";
 import { appendDecision, now } from "../../runs.mjs";
 import {
   configOf,
   parseJsonOption,
+  readJson,
   readState,
   runDirOf,
   ShipError,
@@ -292,6 +298,53 @@ export function gatesFor({
   };
 }
 
+/** The plan recorded by a run: state.json (milestone loop), else ship.json. */
+function recordedPlanPath(dir) {
+  for (const name of ["state.json", "ship.json"]) {
+    const path = join(dir, name);
+    const plan = existsSync(path) ? readJson(path)?.plan_path : null;
+    if (plan) return plan;
+  }
+  return null;
+}
+
+/**
+ * Gate commands from CLI options, shared by `ship.mjs milestone gates` and
+ * `gates.mjs resolve`: --project-dir, --scope, --milestone or --files, and
+ * --plan. With --run-dir, the run's frozen config snapshot and its recorded
+ * plan (an explicit --plan still wins).
+ */
+export function gatesForOptions(options) {
+  let snapshot;
+  let planPath = stringOption(options.plan);
+  planPath = planPath ? resolve(expandHome(planPath)) : null;
+  if (options["run-dir"]) {
+    const dir = runDirOf(options);
+    try {
+      snapshot = runSnapshot(dir) ?? undefined;
+    } catch (err) {
+      if (err instanceof ConfigError)
+        throw new ShipError(err.message, err.exitCode ?? 1);
+      throw err;
+    }
+    planPath ??= recordedPlanPath(dir);
+  }
+  try {
+    return gatesFor({
+      projectDir: options["project-dir"],
+      snapshot,
+      scope: options.scope,
+      milestone: options.milestone,
+      files: options.files,
+      planPath
+    });
+  } catch (err) {
+    if (err instanceof ConfigError)
+      throw new ShipError(err.message, err.exitCode ?? 1);
+    throw err;
+  }
+}
+
 // ---------------------------------------------------------------------------
 // final-gates phase
 // ---------------------------------------------------------------------------
@@ -389,11 +442,16 @@ export function cmdFinalGates(options, env = process.env) {
       },
       env
     );
+    const config = configOf(state.config_snapshot);
     Object.assign(out, {
       round: fg.fix_rounds,
       step: `final-gates-fix-${fg.fix_rounds}`,
-      commit_title: "fix(gates): <what changed>",
-      ...fixerModel(configOf(state.config_snapshot)),
+      // The title follows commit.style, like every other commit of the run.
+      commit_title:
+        config.commit?.style === "conventional"
+          ? "fix(gates): <what changed>"
+          : "Fix gate failures: <what changed>",
+      ...fixerModel(config),
       decision: decision.id
     });
   } else if (action === "halt") {

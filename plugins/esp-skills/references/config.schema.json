@@ -103,7 +103,7 @@
       }
     },
     "commit": {
-      "description": "esp-commit: commit message format.",
+      "description": "esp-commit: commit message format. style is also read by esp-pr for the pull request title.",
       "type": "object",
       "additionalProperties": false,
       "properties": {
@@ -118,10 +118,6 @@
         "plan_step_prefix": {
           "description": "Prefix the title with the plan step ([Task N], [Milestone N]) when following a plan.",
           "type": "boolean"
-        },
-        "review_fixes": {
-          "description": "esp-fix-review: separate fix(review) commits, or fixup! commits of the commit that last changed the file.",
-          "enum": ["separate", "fixup"]
         }
       }
     },
@@ -295,7 +291,12 @@
         "require_resolved_threads": { "type": "boolean" },
         "require_green_checks": { "type": "boolean" },
         "use_auto_merge": { "type": "boolean" },
-        "checks_timeout_minutes": { "type": "integer", "minimum": 1 }
+        "checks_timeout_minutes": { "type": "integer", "minimum": 1 },
+        "poll_seconds": {
+          "description": "Seconds between check polls while merge-ready.mjs check --wait waits for pending checks.",
+          "type": "integer",
+          "minimum": 1
+        }
       }
     },
     "ship": {
@@ -365,10 +366,6 @@
           "description": "A dirty working tree: worktree runs the task in a task worktree and leaves the changes untouched, fail stops the run.",
           "enum": ["worktree", "fail"]
         },
-        "pr_draft_until_reviewed": {
-          "description": "Open the pull request as a draft and mark it ready once its body is in place.",
-          "type": "boolean"
-        },
         "halt_on": {
           "type": "array",
           "items": {
@@ -415,7 +412,11 @@
               "additionalProperties": false,
               "properties": {
                 "max_wall_minutes": { "type": "integer", "minimum": 1 },
-                "max_milestones": { "type": "integer", "minimum": 1 }
+                "max_milestones": {
+                  "description": "Most milestones in a plan; esp-plan plans within it and esp-ship halts with budget on a larger plan.",
+                  "type": "integer",
+                  "minimum": 1
+                }
               }
             }
           }

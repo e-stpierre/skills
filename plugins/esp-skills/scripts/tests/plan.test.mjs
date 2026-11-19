@@ -367,6 +367,21 @@ describe("CLI", () => {
     assert.equal(cli(["lint", join(dir, "missing.md")]).code, 1);
   });
 
+  test("lint --max-milestones warns when the plan exceeds the budget", () => {
+    const file = join(dir, "plan.md");
+    writeFileSync(file, EXAMPLE);
+    const within = cli(["lint", file, "--max-milestones", "2"]);
+    assert.equal(within.code, 0, within.stderr);
+    assert.deepEqual(within.json().warnings, []);
+    const over = cli(["lint", file, "--max-milestones=1"]);
+    assert.equal(over.code, 0, over.stderr);
+    assert.equal(over.json().valid, true);
+    assert.deepEqual(over.json().warnings, [
+      "plan has 2 milestones, more than the budget of 1: combine milestones"
+    ]);
+    assert.equal(cli(["lint", file, "--max-milestones", "0"]).code, 2);
+  });
+
   test("amendment flow: diff reads state.json, then one decision logs it", () => {
     const home = join(dir, "home");
     const env = {

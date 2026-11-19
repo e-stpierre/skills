@@ -23,7 +23,7 @@ Read each option by its short or its long name (`-t main`, `--target main` or `-
   - `<ref>` (`main`, `origin/main`): commits on HEAD that are not on `<ref>`, from the merge base
   - `<base>..<head>` or `<base>...<head>`: an explicit range
   - `PR <number>`, `#<number>`, or a pull request URL: a GitHub pull request, through `gh`
-- **`[-i|--interactive <mode>]`** (optional): `off`, `plan` or `all`. Only `all` stops after the review to settle B-Decide and B-Scope findings with the user. Defaults to `defaults.interactive` (`off`). Headless sessions always use `off`.
+- **`[-i|--interactive <mode>]`** (optional): `off`, `plan` or `all`. Only `all` stops after the review to settle B-Decide and B-Scope findings with the user; `plan` behaves like `off` in this skill. Defaults to `defaults.interactive` (`off`). Headless sessions always use `off`.
 - **`[-s|--second-opinion <tool>]`** (optional): `none` or `codex`. `codex` also runs a read-only Codex review of the same target, whose findings the reviewer verifies with its own. Defaults to `review.second_opinion` (`none`).
 - **`[-d|--run-dir <path>]`** (optional): Run directory owned by a parent skill (esp-ship). The diff, the review and the findings are saved there, and the outcome is recorded as step `review-<N>` in `ship.json`. Without it, the skill writes them to a temporary directory and creates no run.
 
@@ -54,6 +54,8 @@ Read the `review` section and the shared defaults once at the start:
 node "${CLAUDE_PLUGIN_ROOT}/scripts/config.mjs" get review
 node "${CLAUDE_PLUGIN_ROOT}/scripts/config.mjs" get defaults
 ```
+
+With `--run-dir`, add `--run-dir <path>` to each `config.mjs get`: it reads the run's frozen config snapshot (an esp-ship run) in place of the user and project layers, and the live config when the run has none.
 
 With the Codex second opinion on, also read `config.mjs get codex`.
 

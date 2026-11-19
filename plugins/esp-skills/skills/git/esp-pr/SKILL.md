@@ -4,11 +4,11 @@ description: Create a pull request with a title and description sized to the cha
 argument-hint: "[-D|--draft] [-b|--base <branch>] [-d|--run-dir <path>]"
 ---
 
-# Git PR
+# ESP PR
 
 ## Overview
 
-Create a pull request with the GitHub CLI, with a title and description sized to the scope and impact of the changes and an AI attribution line at the end of the body. With a run directory and `pr.body_from_run`, the body is rendered from the run artifacts (plan milestones, decisions, review resolution, follow-ups) instead of being written from the diff.
+Create a pull request with the GitHub CLI, or update the open one of the current branch, with a title and description sized to the scope and impact of the changes and an AI attribution line at the end of the body. With a run directory and `pr.body_from_run`, the body is rendered from the run artifacts (plan milestones, decisions, review resolution, follow-ups) instead of being written from the diff.
 
 ## Arguments
 
@@ -27,17 +27,21 @@ Arguments: $ARGUMENTS
 ## Core Principles
 
 - The title conveys the primary change; the description gives the why and the context, since the diff already shows the what
+- One PR per branch: when the branch already has an open PR, update it instead of creating another, so a re-run after an interruption is safe
 
 ## Skill-Specific Guidelines
 
 ### Configuration
 
-Read the `pr` section and the shared language once at the start:
+Read the `pr` section, the commit style and the shared language once at the start:
 
 ```bash
 node "${CLAUDE_PLUGIN_ROOT}/scripts/config.mjs" get pr
+node "${CLAUDE_PLUGIN_ROOT}/scripts/config.mjs" get commit.style
 node "${CLAUDE_PLUGIN_ROOT}/scripts/config.mjs" get defaults.language
 ```
+
+With `--run-dir`, add `--run-dir <path>` to each `config.mjs get`: it reads the run's frozen config snapshot (an esp-ship run) in place of the user and project layers, and the live config when the run has none.
 
 If a command exits with code 1 (invalid config), report its error and stop. If it cannot run at all (no `node`), continue with the defaults.
 
@@ -46,6 +50,7 @@ If a command exits with code 1 (invalid config), report its error and stop. If i
 - `pr.attribution` (default `true`): append the AI attribution line to the body
 - `pr.body_from_run` (default `true`): with `--run-dir`, build the body from the run artifacts
 - `pr.body_sections` (default `summary, milestones, decisions, review-resolution, follow-ups`): sections of a body built from the run, in order
+- `commit.style` (default `plain`): title format, as for commits. `plain`: imperative mood, capitalized first letter, no period. `conventional`: `type(scope): subject`
 - `defaults.language` (default `en-US`): language of the PR title and body
 
 ### Size Categories
@@ -60,7 +65,7 @@ Small:
 ```bash
 gh pr create --title "Fix typo in README" --body "Corrects spelling error
 
-🤖 Generated with [Claude Code](https://claude.com/product/claude-code)"
+🤖 Generated with [Claude Code](https://claude.com/claude-code)"
 ```
 
 Larger:
@@ -73,7 +78,7 @@ gh pr create --title "<title>" --body "## Summary
 - <Key change 1 with context>
 - <Key change 2 with context>
 
-🤖 Generated with [Claude Code](https://claude.com/product/claude-code)"
+🤖 Generated with [Claude Code](https://claude.com/claude-code)"
 ```
 
 ## Instructions
@@ -82,12 +87,17 @@ gh pr create --title "<title>" --body "## Summary
 2. Verify the current branch is not the base branch; when it is, report it and stop.
 3. Push the current branch (`git push -u origin HEAD`) when `git status -sb` shows no upstream or commits ahead of it. Done when `git status -sb` shows the branch up to date with its upstream.
 4. Fetch the base and read the scope: `git fetch origin <base>`, `git log origin/<base>..HEAD --oneline`, and `git diff origin/<base>...HEAD --stat`. Done when you know every commit in the PR and its changed-line count.
-5. Write the title and body in `defaults.language`:
+5. Write the title and body in `defaults.language`. The title follows `commit.style` (with `conventional`, the subject below becomes `type(scope): subject`):
+   - **Title from the run** (with `--run-dir`): the plan title, the `title` frontmatter key of the plan that `runs.mjs plan --run-dir <path>` names, else the run title (`title` in `<path>/run.json`)
+   - **Title from the diff** (otherwise): the primary change across the commits of step 4
    - **From the run** (with `--run-dir` and `pr.body_from_run`): write a 1-2 sentence summary of why the change exists, then render the body with `node "${CLAUDE_PLUGIN_ROOT}/scripts/runs.mjs" pr-body --run-dir <path> --summary "<summary>" --out <path>/pr-body.md`. It applies `pr.body_sections` and `pr.attribution`.
    - **From the diff** (otherwise): pick the size category from the stat and write the body per Size Categories, ending with the attribution line unless `pr.attribution` is `false`.
-6. Create the PR with `gh pr create --base <base> --title "<title>"`, plus `--body-file <path>/pr-body.md` for a body from the run or `--body "<body>"` otherwise, plus `--draft` when `-D` or `--draft` is present or `pr.draft` is `true`. Done when `gh` prints the PR URL.
-7. With `--run-dir`, record the URL: `node "${CLAUDE_PLUGIN_ROOT}/scripts/runs.mjs" update --run-dir <path> --pr <url>`.
-8. Report the PR URL and title.
+6. Look for an open PR on the current branch: `gh pr view --json url,state,isDraft`. A PR with `state` `OPEN` is the existing PR; a non-zero exit (no PR), or a closed or merged PR, means none.
+7. Create or update the PR:
+   - **No open PR**: `gh pr create --base <base> --title "<title>"`, plus `--body-file <path>/pr-body.md` for a body from the run or `--body "<body>"` otherwise, plus `--draft` when `-D` or `--draft` is present or `pr.draft` is `true`. Done when `gh` prints the PR URL
+   - **Open PR**: `gh pr edit <url> --base <base> --title "<title>"` with the same `--body-file` or `--body`, and leave its draft state as is. Done when `gh` prints the PR URL
+8. With `--run-dir`, record the URL: `node "${CLAUDE_PLUGIN_ROOT}/scripts/runs.mjs" update --run-dir <path> --pr <url>`.
+9. Report the PR URL and title, as `PR created` or `PR updated`.
 
 ## Output Guidance
 
@@ -99,6 +109,8 @@ Provide a brief confirmation message:
 PR created: https://github.com/owner/repo/pull/123
 Title: Add user authentication
 ```
+
+When the branch already had an open PR, the first line is `PR updated: <url>`.
 
 **On error:**
 
@@ -112,3 +124,5 @@ Failed to create PR: <error message from gh CLI>
 Status: done
 Summary: PR created: https://github.com/owner/repo/pull/123
 ```
+
+With an existing PR, the `Summary:` line starts with `PR updated:`.

@@ -20,7 +20,7 @@ It logs one `policy` decision (`Skip the internal review` or `Run the internal r
 `ship.mjs next` returns `phase: review` with `sub` and `loop` (`loop.step` is the step of this round, `loop.findings_path` the findings to fix):
 
 - **`sub: review`** (`reviewer` role): spawn the phase subagent on `skills/review/esp-review/SKILL.md` with `--plan <plan_path> --target origin/<base>`, on the task branch. Its step is `loop.step` (`review-<N>`)
-- **`sub: review-fix`** (`fixer` role): spawn the phase subagent on `skills/github/esp-fix-review/SKILL.md` with `--internal --findings <loop.findings_path>`. It commits `fix(review): ...` and never pushes
+- **`sub: review-fix`** (`fixer` role): spawn the phase subagent on `skills/github/esp-fix-review/SKILL.md` with `--internal --findings <loop.findings_path>`. It makes a review-fix commit titled per `commit.style` (`plain`: `Fix review findings: <summary>`, `conventional`: `fix(review): <summary>`) and never pushes
 
 `ship.mjs review-loop` prints the loop state at any time. The loop ends when `next` returns `complete`, `halt` or `stop` (see Task State in SKILL.md).
 

@@ -837,18 +837,19 @@ export function resolveOptions(cli, positional, env = process.env) {
   const projectDir = resolve(
     cli["project-dir"] ?? findRepoRoot(process.cwd()) ?? process.cwd()
   );
+  const runDir = cli["run-dir"] ? resolve(cli["run-dir"]) : null;
+  if (runDir && !existsSync(join(runDir, "run.json")))
+    throw new WaitError(`Not a run directory (no run.json): ${runDir}`, 2);
+  // A run's frozen config snapshot replaces the user and project layers.
   let config;
   try {
-    ({ config } = loadConfig({ projectDir, env }));
+    ({ config } = loadConfig({ projectDir, runDir, env }));
   } catch (err) {
     if (err instanceof ConfigError)
       throw new WaitError(err.message, err.exitCode ?? 1);
     throw err;
   }
   const section = config["fix-review"]?.wait ?? {};
-  const runDir = cli["run-dir"] ? resolve(cli["run-dir"]) : null;
-  if (runDir && !existsSync(join(runDir, "run.json")))
-    throw new WaitError(`Not a run directory (no run.json): ${runDir}`, 2);
   const pollSeconds =
     cli["poll-seconds"] !== undefined
       ? positiveNumber(cli["poll-seconds"], "poll-seconds", 1)

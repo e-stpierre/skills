@@ -512,4 +512,33 @@ describe("ship.mjs triage", () => {
     const next = triage("--request", "anything", "--run-dir", runDir);
     assert.equal(next.json().plan_source, "reuse");
   });
+
+  test("without a request, a plan already in the run directory is reused", () => {
+    assert.equal(triage("--run-dir", runDir).code, 2);
+    writeFileSync(join(runDir, "plan.md"), referenceExample());
+    const r = triage("--run-dir", runDir, "--record");
+    assert.equal(r.code, 0, r.stderr);
+    const { outputs } = r.json().result;
+    assert.equal(outputs.input_kind, "run-plan");
+    assert.equal(outputs.plan_source, "reuse");
+    assert.equal(outputs.plan_path, join(runDir, "plan.md"));
+    assert.equal(outputs.track, "orchestrated");
+    assert.match(decisions()[0].rationale, /already holds plan\.md/);
+    const init = cli(SCRIPT, [
+      "init",
+      "--track",
+      "orchestrated",
+      "--plan-source",
+      "reuse",
+      "--base",
+      "main",
+      "--project-dir",
+      repo,
+      "--run-dir",
+      runDir
+    ]);
+    assert.equal(init.code, 0, init.stderr);
+    const title = /^title: (.+)$/m.exec(referenceExample())[1].trim();
+    assert.equal(init.json().request, title);
+  });
 });

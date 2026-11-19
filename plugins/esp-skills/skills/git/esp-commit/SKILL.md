@@ -4,7 +4,7 @@ description: Commit the current changes with a structured message. Use when aske
 argument-hint: "[-m|--message <title>]"
 ---
 
-# Git Commit
+# ESP Commit
 
 ## Overview
 
@@ -14,7 +14,9 @@ Commit the current changes with a concise title, an optional bullet-point descri
 
 ### Definitions
 
-- **`[-m|--message <title>]`** (optional): Read from `-m` or `--message`. The commit title, used as given apart from the plan step prefix (see Plan Step Reference). Defaults to a title generated from the changes.
+Read each option by its short or its long name (`-m "..."`, `--message "..."` or `--message=...`).
+
+- **`[-m|--message <title>]`** (optional): The commit title, used as given apart from the plan step prefix (see Plan Step Reference). Defaults to a title generated from the changes.
 
 ### Values
 
@@ -24,6 +26,7 @@ Arguments: $ARGUMENTS
 
 - The title names the main task completed: 50 characters ideal, 120 at most
 - The description is 1-5 bullets on the key aspects of a substantial change; a small change has none
+- Never commit on the repository default branch or on a detached HEAD, unless the user explicitly asked in this conversation to commit on the default branch
 
 ## Skill-Specific Guidelines
 
@@ -63,13 +66,14 @@ Without a plan, the title has no brackets. With `conventional` style, the prefix
 ## Instructions
 
 1. Load the `commit` configuration (see Configuration).
-2. Run `git status`. With nothing to commit, report it and stop.
-3. Run `git diff --staged`; when nothing is staged, stage the tracked changes with `git add -u`. Stage an untracked file only when it belongs to the change and holds no secret or build output. Done when `git diff --staged` shows the full change.
-4. Write the message in `defaults.language`:
+2. Check the branch: `git branch --show-current` prints nothing on a detached HEAD; report it and stop. Read the default branch with `gh repo view --json defaultBranchRef --jq .defaultBranchRef.name`, or `git symbolic-ref --short refs/remotes/origin/HEAD` without `gh` (strip `origin/`). When the current branch is the default branch, report it and stop, unless the user explicitly asked in this conversation to commit on it. Done when the current branch is a named branch other than the default one, or the user asked for the default one.
+3. Run `git status`. With nothing to commit, report it and stop.
+4. Run `git diff --staged`; when nothing is staged, stage the tracked changes with `git add -u`. Stage an untracked file only when it belongs to the change and holds no secret or build output. Done when `git diff --staged` shows the full change.
+5. Write the message in `defaults.language`:
    - **Title**: the plan step prefix (see Plan Step Reference), then `--message` as given, otherwise a title per `commit.style` and Core Principles
    - **Description**: per Core Principles
    - **Trailer**: the `Co-Authored-By` line with your model name, unless `commit.co_author` is `false`
-5. Commit with a HEREDOC so the formatting survives:
+6. Commit with a HEREDOC so the formatting survives:
 
    ```bash
    git commit -m "$(cat <<'EOF'
@@ -83,7 +87,7 @@ Without a plan, the title has no brackets. With `conventional` style, the prefix
    )"
    ```
 
-6. Report the commit hash and title, read from `git log -1 --format='%h - %s'`. Done when it shows the new title.
+7. Report the commit hash and title, read from `git log -1 --format='%h - %s'`. Done when it shows the new title.
 
 ## Output Guidance
 
@@ -99,4 +103,10 @@ Committed: abc123f - [Task 3] Add authentication module
 
 ```text
 Failed to commit: <error message from git>
+```
+
+**On the default branch or a detached HEAD:**
+
+```text
+Not committed: main is the default branch. Create a branch first (/esp-skills:esp-branch).
 ```

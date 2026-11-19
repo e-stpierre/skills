@@ -16,10 +16,11 @@ import { expandHome } from "../../config.mjs";
 import { withLock } from "../lock.mjs";
 import { filesOverlap, planBatches, readPlan, wholeRepo } from "../../plan.mjs";
 import { appendDecision, latestPlan, now } from "../../runs.mjs";
-import { gatesFor } from "./gates.mjs";
+import { gatesForOptions } from "./gates.mjs";
 import {
   configOf,
   freezeConfig,
+  MODEL_ALIASES,
   parseJsonOption,
   readJson,
   runDirOf,
@@ -39,7 +40,6 @@ export const MILESTONE_STATUSES = [
   "done",
   "halted"
 ];
-const MODEL_ALIASES = new Set(["opus", "sonnet", "haiku", "fable"]);
 
 const statePath = (dir) => join(dir, "state.json");
 
@@ -397,14 +397,19 @@ export function nextStep(state, { parallel = false } = {}) {
   };
 }
 
+/**
+ * Whether next returns parallel batches: --parallel, else the --parallel of
+ * esp-ship recorded in ship.json, else the resolved ship.parallel.
+ */
+function parallelOf(dir, state, options) {
+  if (options.parallel !== undefined) return options.parallel === true;
+  return shipJson(dir)?.flags?.parallel === true || state.parallel === true;
+}
+
 export function cmdMilestoneNext(options) {
   const dir = runDirOf(options);
   const state = readMilestoneState(dir);
-  return nextStep(state, {
-    parallel:
-      options.parallel === true ||
-      (options.parallel === undefined && state.parallel)
-  });
+  return nextStep(state, { parallel: parallelOf(dir, state, options) });
 }
 
 // ---------------------------------------------------------------------------
@@ -545,17 +550,26 @@ export function resolveModels(config, complexity = "medium", flags = {}) {
   return { builder, verifier };
 }
 
-export function cmdModels(id, options) {
-  const dir = runDirOf(options);
-  const state = readMilestoneState(dir);
-  const m = milestoneOf(state, id);
-  const model =
-    options.model && options.model !== true ? String(options.model) : null;
-  if (model && !MODEL_ALIASES.has(model))
+/**
+ * The pinned builder model: --model, else the --model of esp-ship recorded in
+ * ship.json (builder_model), else null (the complexity decides).
+ */
+function pinnedModel(dir, options) {
+  const model = stringOption(options.model) ?? shipJson(dir)?.builder_model;
+  if (!model) return null;
+  if (!MODEL_ALIASES.has(model))
     throw new ShipError(
       `--model must be one of ${[...MODEL_ALIASES].join(", ")}`,
       2
     );
+  return model;
+}
+
+export function cmdModels(id, options) {
+  const dir = runDirOf(options);
+  const state = readMilestoneState(dir);
+  const m = milestoneOf(state, id);
+  const model = pinnedModel(dir, options);
   const config = configOf(state.config_snapshot);
   return {
     milestone: id,
@@ -605,13 +619,8 @@ export function builderUsed(builder, cost) {
   return runs.reduce((sum, r) => sum + costOf(cost, r.complexity), 0);
 }
 
-function builderModel(state, m, options) {
-  const model = stringOption(options.model);
-  if (model && !MODEL_ALIASES.has(model))
-    throw new ShipError(
-      `--model must be one of ${[...MODEL_ALIASES].join(", ")}`,
-      2
-    );
+function builderModel(dir, state, m, options) {
+  const model = pinnedModel(dir, options);
   const { builder } = resolveModels(
     configOf(state.config_snapshot),
     m.complexity,
@@ -711,12 +720,12 @@ export function cmdReuse(id, options, env = process.env) {
     throw new ShipError(`${id} is ${m.status}; nothing to build`, 2);
   const { limit, cost } = reuseSettings(configOf(state.config_snapshot));
   const next = nextStep(state, {
-    parallel: options.parallel === true || state.parallel === true
+    parallel: parallelOf(dir, state, options)
   });
   const gate = reuseDecision({
     state,
     id,
-    model: builderModel(state, m, options),
+    model: builderModel(dir, state, m, options),
     agentId: stringOption(options["agent-id"]),
     batch: ["run", "retry"].includes(next.action) ? next.batch : [],
     limit,
@@ -781,7 +790,7 @@ export function cmdAgent(id, options, env = process.env) {
     dir,
     (state) => {
       const m = milestoneOf(state, id);
-      const model = builderModel(state, m, options);
+      const model = builderModel(dir, state, m, options);
       const { cost } = reuseSettings(configOf(state.config_snapshot));
       const prev = state.builder ?? null;
       const continued =
@@ -828,7 +837,7 @@ export function cmdAgent(id, options, env = process.env) {
   );
 }
 
-/** The plan and the config snapshot recorded in ship.json, when the run has one. */
+/** The plan, the config snapshot and the flags recorded in ship.json, when the run has one. */
 function shipJson(dir) {
   const path = shipStatePath(dir);
   return existsSync(path) ? readJson(path) : null;
@@ -837,24 +846,5 @@ const shipPlanPath = (dir) => shipJson(dir)?.plan_path ?? null;
 const shipSnapshot = (dir) => shipJson(dir)?.config_snapshot ?? null;
 
 export function cmdMilestoneGates(options) {
-  let snapshot;
-  let planPath = stringOption(options.plan);
-  planPath = planPath ? resolve(expandHome(planPath)) : null;
-  if (options["run-dir"]) {
-    const dir = runDirOf(options);
-    const milestoneState = existsSync(statePath(dir))
-      ? readMilestoneState(dir)
-      : null;
-    snapshot ??=
-      milestoneState?.config_snapshot ?? shipSnapshot(dir) ?? undefined;
-    planPath ??= milestoneState?.plan_path ?? shipPlanPath(dir);
-  }
-  return gatesFor({
-    projectDir: options["project-dir"],
-    snapshot,
-    scope: options.scope,
-    milestone: options.milestone,
-    files: options.files,
-    planPath
-  });
+  return gatesForOptions(options);
 }

@@ -58,7 +58,7 @@ When you fell back to these commands, name them in the reply's `Summary:` so the
 ### Commits
 
 - Read the commit settings with `node "${CLAUDE_PLUGIN_ROOT}/scripts/config.mjs" get commit`. If `node` is unavailable, use the defaults: plain style, co-author trailer on.
-- Title: reference the work item. Plain style: `M2: Add token refresh`. Conventional style: `feat(auth): M2 add token refresh`. Review fixes: `fix(review): <what changed>` in both styles.
+- Title: reference the work item. Plain style: `M2: Add token refresh`. Conventional style: `feat(auth): M2 add token refresh`. Review fixes: `Fix review findings: <what changed>` in plain style, `fix(review): <what changed>` in conventional style.
 - Body: a short list of what changed and why, then the `Co-Authored-By` trailer when `commit.co_author` is on.
 - **Retry**: when the spawn prompt gives a commit to amend and `HEAD` is that commit, amend it (`git commit --amend`) so the work item keeps one commit. If `HEAD` is any other commit, leave it untouched: stop and report it as a blocker.
 - Never push, rebase, reset, or rewrite commits other than the one being amended. Never commit plans, summaries, or run dir files.

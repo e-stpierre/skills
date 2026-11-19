@@ -23,7 +23,14 @@ import {
   writeJson
 } from "./state.mjs";
 
-export const INPUT_KINDS = ["plan", "task-list", "document", "prompt", "issue"];
+export const INPUT_KINDS = [
+  "plan",
+  "task-list",
+  "document",
+  "prompt",
+  "issue",
+  "run-plan"
+];
 export const PLAN_SOURCES = [
   "reuse",
   "import",
@@ -80,7 +87,11 @@ function hasPlanFormat(text) {
  */
 export function detectRequest(request, { projectDir = process.cwd() } = {}) {
   const text = String(request ?? "").trim();
-  if (!text) throw new ShipError("triage needs --request <text|path|issue>", 2);
+  if (!text)
+    throw new ShipError(
+      "triage needs --request <text|path|issue>, or a --run-dir that holds a plan",
+      2
+    );
   const out = {
     input_kind: "prompt",
     path: null,
@@ -390,7 +401,19 @@ export function cmdTriage(options, env = process.env) {
     PLAN_MODES,
     "plan-mode"
   );
-  const detected = detectRequest(options.request, { projectDir });
+  const runPlan = dir ? latestPlan(dir).path : null;
+  // No request: a run started by esp-plan already holds its plan.
+  const detected =
+    !stringOption(options.request)?.trim() && runPlan
+      ? {
+          input_kind: "run-plan",
+          path: null,
+          issue: null,
+          plan_errors: null,
+          packages: null,
+          unmatched: null
+        }
+      : detectRequest(options.request, { projectDir });
   const result = decide(detected, {
     track: trackOption(options.track, "track"),
     judged: trackOption(options["judged-track"], "judged-track"),
@@ -399,7 +422,7 @@ export function cmdTriage(options, env = process.env) {
         ? null
         : positiveInt(options.estimate, "estimate", 0),
     reason: stringOption(options.reason),
-    runPlan: dir ? latestPlan(dir).path : null,
+    runPlan,
     maxFiles: settings.max_files_changed,
     planMode: planMode.mode,
     planModeSource: planMode.source

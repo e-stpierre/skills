@@ -24,11 +24,11 @@ Classify every item before acting on it. When an item fits several classes, take
 
 `--interactive[=off|plan|all]` selects when a skill stops to ask. The default comes from `defaults.interactive` (`off`).
 
-| Mode   | Asks at                                                                  | Everything else |
-| ------ | ------------------------------------------------------------------------ | --------------- |
-| `off`  | Never. B-Decide applies the recommendation, B-Scope defers, Halt stops   | Autonomous      |
-| `plan` | Plan approval only                                                       | Autonomous      |
-| `all`  | Plan approval, review findings (A and B groups), fix-review recap, merge | Interactive     |
+| Mode   | Asks at                                                                                                                | Everything else |
+| ------ | ---------------------------------------------------------------------------------------------------------------------- | --------------- |
+| `off`  | Never. B-Decide applies the recommendation, B-Scope defers, Halt stops                                                 | Autonomous      |
+| `plan` | Plan approval only                                                                                                     | Autonomous      |
+| `all`  | Plan approval, review findings and pull request review items before each fix (A and B groups), fix-review recap, merge | Interactive     |
 
 - In standalone interactive mode, "Ask" uses the session's question tool (for example `AskUserQuestion`) with the recommended option listed first.
 - Headless sessions (`claude -p`) and subagents are always `off`, whatever the flag says. Subagents never ask: they return the question to their caller (see Asking Outside an Interactive Session).

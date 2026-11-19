@@ -11,7 +11,7 @@ The `build` phase of the orchestrated track. `ship.mjs next` returns `phase: bui
 
 ## Loop
 
-Run `milestone next` (add `--parallel` when the skill got `--parallel`: it forces batches even when `milestone init` resolved them off) and act on `action`:
+Run `milestone next` and act on `action`. It returns batches when `milestone init` resolved them on, or when the run was started with `--parallel` (recorded in `ship.json`):
 
 - **`done`**: every milestone is done. Go to Wrap Up
 - **`halt`** or **`blocked`**: follow Halting
@@ -21,8 +21,8 @@ Run `milestone next` (add `--parallel` when the skill got `--parallel`: it force
 For one milestone:
 
 1. **Operator notes**: record each user message received since the last milestone (see User Messages in SKILL.md). The builder reads it from `notes.md`.
-2. **Start**: `milestone start <id> --base <git rev-parse HEAD>` (a retry keeps and prints the base of the first attempt), then `milestone models <id>` (with `--model <alias>` when `--model` was given). Record the models with `runs.mjs update --model builder=<alias>[:<effort>] --model verifier=<alias>`.
-3. **Build**: `milestone reuse <id>` decides whether the last builder continues (see Builder Reuse). On `reuse`, continue that builder. On `fresh`, spawn a new one (see Spawning). Then record the builder with `milestone agent <id> --agent-id <agentId> --tokens <subagent_tokens>`, both taken from the Agent result, plus the `--model` and `--effort` given to `milestone models` when the skill got `--model`, so the recorded builder model matches the one `milestone reuse` compares. A continued builder does not reread `notes.md`: pass it the operator lines recorded in step 1.
+2. **Start**: `milestone start <id> --base <git rev-parse HEAD>` (a retry keeps and prints the base of the first attempt), then `milestone models <id>` (it applies the `--model` recorded in `ship.json`). Record the models with `runs.mjs update --model builder=<alias>[:<effort>] --model verifier=<alias>`.
+3. **Build**: `milestone reuse <id>` decides whether the last builder continues (see Builder Reuse). On `reuse`, continue that builder. On `fresh`, spawn a new one (see Spawning). Then record the builder with `milestone agent <id> --agent-id <agentId> --tokens <subagent_tokens>`, both taken from the Agent result. A continued builder does not reread `notes.md`: pass it the operator lines recorded in step 1.
 4. **Builder outcome**: read the `Status:` line of its reply. `halted` or `needs-decision` follows Halting. `failed` with no commit runs `milestone finish <id> --status failed --reason <first blocker>`, then loop.
 5. **Verify**: spawn the verifier with the builder's commit.
 6. **Finish**: verifier `Status: done` runs `milestone finish <id> --status done --commit <commit>`. Otherwise `milestone finish <id> --status failed --commit <commit> --reason <first blocker> --failures '<the Blockers lines as a JSON list of strings>'`: `milestone next` returns them as `failures` on the `retry`. In `all` mode, show the verifier's summary before continuing.
@@ -40,7 +40,7 @@ The builder also records its reply as step `build-<id>` in `ship.json` (`ship.mj
 
 ## Builder Reuse
 
-A builder that just built a related milestone already knows the code, so it continues with the next one instead of a fresh builder rediscovering it. `milestone reuse <id>` decides it deterministically and logs a `policy` decision. Pass `--agent-id <id>` with the agent ID of the last builder this session spawned or continued. Omit it when this session holds none, for example after a resume. Add `--model` and `--effort` when `--model` was given. It returns `decision: reuse` with the `agent_id` to continue only when the milestone is related to the builder's work (a retry, a dependency or shared files), its builder model and effort equal the builder's (a continued agent keeps its own), and the builder's token budget has room (`ship.reuse.limit_tokens`, `ship.reuse.cost.<complexity>`). A parallel batch, a builder that ran in a worktree, and a missing or different agent ID always start fresh.
+A builder that just built a related milestone already knows the code, so it continues with the next one instead of a fresh builder rediscovering it. `milestone reuse <id>` decides it deterministically and logs a `policy` decision. Pass `--agent-id <id>` with the agent ID of the last builder this session spawned or continued. Omit it when this session holds none, for example after a resume. `models`, `reuse` and `agent` read the `--model` recorded in `ship.json`, so the builder model they compare is always the same. It returns `decision: reuse` with the `agent_id` to continue only when the milestone is related to the builder's work (a retry, a dependency or shared files), its builder model and effort equal the builder's (a continued agent keeps its own), and the builder's token budget has room (`ship.reuse.limit_tokens`, `ship.reuse.cost.<complexity>`). A parallel batch, a builder that ran in a worktree, and a missing or different agent ID always start fresh.
 
 To continue a builder, send it the input a fresh builder would get with SendMessage to `agent_id`: the milestone block, its step, its scoped gate commands and its messages. On a retry, send the commit to amend and the verifier failures. The continued builder runs in the background: wait for its task notification, then read its facts from the `build-<id>` step in `ship.json` (`ship.mjs show`; its `at` is later than the send), because its reply may not come back as a report. When the send fails or no new record appears, the agent is lost: spawn a fresh builder and record that one. Fresh builders get what earlier builders learned from the run notes (`notes.md`), which they read themselves.
 

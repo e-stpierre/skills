@@ -18,7 +18,7 @@ Read each option by its short or its long name (`-m squash`, `--method squash` o
 
 - **`[-n|--dry-run]`** (optional): Check the conditions and resolve the method, rebase nothing, merge nothing. The outcome reports what would happen.
 - **`[-m|--method <method>]`** (optional): `repo`, `squash`, `rebase` or `merge`. Defaults to `merge.method` (`repo`: pick from what the repository allows). An explicit method the repository does not allow is an error, never a silent fallback.
-- **`[-i|--interactive <mode>]`** (optional): `off`, `plan` or `all`. Only `all` stops for a confirmation before merging. Defaults to `defaults.interactive` (`off`). Headless sessions always use `off`.
+- **`[-i|--interactive <mode>]`** (optional): `off`, `plan` or `all`. Only `all` stops for a confirmation before merging; `plan` behaves like `off` in this skill. Defaults to `defaults.interactive` (`off`). Headless sessions always use `off`.
 - **`[-p|--pr <pr>]`** (optional): Pull request number, `#<number>`, or URL. Defaults to the pull request of the current branch.
 - **`[-d|--run-dir <path>]`** (optional): Run directory owned by a parent skill (esp-ship). Halt decisions and the run status count as halt signals, the method decision goes to the run, and under esp-ship the outcome is recorded as step `merge` in `ship.json`. Without it, no run is created.
 
@@ -53,16 +53,19 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/config.mjs" get worktrees
 node "${CLAUDE_PLUGIN_ROOT}/scripts/config.mjs" get defaults
 ```
 
+With `--run-dir`, add `--run-dir <path>` to each `config.mjs get`: it reads the run's frozen config snapshot (an esp-ship run) in place of the user and project layers, and the live config when the run has none.
+
 If a command exits with code 1 (invalid config), report its error and stop. If it cannot run at all (no `node`), stop: the merge conditions need the script.
 
 - `merge.enabled` (default `true`): `false` reports and leaves the pull request open
 - `merge.method` (default `repo`): `repo` resolves the method from the repository, else force one method
 - `merge.preference` (default `["squash", "rebase", "merge"]`): order used when the repository allows several methods
-- `merge.delete_branch` (default `true`): delete the remote head branch after the merge (never a fork branch), and the local branch when it is checked out (see Local Cleanup)
+- `merge.delete_branch` (default `true`): delete the remote head branch after the merge (never a fork branch), and the local branch (see Local Cleanup)
 - `merge.require_resolved_threads` (default `true`): unresolved review threads block the merge
 - `merge.require_green_checks` (default `true`): every check must pass. `false`: only the required checks
 - `merge.use_auto_merge` (default `false`): with checks pending, enable GitHub auto-merge instead of waiting
 - `merge.checks_timeout_minutes` (default `30`): time limit of the wait for pending checks
+- `merge.poll_seconds` (default `30`): seconds between check polls during that wait (read by `merge-ready.mjs` itself)
 - `worktrees.root`, `worktrees.cleanup` (defaults `~/.esp-skills/worktrees`, `on-merge`): remove the task worktree after the merge, unless cleanup is `never`
 - `defaults.interactive` (default `off`): interactive mode when `--interactive` is not given
 
@@ -71,10 +74,10 @@ If a command exits with code 1 (invalid config), report its error and stop. If i
 Every `merge-ready.mjs` call takes the `--pr` value as `<pr>` (omitted without it), plus `--run-dir <path>`:
 
 - **Check**: `merge-ready.mjs check [<pr>] [--method <m>]` (report: `ready`, `outcome`, `conditions`, `method`)
-- **Wait for checks**: `merge-ready.mjs check [<pr>] --wait` (polls every 30 s up to `checks_timeout_minutes`)
+- **Wait for checks**: `merge-ready.mjs check [<pr>] --wait` (polls every `merge.poll_seconds` up to `merge.checks_timeout_minutes`)
 - **Merge**: `merge-ready.mjs merge [<pr>] [--method <m>] [--dry-run]` (prints the outcome JSON; read its `status`, not the exit code: it exits 0 for every status but `failed`)
 - **Halt**: `merge-ready.mjs merge [<pr>] --halt "<reason>"` (logs a Halt decision, never merges)
-- **Gates after rebase**: `ship.mjs milestone gates --project-dir <repo>` prints the gate commands (configured or detected); run each
+- **Gates after rebase**: `gates.mjs resolve --project-dir <repo>` (plus `--run-dir <path>` when given) prints the gate commands, configured (`ship.gates`) or detected from the project files, in `commands`; run each
 
 Each condition in the report is `pass`, `fail` or `pending`, with a reason. The outcomes:
 
@@ -95,7 +98,7 @@ When the outcome is `behind` or `conflict`, and the pull request is not from a f
 1. The working tree must be clean and on the pull request head branch (`gh pr checkout <pr>` otherwise; in a worktree, work there).
 2. `git fetch origin <base>`, then `git rebase origin/<base>`.
 3. On conflicts: resolve them only when both sides are clear (for example a changelog or a lockfile, or independent edits) and you can explain the result. Otherwise `git rebase --abort`, then `merge-ready.mjs merge --halt "rebase conflict with <base> in <files>"`, and go to the report.
-4. Run every gate command that `ship.mjs milestone gates` prints. If a gate fails because of the rebase and you cannot fix it in the rebased commits, halt the same way with the failing gate as the reason.
+4. Run every gate command that `gates.mjs resolve` prints. If a gate fails because of the rebase and you cannot fix it in the rebased commits, halt the same way with the failing gate as the reason.
 5. `git push --force-with-lease`, then wait for the checks of the new head (see Waiting for Checks) and check again.
 
 Rebase at most 3 times per invocation: a base that keeps moving ends with the `behind` outcome of the last check. A fork pull request is never rebased: the merge reports `behind` or `conflict`.
@@ -113,7 +116,7 @@ In `all` mode, standalone and not headless: before the merge, show the condition
 After `outputs.merged` is `true`:
 
 - `outputs.cleanup.worktree.remove` is `true`: leave the worktree (`cd` to `outputs.cleanup.worktree.main`), then `git worktree remove <path>`, without `--force`: a dirty worktree is kept and reported.
-- Otherwise, when the current branch is the merged head branch and `merge.delete_branch` is on: `git switch <base>`, `git pull --ff-only`, then `git branch -D <branch>` (the merge on GitHub is confirmed, so a squash or rebase merge does not lose work).
+- Then, when `merge.delete_branch` is on and the merged head branch exists locally, delete it with `git branch -D <branch>` (the merge on GitHub is confirmed, so a squash or rebase merge does not lose work). When it is the current branch, `git switch <base>` and `git pull --ff-only` first. A branch checked out in another worktree (`git worktree list`) is kept and reported.
 
 ## Instructions
 

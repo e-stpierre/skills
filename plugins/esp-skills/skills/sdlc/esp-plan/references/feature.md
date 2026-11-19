@@ -33,10 +33,12 @@ Settle each one while gathering requirements:
 - Typically 2-5 milestones per feature
 - Write tasks as specific, actionable steps with the file paths they change, and put the tests beside the implementation they cover
 
+- Give every milestone objective acceptance criteria the verifier can confirm; a milestone whose outcome cannot be checked is folded into another one
+- Put documentation in the milestone whose behavior it describes, not in a separate documentation milestone
+- Plan polish or optimization only as concrete, verifiable changes (a named fix, a measured target), never as an open-ended milestone
+
 Common milestone patterns:
 
 1. Core infrastructure and data models
 2. Basic functionality (happy path)
 3. Edge cases and error handling
-4. Polish and optimization
-5. Documentation and cleanup

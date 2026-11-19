@@ -81,6 +81,8 @@ export const HALT_KEYS = [
   "budget"
 ];
 export const INTERACTIVE_MODES = ["off", "plan", "all"];
+/** Builder model aliases of --model. */
+export const MODEL_ALIASES = new Set(["opus", "sonnet", "haiku", "fable"]);
 export const ESCALATION_TRIGGERS = ["files", "design", "gates"];
 export const GATE_FAILURE_LIMIT = 2;
 export const SHA = /^[0-9a-f]{7,64}$/;
@@ -193,7 +195,6 @@ export function shipSettings(config, track = "orchestrated") {
     phases: ship.phases ?? TRACK_PHASES[track],
     internal_review_rounds: ship.internal_review_rounds ?? 2,
     worktree: ship.worktree ?? false,
-    pr_draft_until_reviewed: ship.pr_draft_until_reviewed ?? true,
     halt_on: ship.halt_on ?? HALT_KEYS,
     max_files_changed: ship.inline?.max_files_changed ?? 10,
     escalate: ship.inline?.escalate ?? true,

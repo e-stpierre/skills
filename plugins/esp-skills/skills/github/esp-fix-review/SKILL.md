@@ -21,7 +21,7 @@ Read each option by its short or its long name (`-m 2`, `--max-rounds 2` or `--m
 - **`[-t|--timeout <minutes>]`** (optional): Time limit of each wait. Defaults to `fix-review.wait.timeout_minutes` (30).
 - **`[-m|--max-rounds <n>]`** (optional): Maximum number of fix rounds. With `--run-dir`, the count carries over from earlier invocations on the same run; without it, each invocation starts a new count. Defaults to one round in this invocation: fix, push, respond, then stop, without waiting for a re-review. With a value, rounds after the first start after the re-review wait.
 - **`[-r|--reviewers <name>...]`** (optional): Reviewer names from `fix-review.wait.reviewers` (`claude`, `codex`) or raw GitHub logins. Repeat the option (`-r claude -r codex`) or give a comma-separated list (`-r claude,codex`). Only their comments are handled, and only they are waited for. Without it, comments from every author except yourself are handled. The `--wait` wait targets `fix-review.wait.default_reviewers`, and the wait between rounds targets the default reviewers that commented on the pull request.
-- **`[-i|--interactive <mode>]`** (optional): `off`, `plan` or `all`. Only `all` stops to settle B-Decide and B-Scope items with the user and shows a recap before pushing. Defaults to `defaults.interactive` (`off`). Headless sessions always use `off`.
+- **`[-i|--interactive <mode>]`** (optional): `off`, `plan` or `all`. Only `all` stops to settle B-Decide and B-Scope items with the user and shows a recap before pushing; `plan` behaves like `off` in this skill. Defaults to `defaults.interactive` (`off`). Headless sessions always use `off`.
 - **`[-p|--pr <pr>]`** (optional): Pull request number, `#<number>`, or URL. Defaults to the pull request of the current branch. Ignored with `--internal`.
 - **`[-e|--findings <path>]`** (optional): With `--internal`, the `esp-review` findings file (`review-<N>.json`). Defaults to the latest one in `--run-dir`; required with `--internal` when there is no `--run-dir`.
 - **`[-d|--run-dir <path>]`** (optional): Run directory owned by a parent skill (esp-ship). The state is `<run-dir>/fix-review.json`, every resolution is logged in `decisions.jsonl`, the wait keeps its progress in `<run-dir>/fix-review-wait.json`, and under esp-ship the outcome is recorded as step `fix-review` (`fix-review-<N>` in internal mode, after `review-<N>`) in `ship.json`. Without it, the state goes to a temporary directory and no run is created.
@@ -62,6 +62,8 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/config.mjs" get defaults
 node "${CLAUDE_PLUGIN_ROOT}/scripts/config.mjs" get ship
 ```
 
+With `--run-dir`, add `--run-dir <path>` to each `config.mjs get`: it reads the run's frozen config snapshot (an esp-ship run) in place of the user and project layers, and the live config when the run has none.
+
 If a command exits with code 1 (invalid config), report its error and stop. If it cannot run at all (no `node`), continue with the defaults.
 
 - **`fix-review.max_rounds`** (`3`): esp-ship's round limit, passed here as `--max-rounds`. This skill leaves it unread
@@ -72,9 +74,10 @@ If a command exits with code 1 (invalid config), report its error and stop. If i
 - **`fix-review.wait.default_reviewers`** (`["claude"]`): reviewers waited for when `--reviewers` is not given
 - **`fix-review.wait.timeout_minutes`** (`30`): time limit of each wait when `--timeout` is not given
 - **`fix-review.wait.*`** (the other keys): read by `wait-for-review.mjs` itself (polling, trigger comments, checks grace), see `${CLAUDE_PLUGIN_ROOT}/references/config.schema.json`
-- **`commit.review_fixes`** (`separate`): `separate` or `fixup` (see Committing Fixes)
+- **`commit.style`** (`plain`) and **`commit.co_author`** (`true`): the title format and the attribution trailer of the fix commits (see Committing Fixes)
 - **`ship.halt_on`** (every key): with `budget`, rounds exhausted with items left halt the task. With `critical-security`, an unfixable critical item halts
 - **`defaults.interactive`** (`off`): interactive mode when `--interactive` is not given
+- **`defaults.language`** (`en-US`): language of the commit messages
 
 ### Scripts
 
@@ -156,10 +159,10 @@ A critical security or data-loss item that you cannot fix with high confidence i
 
 ### Committing Fixes
 
-- **`separate`** (default): group the fixes of a round by size. Small, local fixes go together in one commit, `fix(review): <summary>`, whose body lists each fix with its item URL or finding ID. A large or structurally separate fix gets its own commit. CI fixes are `fix(ci): <summary>` commits; a fix that answers both a comment and a failing check is one commit that names both.
-- **`fixup`**: commit each fix with `git commit --fixup=<sha>`, where `<sha>` is the commit on the branch that last changed the main file of the fix (`git log -1 --format=%H <base>..HEAD -- <file>`), or a `fix(review)` commit when there is none. History is not rewritten: squashing the `fixup!` commits is left to the merge method or the user.
-- Commit with git directly. Read `commit.co_author` for the attribution trailer, as `esp-commit` does.
-- While fixing, run the scoped checks of the files you touched: inside an esp-ship run (`--run-dir` with a `ship.json`), `node "${CLAUDE_PLUGIN_ROOT}/scripts/ship.mjs" milestone gates --run-dir <path> --files <a,b>` returns them as `commands`; elsewhere, the project's test command for those files. Then run the full gates once (`ship.gates`, else the project's test, lint and typecheck scripts) before the commit in internal mode, or before the push in pull request mode. If they fail and you cannot fix them, revert that fix, record the item as `open` with the failure, and continue with the others.
+- Group the fixes of a round by size. Small, local fixes go together in one commit, whose body lists each fix with its item URL or finding ID. A large or structurally separate fix gets its own commit. A fix that answers both a comment and a failing check is one commit that names both.
+- Titles follow `commit.style`: `plain` gives `Fix review findings: <summary>` and `Fix CI: <summary>`, `conventional` gives `fix(review): <summary>` and `fix(ci): <summary>`.
+- Commit with git directly, with the message in `defaults.language`. Every other title and trailer rule (the `commit.co_author` trailer included) follows [esp-commit](../../git/esp-commit/SKILL.md).
+- While fixing, run the scoped checks of the files you touched: `node "${CLAUDE_PLUGIN_ROOT}/scripts/gates.mjs" resolve --project-dir <repo> --files <a,b>`, plus `--run-dir <path>` when given (the run's plan and frozen config), returns them as `commands`; without a plan it returns the full gates, so run only the ones that cover those files. Then run the full gates once (`gates.mjs resolve --project-dir <repo>`: `ship.gates`, else detected from the project files) before the commit in internal mode, or before the push in pull request mode. If they fail and you cannot fix them, revert that fix, record the item as `open` with the failure, and continue with the others.
 
 ### CI Checks
 

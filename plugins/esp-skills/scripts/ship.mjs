@@ -58,16 +58,18 @@ export { ShipError };
 const USAGE = `Usage: node ship.mjs <command> [args] --run-dir <path> [options]
 
 Commands:
-  triage               Before init: detect the request (--request <text|path|issue>) and pick the
+  triage               Before init: detect the request (--request <text|path|issue>; without it, the
+                       plan already in --run-dir) and pick the
                        plan source and the track: { input_kind, plan_source, track, nothing_to_do,
                        needs_judgment, packages, ... }. --track pins the track; for a prompt or an
                        issue, --judged-track inline|orchestrated --estimate <files> --reason <text>
                        passes the model's judgment. --plan-mode auto|skip|always changes the plan
                        of a prompt or an issue. --record (needs --run-dir) logs one decision per
                        choice and writes triage.json
-  init                 Create ship.json (--request <text> --track inline|orchestrated --base <branch>);
-                       resolves the phases of the track and freezes the config. A second call
-                       prints the state; --resume lifts an awaiting-human stop
+  init                 Create ship.json (--request <text> --track inline|orchestrated --base <branch>;
+                       without --request, the title of the plan in the run directory); resolves
+                       the phases of the track and freezes the config. A second call prints the
+                       state; --resume lifts an awaiting-human stop (and takes --model, --parallel)
   show                 Print ship.json
   next                 What to run now: { action, track, phase, sub, skill, role, model, effort, cwd, ... };
                        action finish means every phase ended: go to the outcome
@@ -89,7 +91,9 @@ Commands:
   pr-loop              Pull request rounds after a step (--after wait|fix): wait, fix, merge or stop
   workspace            Branch phase: pick the workspace (checkout, existing-branch, worktree) from
                        --branch <name>, the current branch, the dirty files and ship.dirty_tree,
-                       and apply it; without a branch name it may return action name-branch
+                       and apply it; without a branch name it may return action name-branch.
+                       --new-branch never reuses the current branch, and replaces a recorded
+                       workspace that only reused it
   worktree             Create the task worktree on --branch <name> (from --from, default origin/<base>)
   budget               Elapsed wall time vs the track's max_wall_minutes
   scope                Inline track: changed files since the base vs max_files_changed
@@ -99,17 +103,20 @@ Commands:
                        --trigger files|design|gates --reason <text>); logs the Escalate decision
   stop                 Record a stop (--status awaiting-human|failed|halted --reason <text>)
   halt                 Halt under a halt_on key (--key --reason), log it, record it and print the halt
-  pr-body              Pull request body from the run artifacts (--summary <text>, --out <file>)
+  pr-body              Pull request body from the run artifacts (--summary <text>, --out <file>): the
+                       body of runs.mjs pr-body, with the frozen config and the plan overview or
+                       the request as the default summary
   outcome              Outcome of the run for summary.md and the report (--status, --summary)
   milestone <cmd>      Milestone state (state.json) of the orchestrated track:
     init               Create state.json from the latest plan (or --plan), or sync it with an
                        amended plan; uses the run's frozen config
     next               What to run now: { action: run|retry|halt|done|blocked, milestone, batch }
-                       (--parallel for a batch)
+                       (--parallel for a batch; defaults to the one recorded by init)
     start <id>         Begin an attempt of a milestone
     finish <id>        End the attempt: --status done|failed|halted [--commit <sha>] [--reason <text>]
                        [--failures <json>] (the verifier's failures, returned by next on the retry)
-    models <id>        Builder and verifier { model, effort } (--model <alias> [--effort <level>])
+    models <id>        Builder and verifier { model, effort } (--model <alias> [--effort <level>];
+                       --model defaults to the one recorded by init)
     reuse <id>         Continue the last builder with a milestone or spawn a fresh one:
                        { decision: reuse|fresh, agent_id, reason, used, cost, limit }; logs a
                        policy decision (--agent-id <id> held by this session, --parallel,
@@ -134,9 +141,13 @@ Options:
   --plan-mode <mode>        init, triage: auto, skip or always (default: ship.plan_mode)
   --review-mode <mode>      init: auto, internal, pr, both or none (default: ship.review_mode)
   --no-pr, --no-merge       init: stop before the pull request, or before the merge
+  --draft                   init: open the pull request as a draft (default: pr.draft)
+  --model <alias>           init: builder model of every milestone (opus, sonnet, haiku, fable)
+  --parallel                init: build milestone batches even when ship.parallel would not
   --resume                  init: resume the run (see init)
   --worktree                init: work in a task worktree (default: ship.worktree)
   --branch <name>           workspace: the task branch (checked out, tracked from origin or created)
+  --new-branch              workspace: name a new branch instead of reusing the current one
   --max-rounds <n>          init: pull request fix rounds (default: fix-review.max_rounds)
   --interactive <mode>      init: off, plan or all (default: defaults.interactive)
   --reviewers <names>       init: reviewers to wait for and fix
@@ -146,9 +157,11 @@ const BOOLEAN_FLAGS = new Set([
   "no-pr",
   "no-merge",
   "worktree",
+  "draft",
   "resume",
   "record",
   "parallel",
+  "new-branch",
   "help"
 ]);
 

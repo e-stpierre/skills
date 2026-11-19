@@ -48,12 +48,16 @@ Read the `plan` section and the shared defaults once at the start:
 ```bash
 node "${CLAUDE_PLUGIN_ROOT}/scripts/config.mjs" get plan
 node "${CLAUDE_PLUGIN_ROOT}/scripts/config.mjs" get defaults
+node "${CLAUDE_PLUGIN_ROOT}/scripts/config.mjs" get ship.budgets.orchestrated.max_milestones
 ```
+
+With `--run-dir`, add `--run-dir <path>` to each `config.mjs get`: it reads the run's frozen config snapshot (an esp-ship run) in place of the user and project layers, and the live config when the run has none.
 
 If a command exits with code 1 (invalid config), report its error and stop. If it cannot run at all (no `node`), continue with the defaults.
 
 - `plan.default_type` (default `auto`): plan type when `--type` is not given
 - `plan.explore_agents` (default `feature: 3`, `bug: 2`, `chore: 2`): explore subagents per plan type (`0` explores inline)
+- `ship.budgets.orchestrated.max_milestones` (default `12`): most milestones in a plan, completed ones included; `esp-ship` halts on a larger plan
 - `defaults.interactive` (default `off`): interactive mode when `--interactive` is not given
 - `defaults.models.explorer` (default `sonnet`): model and effort passed to each Explore subagent
 - `defaults.language` (default `en-US`): language of the plan prose
@@ -96,9 +100,9 @@ Classify every open choice with the decision policy:
 7. **Load the type reference** (`references/<type>.md`) and the plan format ([plan-format.md](../../../references/plan-format.md)).
 8. **Explore the codebase**: launch `plan.explore_agents.<type>` Explore subagents in parallel, each with a distinct focus (affected modules, existing patterns and tests, integration points), passing the `explorer` model and effort. With `0`, explore inline. Done when you know every file each milestone will touch, the patterns it follows, and the validation commands (test, lint, build) the project uses.
 9. **Gather requirements**: settle every requirements question of the type reference from the context and the exploration. Classify each question that stays open per Asking and Deciding: decide A-Fix and B-Decide yourself, and ask only B-Scope ones (in `plan` or `all` mode). Done when every question is settled, decided, answered or stated in `## Open Questions`.
-10. **Write `plan.md`** in the run directory, following the plan format: frontmatter with `version: 1`, the type-specific context sections, then milestones in dependency order, each one commit with explicit files and validation commands. Done when every milestone has every field and subsection of the plan format, and its `**Files**` lists every file step 8 found it touches. Continue at step 12.
-11. **Amend**: follow the four steps of Amendments in [plan-format.md](../../../references/plan-format.md). Fail when `runs.mjs plan` returns version 0; with no `state.json`, no milestone is completed. Done when `plan.mjs diff` passes and one decision logged the amendment. Continue at step 12.
-12. **Plan-lint**: run `plan.mjs lint` on the written file. Fix every error and lint again until `valid` is true. Resolve each warning, or state in the report why it stays. A shared-file warning is resolved by a real `Depends`, or by moving the shared files to an earlier milestone (see Parallel Milestones).
+10. **Write `plan.md`** in the run directory, following the plan format: frontmatter with `version: 1`, the type-specific context sections, then milestones in dependency order, each one commit with explicit files and validation commands. Keep the plan within `max_milestones`: combine related milestones before going over it. When the work truly needs more, say so in `## Risks` and `## Open Questions` (split the work into several plans). Done when every milestone has every field and subsection of the plan format, and its `**Files**` lists every file step 8 found it touches. Continue at step 12.
+11. **Amend**: follow the four steps of Amendments in [plan-format.md](../../../references/plan-format.md), keeping the completed and remaining milestones together within `max_milestones` (as in step 10). Fail when `runs.mjs plan` returns version 0; with no `state.json`, no milestone is completed. Done when `plan.mjs diff` passes and one decision logged the amendment. Continue at step 12.
+12. **Plan-lint**: run `plan.mjs lint <plan-file> --max-milestones <max_milestones>` on the written file. Fix every error and lint again until `valid` is true. Resolve each warning, or state in the report why it stays. A shared-file warning is resolved by a real `Depends`, or by moving the shared files to an earlier milestone (see Parallel Milestones).
     - **Parallel batches**: when the plan has two or more milestones, run `plan.mjs batches <plan-file>` (with `--run-dir <run-dir>` for an amendment, so completed milestones are left out) and write its `summary` lines as a list in a `## Parallel Batches` context section, just before `## Milestones` (replace the section of a copied version). Lint again, and for an amendment run `plan.mjs diff` again.
 13. **Interactive approval** (`plan` or `all`): present the summary and ask for approval before the reply. Apply requested changes to the same file (the version is final only once approved) and lint again. Done when the user approves.
 14. **Update an own run's status**: `runs.mjs update --status done`, or `awaiting-human` when a question is open (see Asking and Deciding).
@@ -125,4 +129,4 @@ Status: done
 Summary: Planned Add OAuth login in 2 milestones (M1, M2): <run-dir>/plan.md, version 1, feature
 ```
 
-For an amendment, list the changed, added and removed milestones and the amendment decision ID instead of the full milestone list.
+Show the `Next:` line only for an own run (no `--run-dir` given). For an amendment, list the changed, added and removed milestones and the amendment decision ID instead of the full milestone list.
