@@ -151,6 +151,18 @@ Options:
   --max-rounds <n>          init: pull request fix rounds (default: fix-review.max_rounds)
   --interactive <mode>      init: off, plan or all (default: defaults.interactive)
   --reviewers <names>       init: reviewers to wait for and fix
+  --pr <url>                init: adopt an open pull request (inline track): context, implement and
+                            pr are skipped; branch checks out its head, then the review wait, the
+                            fix rounds and the merge run (default request: the URL)
+  --merge-policy <policy>   init: auto (esp-merge merges), human (wait for a person to merge) or
+                            none (skip the merge) (default: ship.merge_policy); next returns it
+                            for the merge phase
+  --checks <mode>           init: required, or none-expected for a pull request that runs no
+                            checks: no checks grace period (next returns checks_grace_seconds 0
+                            for fix-review), logged as a policy decision (default: required)
+  --parent-run <dir>        init: link the run and its parent run (both run.json files) and
+                            freeze the config from the parent config.snapshot.json, with the
+                            project config over it
   --help                    Show this help`;
 
 const BOOLEAN_FLAGS = new Set([

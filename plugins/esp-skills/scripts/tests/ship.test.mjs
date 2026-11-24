@@ -493,6 +493,260 @@ describe("init", () => {
   });
 });
 
+describe("init: adoption, merge policy, checks and parent run", () => {
+  const finishUntil = (target) => {
+    for (const p of state().phases) {
+      if (p === target) return;
+      assert.equal(ship("phase", p, "--status", "done").code, 0);
+    }
+  };
+
+  test("resolvePhases: adoption keeps branch and the wait phases", () => {
+    const { phases, skipped } = resolvePhases("inline", undefined, {
+      adopt: true
+    });
+    assert.deepEqual(phases, ["branch", "fix-review", "merge"]);
+    for (const p of ["context", "implement", "pr"])
+      assert.equal(skipped[p], "--pr: adopted pull request");
+    // The core phase check is waived, and the wait phases need no pr phase.
+    assert.deepEqual(
+      resolvePhases("inline", ["branch", "fix-review", "merge"], {
+        adopt: true
+      }).phases,
+      ["branch", "fix-review", "merge"]
+    );
+    assert.throws(
+      () => resolvePhases("orchestrated", undefined, { adopt: true }),
+      ShipError
+    );
+    const none = resolvePhases("inline", undefined, { mergePolicy: "none" });
+    assert.equal(none.skipped.merge, "--merge-policy none");
+    assert.equal(
+      resolvePhases("inline", undefined, { mergePolicy: "human" }).phases.at(
+        -1
+      ),
+      "merge"
+    );
+    assert.throws(
+      () => resolvePhases("inline", undefined, { mergePolicy: "later" }),
+      ShipError
+    );
+  });
+
+  test("--pr adopts the pull request on the inline track", () => {
+    const out = ship(
+      "init",
+      "--pr",
+      PR,
+      "--base",
+      "main",
+      "--project-dir",
+      repo
+    );
+    assert.equal(out.code, 0, out.stderr);
+    const s = state();
+    assert.equal(s.track, "inline");
+    assert.equal(s.pr, PR);
+    assert.equal(s.adopted_pr, true);
+    assert.equal(s.request, `Adopt ${PR}`);
+    assert.deepEqual(s.phases, ["branch", "fix-review", "merge"]);
+    for (const p of ["context", "implement", "pr"]) {
+      assert.equal(s.phase_status[p], "skipped");
+      assert.equal(s.skipped_phases[p], "--pr: adopted pull request");
+    }
+    assert.equal(runJson().pr, PR);
+    const next = ship("next").json();
+    assert.equal(next.phase, "branch");
+    assert.equal(next.pr, PR);
+    // An adopted run cannot move to the orchestrated track.
+    assert.notEqual(
+      ship(
+        "switch-track",
+        "--to",
+        "orchestrated",
+        "--trigger",
+        "files",
+        "--reason",
+        "x"
+      ).code,
+      0
+    );
+  });
+
+  test("--pr validates its value and its combinations", () => {
+    const bad = (...extra) =>
+      ship("init", "--request", "x", "--project-dir", repo, ...extra).code;
+    assert.equal(bad("--pr", "42"), 2);
+    assert.equal(bad("--pr", "https://github.com/o/r/issues/7"), 2);
+    assert.equal(bad("--pr", PR, "--track", "orchestrated"), 2);
+    assert.equal(bad("--pr", PR, "--no-pr"), 2);
+    assert.equal(existsSync(join(runDir, "ship.json")), false);
+    assert.equal(existsSync(join(runDir, "config.snapshot.json")), false);
+    // A run that is not adopted does not return the pr on the branch phase.
+    initInline();
+    assert.equal(state().adopted_pr, false);
+    assert.equal("pr" in ship("next").json(), false);
+  });
+
+  test("--merge-policy: none skips the merge, human is passed to next", () => {
+    initInline("--merge-policy", "none");
+    let s = state();
+    assert.equal(s.merge_policy, "none");
+    assert.equal(s.merge_policy_source, "operator");
+    assert.equal(s.phase_status.merge, "skipped");
+    assert.equal(s.skipped_phases.merge, "--merge-policy none");
+    rmSync(join(runDir, "ship.json"));
+    initInline("--merge-policy", "human");
+    s = state();
+    assert.equal(s.phase_status.merge, "pending");
+    finishUntil("merge");
+    const next = ship("next").json();
+    assert.equal(next.phase, "merge");
+    assert.equal(next.merge_policy, "human");
+    assert.equal(next.checks, "required");
+    rmSync(join(runDir, "ship.json"));
+    assert.equal(
+      ship(
+        "init",
+        "--request",
+        "x",
+        "--project-dir",
+        repo,
+        "--merge-policy",
+        "later"
+      ).code,
+      2
+    );
+    assert.equal(existsSync(join(runDir, "ship.json")), false);
+  });
+
+  test("--merge-policy defaults to ship.merge_policy", () => {
+    init();
+    assert.equal(state().merge_policy, "auto");
+    assert.equal(state().checks, "required");
+    assert.equal(state().parent_run, null);
+    rmSync(join(runDir, "ship.json"));
+    rmSync(join(runDir, "config.snapshot.json"));
+    userConfig({ ship: { merge_policy: "none" } });
+    initInline();
+    const s = state();
+    assert.equal(s.merge_policy, "none");
+    assert.equal(s.merge_policy_source, "policy");
+    assert.equal(s.phase_status.merge, "skipped");
+  });
+
+  test("--checks none-expected logs one decision and drops the grace period", () => {
+    const bad = ship(
+      "init",
+      "--request",
+      "x",
+      "--project-dir",
+      repo,
+      "--checks",
+      "some"
+    );
+    assert.equal(bad.code, 2);
+    initInline("--checks", "none-expected");
+    assert.equal(state().checks, "none-expected");
+    const decisions = jsonl("decisions.jsonl");
+    assert.equal(decisions.length, 1);
+    assert.equal(decisions[0].source, "policy");
+    assert.match(decisions[0].decision, /checks grace period/);
+    // A second init prints the state and logs nothing more.
+    assert.equal(ship("init").code, 0);
+    assert.equal(jsonl("decisions.jsonl").length, 1);
+    finishUntil("fix-review");
+    const next = ship("next").json();
+    assert.equal(next.phase, "fix-review");
+    assert.equal(next.checks_grace_seconds, 0);
+    rmSync(join(runDir, "ship.json"));
+    initInline();
+    finishUntil("fix-review");
+    assert.equal("checks_grace_seconds" in ship("next").json(), false);
+  });
+
+  test("--parent-run links both runs and freezes the parent snapshot under the project config", () => {
+    const created = cli(RUNS, [
+      "create",
+      "parent",
+      "--root",
+      join(tmp, "runs"),
+      "--workflow",
+      "esp-orchestrate",
+      "--project-dir",
+      repo
+    ]);
+    assert.equal(created.code, 0, created.stderr);
+    const parentDir = created.json().run_dir;
+    const parentRun = () =>
+      JSON.parse(readFileSync(join(parentDir, "run.json"), "utf8"));
+    userConfig({ ship: { internal_review_rounds: 0 } });
+    writeFileSync(
+      join(parentDir, "config.snapshot.json"),
+      JSON.stringify({
+        version: 1,
+        ship: { merge_policy: "human", max_parallel: 5 },
+        "fix-review": { max_rounds: 4 }
+      })
+    );
+    mkdirSync(join(repo, ".esp-skills"));
+    writeFileSync(
+      join(repo, ".esp-skills", "config.json"),
+      JSON.stringify({ version: 1, ship: { max_parallel: 2 } })
+    );
+    init("--parent-run", parentDir);
+    const s = state();
+    assert.equal(s.parent_run.id, parentRun().id);
+    assert.equal(runJson().parent, parentRun().id);
+    assert.deepEqual(
+      parentRun().children.map((c) => c.id),
+      [runJson().id]
+    );
+    const snapshot = JSON.parse(
+      readFileSync(join(runDir, "config.snapshot.json"), "utf8")
+    );
+    assert.equal(snapshot.ship.merge_policy, "human");
+    assert.equal(snapshot.ship.max_parallel, 2);
+    assert.equal(snapshot["fix-review"].max_rounds, 4);
+    // The parent snapshot takes the place of the user config.
+    assert.equal(snapshot.ship.internal_review_rounds, 2);
+    assert.equal(s.merge_policy, "human");
+    assert.equal(s.pr_rounds.max, 4);
+  });
+
+  test("--parent-run without a parent snapshot, and a missing parent", () => {
+    const created = cli(RUNS, [
+      "create",
+      "parent",
+      "--root",
+      join(tmp, "runs"),
+      "--project-dir",
+      repo
+    ]);
+    const parentDir = created.json().run_dir;
+    const missing = ship(
+      "init",
+      "--request",
+      "x",
+      "--project-dir",
+      repo,
+      "--parent-run",
+      join(tmp, "nowhere")
+    );
+    assert.equal(missing.code, 1);
+    assert.equal(existsSync(join(runDir, "ship.json")), false);
+    assert.equal(runJson().parent ?? null, null);
+    userConfig({ ship: { internal_review_rounds: 1 } });
+    init("--parent-run", parentDir);
+    assert.equal(
+      runJson().parent,
+      JSON.parse(readFileSync(join(parentDir, "run.json"), "utf8")).id
+    );
+    // No parent snapshot: the user config is frozen as usual.
+    assert.equal(state().internal_review_rounds, 1);
+  });
+});
+
 describe("next and phase", () => {
   test("orchestrated: dispatches each phase with its role model", () => {
     init();

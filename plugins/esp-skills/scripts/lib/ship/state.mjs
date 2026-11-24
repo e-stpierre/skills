@@ -83,6 +83,12 @@ export const HALT_KEYS = [
 export const INTERACTIVE_MODES = ["off", "plan", "all"];
 /** Builder model aliases of --model. */
 export const MODEL_ALIASES = new Set(["opus", "sonnet", "haiku", "fable"]);
+/** Who merges the pull request: esp-merge, a person, or nobody (ship.merge_policy). */
+export const MERGE_POLICIES = ["auto", "human", "none"];
+/** CI checks the pull request runs: required ones, or none at all (no grace period). */
+export const CHECKS_MODES = ["required", "none-expected"];
+/** Inline phases an adopted pull request skips: it already has its commits and its pull request. */
+export const ADOPT_SKIPPED = ["context", "implement", "review", "pr"];
 export const ESCALATION_TRIGGERS = ["files", "design", "gates"];
 export const GATE_FAILURE_LIMIT = 2;
 export const SHA = /^[0-9a-f]{7,64}$/;
@@ -168,13 +174,23 @@ export function configOf(snapshot) {
   }
 }
 
-/** Freeze the config once per run: a recorded snapshot wins, then the existing file. */
-export function freezeConfig(dir, { snapshot, projectDir } = {}) {
+/**
+ * Freeze the config once per run: a recorded snapshot wins, then the existing
+ * file. A new snapshot merges the project config of projectDir over the
+ * parent run snapshot (parentSnapshot) when given, else over the user config.
+ */
+export function freezeConfig(
+  dir,
+  { snapshot, projectDir, parentSnapshot } = {}
+) {
   if (snapshot) return resolve(expandHome(String(snapshot)));
   const path = join(dir, "config.snapshot.json");
   if (!existsSync(path)) {
     try {
-      writeJson(path, loadConfig({ projectDir }).config);
+      writeJson(
+        path,
+        loadConfig({ projectDir, base: parentSnapshot ?? undefined }).config
+      );
     } catch (err) {
       if (err instanceof ConfigError)
         throw new ShipError(err.message, err.exitCode ?? 1);
@@ -306,6 +322,15 @@ export function checkState(state) {
     errors.push("pr_rounds.max: expected an integer >= 1");
   if (!Number.isInteger(state?.gate_failures) || state.gate_failures < 0)
     errors.push("gate_failures: expected an integer >= 0");
+  if (
+    state?.merge_policy !== undefined &&
+    !MERGE_POLICIES.includes(state.merge_policy)
+  )
+    errors.push(`merge_policy: expected one of ${MERGE_POLICIES.join(", ")}`);
+  if (state?.checks !== undefined && !CHECKS_MODES.includes(state.checks))
+    errors.push(`checks: expected one of ${CHECKS_MODES.join(", ")}`);
+  if (state?.adopted_pr === true && state.track !== "inline")
+    errors.push("adopted_pr: an adopted pull request runs on the inline track");
   if (state?.base_sha && !SHA.test(state.base_sha))
     errors.push("base_sha: expected a commit SHA");
   if (
