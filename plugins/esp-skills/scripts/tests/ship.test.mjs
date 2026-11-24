@@ -941,6 +941,22 @@ describe("next and phase", () => {
     }).json();
     assert.equal(budget.exceeded, true);
   });
+
+  test("a finished run over budget finishes instead of halting", () => {
+    userConfig({
+      ship: { budgets: { orchestrated: { max_wall_minutes: 1 } } }
+    });
+    init();
+    // Every phase done, for example a merge after a long human merge wait.
+    const s = state();
+    for (const p of s.phases) s.phase_status[p] = "done";
+    writeFileSync(join(runDir, "ship.json"), JSON.stringify(s, null, 2));
+    const later = cli(SCRIPT, ["next", "--run-dir", runDir], {
+      ESP_RUNS_NOW: "2026-11-09T12:00:00.000Z"
+    }).json();
+    assert.equal(later.action, "finish");
+    assert.equal(state().halt ?? null, null);
+  });
 });
 
 describe("loops", () => {

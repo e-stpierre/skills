@@ -110,7 +110,8 @@ function recordBaseSync(dir, options, env) {
 /**
  * `ship.mjs base-sync [--record --result rebased|conflict|pass|fail [--reason]]`:
  * without --record, fetch origin/<base> in the workspace and print
- * { action: none|rebase, base, onto, behind }; with it, record the outcome.
+ * { action: none|rebase|gates|push, base, onto, behind }; with it, record the
+ * outcome.
  */
 export function cmdBaseSync(options, env = process.env) {
   const dir = runDirOf(options);
@@ -124,5 +125,32 @@ export function cmdBaseSync(options, env = process.env) {
     };
   if (!state.base)
     throw new ShipError("base-sync needs the base branch recorded at init");
-  return baseSyncCheck(workspaceOf(options, state), state.base);
+  const check = baseSyncCheck(workspaceOf(options, state), state.base);
+  return check.action === "none"
+    ? resumeStep(check, state.base_sync?.last)
+    : check;
+}
+
+/**
+ * A resumed pr phase after an interrupted base sync: the branch already
+ * contains origin/<base>, but the steps after the rebase may be unfinished.
+ * `rebased` with no gates recorded asks for the gates (then the force-push),
+ * and `pass` asks for the force-push, a no-op when it already ran.
+ */
+function resumeStep(check, last) {
+  if (last?.result === "rebased")
+    return {
+      ...check,
+      action: "gates",
+      reason:
+        "resumed after the rebase: run and record the full gates, then force-push a branch already on origin"
+    };
+  if (last?.result === "pass")
+    return {
+      ...check,
+      action: "push",
+      reason:
+        "resumed after the post-rebase gates passed: force-push a branch already on origin"
+    };
+  return check;
 }

@@ -97,7 +97,8 @@ Commands:
                        workspace that only reused it
   worktree             Create the task worktree on --branch <name> (from --from, default origin/<base>)
   base-sync            Before the pull request: fetch origin/<base> in the workspace and compare it
-                       with the base of the branch: { action: none|rebase, base, onto, behind }
+                       with the base of the branch: { action: none|rebase|gates|push, base, onto,
+                       behind } (gates or push: a resume after an unfinished rebase or gates)
                        (an adopted pull request returns none with a reason). --record --result
                        rebased|conflict|pass|fail [--reason <text>] records the outcome in
                        base_sync: rebased updates base_sha, conflict stops awaiting-human, fail

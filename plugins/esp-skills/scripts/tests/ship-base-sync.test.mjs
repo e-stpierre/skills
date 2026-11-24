@@ -196,9 +196,14 @@ describe("base-sync --record", () => {
     assert.equal(s.base_sha, upstream);
     assert.equal(s.base_sync.last.result, "rebased");
     assert.equal(s.base_sync.last.at, NOW);
-    assert.equal(baseSync().action, "none");
+    // A resume before the gates ran asks for them, not for the pull request.
+    const resumed = baseSync();
+    assert.equal(resumed.action, "gates");
+    assert.equal(resumed.behind, 0);
 
     const pass = baseSync("--record", "--result", "pass");
+    // A resume after the gates passed asks for the force-push.
+    assert.equal(baseSync().action, "push");
     assert.equal(pass.action, "recorded");
     assert.deepEqual(
       state().base_sync.history.map((h) => h.result),

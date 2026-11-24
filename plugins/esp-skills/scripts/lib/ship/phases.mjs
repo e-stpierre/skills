@@ -536,6 +536,12 @@ export function dispatch(dir, state, at, config) {
     return { action: "finish", reason: `halted (${state.halt.key})` };
   if (state.stop)
     return { action: "finish", reason: `stopped: ${state.stop.reason}` };
+  // Completion comes before the budget: a run whose last phase is done (for
+  // example a pull request merged after a long human merge wait) keeps its
+  // outcome instead of halting on the wall time it no longer spends.
+  const phase = nextPhase(state);
+  if (!phase)
+    return { action: "finish", reason: "every phase is done or skipped" };
   const budget = budgetCheck(state, at);
   if (budget.action === "halt")
     return {
@@ -544,9 +550,6 @@ export function dispatch(dir, state, at, config) {
       reason: `wall time ${budget.elapsed_minutes} min over ${budget.max_wall_minutes}`,
       budget
     };
-  const phase = nextPhase(state);
-  if (!phase)
-    return { action: "finish", reason: "every phase is done or skipped" };
   const cwd = state.worktree ?? state.project_dir;
   const out = {
     action: "run",
