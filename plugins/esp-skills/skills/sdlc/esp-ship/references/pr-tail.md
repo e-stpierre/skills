@@ -12,8 +12,9 @@ Before the pull request opens, the branch is rebased onto `origin/<base>` when t
 2. With `action: rebase`, run `git rebase origin/<base>`. On a conflict, run `git rebase --abort` (never resolve it here), then `ship.mjs base-sync --record --result conflict --reason "<conflicting files>"`: it stops the task `awaiting-human`, with the branch as it was before the rebase.
 3. After a clean rebase, record it: `ship.mjs base-sync --record --result rebased`. It moves `base_sha` to the new merge-base, so `scope`, the review gate and the outcome count only the task's own changes.
 4. Run the full gates in `cwd` (the `commands` of `ship.mjs milestone gates --scope full --run-dir <run-dir> --project-dir <cwd>`, see gates.md), then record them: `--record --result pass`, or `--record --result fail --reason "<gate>: <first error>"`. A failure halts the task with `gates-exhausted` (a `failed` stop when `gates-exhausted` is not in `ship.halt_on`): read `action` (`recorded`, `stop` or `halt`) and end the task on `stop` or `halt`.
+5. After the gates pass, when the branch is already on `origin` (`git ls-remote --exit-code --heads origin <branch>` exits 0), run `git push --force-with-lease origin HEAD:<branch>` in `cwd`, so the Pull Request step finds the branch up to date and its plain push succeeds.
 
-The branch is not pushed yet, so the rebase needs no force-push. A branch that is already on `origin` (a resumed run) is pushed with `--force-with-lease`, the task branch only.
+A branch not yet on `origin` needs no force-push: the Pull Request step pushes it. A branch already there (reused by `workspace`, named by `--branch`, or pushed by a resumed run) is force-pushed by step 5, with `--force-with-lease` and the task branch only.
 
 ## Pull Request
 
