@@ -57,6 +57,7 @@ function checker(value) {
       return rules;
     };
     const rules = {
+      rule,
       oneOf: (list) =>
         rule(
           (x) => list.includes(x),
@@ -144,6 +145,20 @@ export function checkRun(run) {
         (typeof m.effort === "string" && m.effort.length > 0))
   );
   field("budgets_used").object((n) => typeof n === "number" && n >= 0);
+  field("children").rule(
+    (x) =>
+      Array.isArray(x) &&
+      x.every(
+        (c) =>
+          c !== null &&
+          typeof c === "object" &&
+          typeof c.id === "string" &&
+          ID_PATTERN.test(c.id) &&
+          typeof c.path === "string" &&
+          c.path.length > 0
+      ),
+    "expected a list of { id, path } entries"
+  );
   return errors;
 }
 

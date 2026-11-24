@@ -4,6 +4,8 @@ Triage runs once, on a new run, after the run directory exists and before `ship.
 
 `triage` -> `[judge the track]` -> `triage --record` -> `init`, or the summary when `nothing_to_do`
 
+A run started with `--pr <url>` has no triage: the adopted pull request already holds the work, so `init --pr` pins the inline track with no plan, and the request defaults to `Adopt <url>`. Go straight to `init` (Instructions step 6).
+
 ## Detect
 
 Run `ship.mjs triage --request <context> --run-dir <run-dir> --project-dir <repo-root>`, with `--track <track>` and `--plan-mode <mode>` when those flags were given. Without `[context]`, leave `--request` out: the run directory holds a plan (a run started by `esp-plan`), and triage reuses it. It prints the facts and the choices it could make, with no writes:

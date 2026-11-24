@@ -1,8 +1,7 @@
 ---
 name: esp-ship
-description: Ship a task to a merged pull request, inline or as verified milestones. Use when asked to take a task, a GitHub issue or a plan all the way to a merged pull request.
-argument-hint: "[-u|--resume] [-w|--worktree] [-b|--branch <name>] [-P|--no-pr] [-M|--no-merge] [-D|--draft] [-l|--parallel] [-t|--track <track>] [-L|--plan-mode <mode>] [-R|--review <mode>] [-a|--model <alias>] [-m|--max-rounds <n>] [-r|--reviewers <name>...] [-i|--interactive <mode>] [-d|--run-dir <path>] [context]"
-disable-model-invocation: true
+description: Ship a task to a merged pull request, inline or as verified milestones. Use to take a task, an issue or a plan to a merged PR, to adopt an open PR through its review fixes and merge, or to ship one unit of a multi-PR change.
+argument-hint: "[-u|--resume] [-w|--worktree] [-b|--branch <name>] [-P|--no-pr] [-M|--no-merge] [-D|--draft] [-l|--parallel] [-t|--track <track>] [-L|--plan-mode <mode>] [-R|--review <mode>] [-a|--model <alias>] [-m|--max-rounds <n>] [-r|--reviewers <name>...] [-i|--interactive <mode>] [-d|--run-dir <path>] [-p|--pr <url>] [-g|--merge-policy <policy>] [-c|--checks <mode>] [-T|--parent-run <path>] [-C|--project-dir <path>] [context]"
 ---
 
 # ESP Ship
@@ -11,7 +10,7 @@ disable-model-invocation: true
 
 Take any task (a one-line fix, a feature prompt, a GitHub issue, a plan from `esp-plan`) to a merged pull request. Triage picks the track: inline (this session, one commit) or orchestrated (a plan, then one verified commit per milestone and an internal review). Both tracks share the pull request tail. `scripts/ship.mjs` decides what runs next and keeps the state in the run directory, so an interrupted run resumes where it stopped.
 
-`preflight -> triage -> [plan] -> branch -> implement (inline) or build (milestones) -> [internal review <-> fix] -> PR -> [wait (reviews + checks) <-> fix-review] -> refresh body -> merge -> summary`
+`preflight -> triage -> [plan] -> branch -> implement (inline) or build (milestones) -> [internal review <-> fix] -> base sync -> PR -> [wait (reviews + checks) <-> fix-review] -> refresh body -> merge -> summary`
 
 ## Arguments
 
@@ -32,7 +31,12 @@ Take any task (a one-line fix, a feature prompt, a GitHub issue, a plan from `es
 - **`[-r|--reviewers <name>...]`** (optional): Reviewer names from `fix-review.wait.reviewers` (`claude`, `codex`) or GitHub logins, repeated (`-r claude -r codex`) or comma-separated. Defaults to `fix-review.wait.default_reviewers`.
 - **`[-i|--interactive <mode>]`** (optional): `off`, `plan` or `all`. `plan` approves the plan (or the inline approach), then runs on its own. `all` also stops at the internal review findings, before and after each pull request fix round, and before the merge. Defaults to `defaults.interactive` (`off`). Headless sessions and subagents always use `off`.
 - **`[-d|--run-dir <path>]`** (optional): Run directory to use or to resume. Without it, the skill creates its run under `runs.root`. The config is frozen in `ship.json` on the first call.
-- **`[context]`** (required unless resuming, or unless `--run-dir` names a run that already holds a plan): The task: a description, a GitHub issue URL or `#<number>`, or a path to a file that describes it (a plan, a task list, a design document). Without it, a run started by `esp-plan` ships its plan.
+- **`[-p|--pr <url>]`** (optional): Adopt an open pull request (`https://<host>/<owner>/<repo>/pull/<n>`) instead of starting from a task: no triage, the inline track, its head branch checked out, then the review wait, the fix rounds and the merge. Context, implement and the pull request phase are skipped. Cannot be combined with `--no-pr` or `--track orchestrated`.
+- **`[-g|--merge-policy <policy>]`** (optional): Who merges the pull request: `auto` (esp-merge merges it), `human` (wait for a person to merge it, up to `merge.human_wait_minutes`) or `none` (skip the merge phase, with the pull request left open). Defaults to `ship.merge_policy` (`auto`).
+- **`[-c|--checks <mode>]`** (optional): `required` or `none-expected`. `none-expected` is for a pull request that runs no checks (for example one opened with `GITHUB_TOKEN`): the review wait and the merge do not wait for checks to register, while checks that do exist still block. Logged as a policy decision. Defaults to `required`.
+- **`[-T|--parent-run <path>]`** (optional): Run directory of a parent run (an orchestrating run that ships several units). Links both `run.json` files, and freezes the config from the parent `config.snapshot.json` with this repository's project config over it.
+- **`[-C|--project-dir <path>]`** (optional): Repository to ship in, when it is not the current one (for example a unit in a sibling repository). The preflight, the config, the run and every phase use it. Defaults to the git root of the current directory.
+- **`[context]`** (required unless resuming, adopting with `--pr`, or unless `--run-dir` names a run that already holds a plan): The task: a description, a GitHub issue URL or `#<number>`, or a path to a file that describes it (a plan, a task list, a design document). Without it, a run started by `esp-plan` ships its plan.
 
 ### Values
 
@@ -68,19 +72,20 @@ Arguments: $ARGUMENTS
 
 ### Configuration
 
-Read the sections once at the start. When the run directory already exists (`--resume`, or `--run-dir` naming a run started by esp-plan), add `--run-dir <run-dir>` to each command, so a resumed run reads its frozen config:
+Read the sections once at the start, from the repository the task ships in: pass `--project-dir <repo-root>` to each command (`--project-dir` when given, else the git root of the current directory), so the project layer is the one of that repository. When the run directory already exists (`--resume`, or `--run-dir` naming a run started by esp-plan), add `--run-dir <run-dir>` to each command, so a resumed run reads its frozen config:
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/config.mjs" get ship
-node "${CLAUDE_PLUGIN_ROOT}/scripts/config.mjs" get fix-review
-node "${CLAUDE_PLUGIN_ROOT}/scripts/config.mjs" get pr
-node "${CLAUDE_PLUGIN_ROOT}/scripts/config.mjs" get defaults
+node "${CLAUDE_PLUGIN_ROOT}/scripts/config.mjs" get ship --project-dir <repo-root>
+node "${CLAUDE_PLUGIN_ROOT}/scripts/config.mjs" get fix-review --project-dir <repo-root>
+node "${CLAUDE_PLUGIN_ROOT}/scripts/config.mjs" get pr --project-dir <repo-root>
+node "${CLAUDE_PLUGIN_ROOT}/scripts/config.mjs" get defaults --project-dir <repo-root>
 ```
 
 If a command exits with code 1 (invalid config), report its error and stop. If it cannot run at all (no `node`), stop: the dispatch needs the scripts. `ship.mjs` applies most `ship.*` keys itself (phases, budgets, inline limits) and `pr.draft`; the reference file of each phase names the keys it reads. This session reads directly:
 
 - **`pr.base`** (`null`: the repository default branch) and **`defaults.interactive`**: the base and the interactive mode
 - **`ship.halt_on`**: the stop conditions honored (see decision-policy.md)
+- **`ship.merge_policy`**: the `--merge-policy` default, applied by `init`
 - **`defaults.models.<role>`**: a subagent model, only when `next` gives none (`ship.mjs` resolves the others, see model-selection.md)
 
 `ship.mjs init` freezes the config in the run (`config.snapshot.json`, recorded in `ship.json`), so a resumed run keeps the settings it started with. The phase skills read their own sections (`plan`, `review`, `fix-review`, `merge`, `pr`, `worktrees`) from that snapshot: they get `--run-dir <run-dir>` and pass it to `config.mjs get`, which then uses the snapshot in place of the user and project layers. The branch name comes from the snapshot too (see workspace.md). esp-commit takes no run directory and reads the live `commit` section.
@@ -92,6 +97,7 @@ If a command exits with code 1 (invalid config), report its error and stop. If i
 - **`budget`**, **`scope`**, **`gate-failure`**, **`switch-track`**: the inline limits and the move to the orchestrated track (see inline.md)
 - **`workspace`**, **`worktree`**: see workspace.md
 - **`final-gates`**: see gates.md
+- **`base-sync`**: the rebase onto a moved base before the pull request, see pr-tail.md
 - **`review-gate`**: see review.md
 - **`milestone <cmd>`**: see milestones.md
 - **`record <step>`**: the phase skills and the builders record their own step under esp-ship
@@ -110,11 +116,11 @@ If a command exits with code 1 (invalid config), report its error and stop. If i
 
 - **`context`, `implement`** (inline track): in this session, see [inline.md](references/inline.md)
 - **`plan`** (orchestrated track): see [plan.md](references/plan.md)
-- **`branch`**: see [workspace.md](references/workspace.md)
+- **`branch`**: see [workspace.md](references/workspace.md). With an adopted pull request (`next` gives `pr`), the branch is its head branch (see Adopted Pull Request there)
 - **`build`** (orchestrated track): the milestone loop in this session, see [milestones.md](references/milestones.md)
 - **`final-gates`** (orchestrated track): the full gates once in this session, see [gates.md](references/gates.md)
 - **`review`** with `sub: review` or `sub: review-fix`: see [review.md](references/review.md)
-- **`pr`**, **`fix-review`** (each round starts with the `fix-review-wait` step), **`merge`**: see [pr-tail.md](references/pr-tail.md)
+- **`pr`** (it starts with the base sync), **`fix-review`** (each round starts with the `fix-review-wait` step; `checks_grace_seconds` when given goes to the wait), **`merge`** (`merge_policy` picks esp-merge or the human merge wait): see [pr-tail.md](references/pr-tail.md)
 
 ### Phase Subagents
 
@@ -156,12 +162,12 @@ A message the user sends while the task runs is read at the next phase or milest
 
 ## Instructions
 
-1. **Parse arguments**: read each option by its short or long name (`-w` or `--worktree`, `-m 2` or `--max-rounds 2`, `--track=inline` too), and the trailing `[context]`. Collect every `-r`/`--reviewers` value into one comma-separated list. Resolve the interactive mode: `-i`/`--interactive`, else `defaults.interactive`, `off` when headless or in a subagent. No `[context]` on a new run is fine when `--run-dir` names a run whose plan exists (`runs.mjs plan --run-dir <path>` prints `version` above `0`): the run ships that plan. `--resume` without `--run-dir`, `--resume` on a run without `ship.json`, an unknown `--track`, `--plan-mode`, `--review` or `--model` value, or no `[context]` on a new run without a plan is a usage error: report it and stop.
+1. **Parse arguments**: read each option by its short or long name (`-w` or `--worktree`, `-m 2` or `--max-rounds 2`, `--track=inline` too), and the trailing `[context]`. Collect every `-r`/`--reviewers` value into one comma-separated list. Resolve the interactive mode: `-i`/`--interactive`, else `defaults.interactive`, `off` when headless or in a subagent. No `[context]` on a new run is fine when `--run-dir` names a run whose plan exists (`runs.mjs plan --run-dir <path>` prints `version` above `0`): the run ships that plan. `--pr` needs no `[context]`. `--resume` without `--run-dir`, `--resume` on a run without `ship.json`, an unknown `--track`, `--plan-mode`, `--review`, `--model`, `--merge-policy` or `--checks` value, `--pr` that is not a pull request URL or that comes with `--no-pr` or `--track orchestrated`, or no `[context]` on a new run without a plan (and without `--pr`) is a usage error: report it and stop.
 2. **Load configuration** (see Configuration). Done when the four sections are read.
-3. **Preflight**: a git repository, and `gh auth status` succeeds unless `--no-pr`. A dirty working tree is fine (the branch phase moves the task to a worktree, see [workspace.md](references/workspace.md)), except with `--branch` naming the current branch, or with `ship.dirty_tree: fail`. Otherwise report it and stop with `status: failed`.
-4. **Resolve the run**: with `--run-dir`, use it (`runs.mjs create --run-dir <path>` is a no-op on an existing run). Otherwise `runs.mjs create <slug> --title <task title> --workflow esp-ship --repo <owner/name or repo path>`. Resolve the base: `pr.base`, else the repository default branch. Done when the run directory exists and the base is named.
-5. **Triage** (new runs only): run `ship.mjs triage` on the request (or, without `[context]`, on the plan of the run) and pick the track and the plan source (see [triage.md](references/triage.md)). Done when `ship.mjs triage --record` has logged the choices. With `nothing_to_do`, skip to step 9 with the triage facts (`result` of `--record`, also in `<run-dir>/triage.json`).
-6. **Initialize**: `ship.mjs init --request <request text> --track <track> --base <base> --project-dir <repo-root>`, with `--plan-source <source>` from triage, `--plan-mode` and `--review-mode` when given, and the long form of each other flag that was given (`--no-pr`, `--no-merge`, `--draft`, `--worktree`, `--parallel`, `--model`, `--max-rounds`, `--interactive`, `--reviewers`). Without `[context]`, leave `--request` out: `init` takes the plan title. For a resume, run `ship.mjs init --resume` without `--request`, adding `--model` and `--parallel` when given. When the printed `phases` have no `branch`, the current branch must not be the default branch: stop with `status: failed` otherwise. Done when `init` prints the state.
+3. **Preflight**: on the repository the task ships in (`<repo-root>`: `--project-dir`, else the git root of the current directory), a git repository, and `gh auth status` succeeds unless `--no-pr`. With `--pr`, `gh pr view <url> --json state` reports it `OPEN`. A dirty working tree is fine (the branch phase moves the task to a worktree, see [workspace.md](references/workspace.md)), except with `--branch` naming the current branch, or with `ship.dirty_tree: fail`. Otherwise report it and stop with `status: failed`.
+4. **Resolve the run**: with `--run-dir`, use it (`runs.mjs create --run-dir <path>` is a no-op on an existing run). Otherwise `runs.mjs create <slug> --title <task title> --workflow esp-ship --repo <owner/name or repo path> --project-dir <repo-root>`, adding `--parent <parent-run>` with `--parent-run`, so the parent lists the run from the start. Resolve the base: with `--pr`, its base branch (`gh pr view <url> --json baseRefName`), else `pr.base`, else the default branch of `<repo-root>`. Done when the run directory exists and the base is named.
+5. **Triage** (new runs only, never with `--pr`: the adopted pull request pins the inline track): run `ship.mjs triage` on the request (or, without `[context]`, on the plan of the run) and pick the track and the plan source (see [triage.md](references/triage.md)). Done when `ship.mjs triage --record` has logged the choices. With `nothing_to_do`, skip to step 9 with the triage facts (`result` of `--record`, also in `<run-dir>/triage.json`).
+6. **Initialize**: `ship.mjs init --request <request text> --track <track> --base <base> --project-dir <repo-root>`, with `--plan-source <source>` from triage, `--plan-mode` and `--review-mode` when given, and the long form of each other flag that was given (`--no-pr`, `--no-merge`, `--draft`, `--worktree`, `--parallel`, `--model`, `--max-rounds`, `--interactive`, `--reviewers`, `--merge-policy`, `--checks`, `--parent-run`). Without `[context]`, leave `--request` out: `init` takes the plan title. With `--pr`, run `ship.mjs init --pr <url> --base <base> --project-dir <repo-root>` with the other flags and no `--track` or `--plan-source`: the request defaults to `Adopt <url>`. For a resume, run `ship.mjs init --resume` without `--request`, adding `--model` and `--parallel` when given. When the printed `phases` have no `branch`, the current branch must not be the default branch: stop with `status: failed` otherwise. Done when `init` prints the state.
 7. **Loop**: run `ship.mjs next` and act on `action` (see Task State and Phase Map). Before each phase, handle user messages and the interactive checkpoints. Done when `next` returns `finish`.
 8. **Outcome**: `ship.mjs outcome`. Pass `--summary` when the default one does not say enough. Done when it prints the outcome JSON.
 9. **Summary and run status**: write `<run-dir>/summary.md` per the summary template (`workflow: esp-ship`, the track in the outcome, `status` is the outcome status), from the outcome and `decisions.jsonl`, naming the workspace (`outputs.workspace`) and each skipped phase with its reason (`outputs.skipped_phases`, `outputs.review_gate`), until `runs.mjs check` passes on it. Set `runs.mjs update --status` to the outcome status (`merged`, `done`, `awaiting-human`, `halted`, `failed`).

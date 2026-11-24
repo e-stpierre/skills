@@ -12,12 +12,14 @@ import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, test } from "node:test";
 import { fileURLToPath } from "node:url";
 import {
+  ConfigError,
   DEFAULTS_PATH,
   SCHEMA_PATH,
   SCHEMA_URL,
   deepMerge,
   expandHome,
   getValue,
+  layerPaths,
   loadConfig,
   parseValue,
   runSnapshot,
@@ -194,6 +196,30 @@ describe("schema and defaults", () => {
     );
   });
 
+  test("ship.merge_policy and merge.human_wait_minutes declare their defaults and reject invalid values", () => {
+    const defaults = readJson(DEFAULTS_PATH);
+    assert.equal(defaults.ship.merge_policy, "auto");
+    assert.equal(defaults.merge.human_wait_minutes, 1440);
+    const schema = readJson(SCHEMA_PATH);
+    for (const policy of ["auto", "human", "none"])
+      assert.deepEqual(
+        validate(schema, { ship: { merge_policy: policy } }).errors,
+        [],
+        policy
+      );
+    for (const config of [
+      { ship: { merge_policy: "manual" } },
+      { merge: { human_wait_minutes: 0 } },
+      { merge: { human_wait_minutes: 1.5 } },
+      { merge: { human_wait_minutes: "1440" } }
+    ])
+      assert.notDeepEqual(
+        validate(schema, config).errors,
+        [],
+        JSON.stringify(config)
+      );
+  });
+
   test("the replaced sections are gone and await-review is not a ship phase", () => {
     const schema = readJson(SCHEMA_PATH);
     for (const key of ["go", "go-light", "build", "await-review"])
@@ -317,7 +343,80 @@ describe("layering", () => {
   });
 });
 
+describe("base snapshot layer", () => {
+  test("the project layer wins over the base, which replaces the user layer", () => {
+    writeJson(join(home, "config.json"), {
+      pr: { draft: true },
+      commit: { style: "conventional" }
+    });
+    writeJson(join(project, ".esp-skills", "config.json"), {
+      pr: { base: "trunk" }
+    });
+    const base = join(root, "parent", "config.snapshot.json");
+    writeJson(base, {
+      pr: { base: "release", attribution: false },
+      ship: { merge_policy: "human" }
+    });
+    const { config, layers } = loadConfig({ projectDir: project, base, env });
+    assert.equal(config.pr.base, "trunk");
+    assert.equal(config.pr.attribution, false);
+    assert.equal(config.ship.merge_policy, "human");
+    assert.equal(config.pr.draft, false);
+    assert.equal(config.commit.style, "plain");
+    assert.deepEqual(
+      layers.map((l) => [l.layer, l.used]),
+      [
+        ["defaults", true],
+        ["user", false],
+        ["base", true],
+        ["project", true]
+      ]
+    );
+    assert.equal(layers.find((l) => l.layer === "base").path, base);
+  });
+
+  test("a base without a project layer still ignores the user layer", () => {
+    writeJson(join(home, "config.json"), { pr: { draft: true } });
+    const base = join(root, "base.json");
+    writeJson(base, { analyze: { output_dir: "reports" } });
+    const { config } = loadConfig({ projectDir: project, base, env });
+    assert.equal(config.analyze.output_dir, "reports");
+    assert.equal(config.pr.draft, false);
+  });
+
+  test("a missing base file raises a ConfigError", () => {
+    assert.throws(
+      () =>
+        loadConfig({ projectDir: project, base: join(root, "none.json"), env }),
+      (err) =>
+        err instanceof ConfigError &&
+        /base snapshot not found/.test(err.message)
+    );
+  });
+
+  test("an invalid base file fails validation", () => {
+    const base = join(root, "base.json");
+    writeJson(base, { ship: { merge_policy: "manual" } });
+    assert.throws(
+      () => loadConfig({ projectDir: project, base, env }),
+      (err) => err instanceof ConfigError && /merge_policy/.test(err.message)
+    );
+  });
+
+  test("layerPaths resolves the base path, null without one", () => {
+    const base = join(root, "base.json");
+    assert.equal(layerPaths({ projectDir: project, base, env }).base, base);
+    assert.equal(layerPaths({ projectDir: project, env }).base, null);
+  });
+});
+
 describe("cli get and show", () => {
+  test("get ship.merge_policy prints auto with no user or project config", () => {
+    const result = cli("get", "ship.merge_policy");
+    assert.equal(result.code, 0, result.stderr);
+    assert.equal(result.stdout.trim(), "auto");
+  });
+
   test("get <skill> prints the merged section as JSON", () => {
     writeJson(join(project, ".esp-skills", "config.json"), {
       analyze: { output_dir: "reports" }

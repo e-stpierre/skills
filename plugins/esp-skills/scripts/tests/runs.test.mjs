@@ -178,6 +178,86 @@ describe("create", () => {
     assert.equal(existsSync(join(root, "runs", "2026-11-10-x")), false);
   });
 
+  test("--parent links the child and the parent both ways, once", () => {
+    const parent = createRun();
+    const child = join(parent, "units", "U1");
+    const args = ["create", "--run-dir", child, "--parent", parent];
+    const first = cli(args);
+    assert.equal(first.code, 0, first.stderr);
+    assert.deepEqual(first.json().parent, {
+      id: "2026-11-10-fix-login-timeout",
+      path: parent
+    });
+    assert.equal(
+      readJson(join(child, "run.json")).parent,
+      first.json().parent.id
+    );
+    const expected = [{ id: "U1", path: child }];
+    assert.deepEqual(readJson(join(parent, "run.json")).children, expected);
+    const second = cli(args);
+    assert.equal(second.code, 0, second.stderr);
+    assert.equal(second.json().created, false);
+    assert.deepEqual(readJson(join(parent, "run.json")).children, expected);
+    assert.equal(cli(["check", join(parent, "run.json")]).code, 0);
+  });
+
+  test("--parent links an existing child run", () => {
+    const parent = createRun();
+    const child = join(root, "other", "T02-existing");
+    assert.equal(cli(["create", "--run-dir", child]).code, 0);
+    assert.equal(readJson(join(child, "run.json")).parent, null);
+    const out = cli(["create", "--run-dir", child, "--parent", parent]);
+    assert.equal(out.code, 0, out.stderr);
+    assert.equal(out.json().created, false);
+    assert.equal(
+      readJson(join(child, "run.json")).parent,
+      "2026-11-10-fix-login-timeout"
+    );
+    assert.deepEqual(readJson(join(parent, "run.json")).children, [
+      { id: "T02-existing", path: child }
+    ]);
+  });
+
+  test("--parent with a missing parent exits 1 and writes nothing for the child", () => {
+    const child = join(root, "other", "T03-orphan");
+    const out = cli([
+      "create",
+      "--run-dir",
+      child,
+      "--parent",
+      join(root, "nope")
+    ]);
+    assert.equal(out.code, 1);
+    assert.match(out.stderr, /Parent is not a run directory/);
+    assert.equal(existsSync(child), false);
+    assert.equal(cli(["create", "--run-dir", child]).code, 0);
+    const before = readFileSync(join(child, "run.json"), "utf8");
+    const again = cli([
+      "create",
+      "--run-dir",
+      child,
+      "--parent",
+      join(root, "nope")
+    ]);
+    assert.equal(again.code, 1);
+    assert.equal(readFileSync(join(child, "run.json"), "utf8"), before);
+  });
+
+  test("--parent refuses a second parent and update never sets parent", () => {
+    const first = createRun();
+    const second = createRun();
+    const child = join(root, "other", "T04-child");
+    assert.equal(
+      cli(["create", "--run-dir", child, "--parent", first]).code,
+      0
+    );
+    const out = cli(["create", "--run-dir", child, "--parent", second]);
+    assert.equal(out.code, 1);
+    assert.match(out.stderr, /already has parent/);
+    assert.equal(readJson(join(second, "run.json")).children, undefined);
+    assert.equal(cli(["update", "--run-dir", child, "--parent", "x"]).code, 2);
+  });
+
   test("slugify keeps directory names safe", () => {
     assert.equal(
       slugify("Ajouter l'écran Été / v2!"),
@@ -861,6 +941,31 @@ describe("check", () => {
       out.json().errors.map((e) => e.path),
       ["status", "max_risk"]
     );
+  });
+
+  test("accepts children of { id, path } and rejects a malformed list", () => {
+    const dir = createRun();
+    const path = join(dir, "run.json");
+    const run = readJson(path);
+    writeFileSync(
+      path,
+      JSON.stringify({ ...run, children: [{ id: "U1", path: "/runs/U1" }] })
+    );
+    assert.equal(cli(["check", path]).code, 0);
+    for (const children of [
+      { id: "U1", path: "/runs/U1" },
+      [{ id: "U1" }],
+      [{ id: "bad id", path: "/runs/x" }],
+      ["U1"]
+    ]) {
+      writeFileSync(path, JSON.stringify({ ...run, children }));
+      const out = cli(["check", path]);
+      assert.equal(out.code, 1, JSON.stringify(children));
+      assert.deepEqual(
+        out.json().errors.map((e) => e.path),
+        ["children"]
+      );
+    }
   });
 
   test("reports invalid lines and blank lines inside a jsonl file", () => {

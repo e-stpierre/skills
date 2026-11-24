@@ -6,7 +6,13 @@ import { existsSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { expandHome } from "../../config.mjs";
 import { readPlan } from "../../plan.mjs";
-import { cmdUpdate, latestPlan, now } from "../../runs.mjs";
+import {
+  appendDecision,
+  cmdUpdate,
+  latestPlan,
+  linkParent,
+  now
+} from "../../runs.mjs";
 import { finalGatesState, gatesFor } from "./gates.mjs";
 import {
   modeOf,
@@ -18,12 +24,15 @@ import {
 import { reviewLoop } from "./review-loop.mjs";
 import { prOptions } from "./tail.mjs";
 import {
+  ADOPT_SKIPPED,
+  CHECKS_MODES,
   CORE_PHASE,
   configOf,
   freezeConfig,
   GATE_FAILURE_LIMIT,
   git,
   INTERACTIVE_MODES,
+  MERGE_POLICIES,
   MODEL_ALIASES,
   PHASE_STATUSES,
   parseJsonOption,
@@ -82,6 +91,9 @@ const SKILLS = {
 // Phase lists
 // ---------------------------------------------------------------------------
 
+/** Skip reason of the phases an adopted pull request already did. */
+export const ADOPT_REASON = "--pr: adopted pull request";
+
 /**
  * Phases of a track, in canonical order, from the configured phases and the
  * flags. The core phase (implement, build) is required. The orchestrated track
@@ -90,7 +102,10 @@ const SKILLS = {
  * --no-merge drops the merge, and internal_review_rounds 0 drops the internal review. The
  * review mode drops the internal review (pr, none) or the pull request
  * review rounds (internal, none); auto keeps the internal review until the
- * review gate decides it after the build.
+ * review gate decides it after the build. `adopt` (--pr, inline track only)
+ * skips the phases an open pull request already did (context, implement,
+ * review, pr) and waives the core phase; its wait phases need no pr phase.
+ * Merge policy none drops the merge.
  */
 export function resolvePhases(
   track = "orchestrated",
@@ -100,13 +115,25 @@ export function resolvePhases(
     noMerge = false,
     reviewRounds = 2,
     reviewMode = "auto",
-    reviewSource = "default"
+    reviewSource = "default",
+    adopt = false,
+    mergePolicy = "auto"
   } = {}
 ) {
   if (!TRACKS.includes(track))
     throw new ShipError(`--track must be one of ${TRACKS.join(", ")}`, 2);
+  if (adopt && track !== "inline")
+    throw new ShipError(
+      "--pr adopts a pull request on the inline track only",
+      2
+    );
+  if (!MERGE_POLICIES.includes(mergePolicy))
+    throw new ShipError(
+      `--merge-policy must be one of ${MERGE_POLICIES.join(", ")}`,
+      2
+    );
   const wanted = new Set(configured);
-  if (!wanted.has(CORE_PHASE[track]))
+  if (!adopt && !wanted.has(CORE_PHASE[track]))
     throw new ShipError(
       `The configured phases must include ${CORE_PHASE[track]} (${track} track)`,
       1
@@ -122,6 +149,8 @@ export function resolvePhases(
   const skipped = {};
   for (const phase of TRACK_PHASES[track]) {
     if (phase === "plan") phases.push(phase);
+    else if (adopt && ADOPT_SKIPPED.includes(phase))
+      skipped[phase] = ADOPT_REASON;
     else if (!wanted.has(phase))
       skipped[phase] = "not in the configured phases";
     else if (phase === "review" && reviewRounds === 0)
@@ -129,11 +158,16 @@ export function resolvePhases(
     else if (phase === "review" && review.internal === "off")
       skipped[phase] = reviewReason;
     else if (phase === "pr" && noPr) skipped[phase] = "--no-pr";
-    else if (WAIT_PHASES.includes(phase) && (noPr || !wanted.has("pr")))
+    else if (
+      WAIT_PHASES.includes(phase) &&
+      (noPr || (!adopt && !wanted.has("pr")))
+    )
       skipped[phase] = noPr ? "--no-pr" : "needs the pr phase";
     else if (phase === "fix-review" && !review.pr)
       skipped[phase] = reviewReason;
     else if (phase === "merge" && noMerge) skipped[phase] = "--no-merge";
+    else if (phase === "merge" && mergePolicy === "none")
+      skipped[phase] = "--merge-policy none";
     else phases.push(phase);
   }
   return { phases, skipped };
@@ -150,7 +184,9 @@ export function applyTrack(state, track, config) {
     noMerge: state.flags.no_merge,
     reviewRounds: state.internal_review_rounds,
     reviewMode: state.review_mode ?? "auto",
-    reviewSource: state.review_mode_source ?? "default"
+    reviewSource: state.review_mode_source ?? "default",
+    adopt: Boolean(state.adopted_pr),
+    mergePolicy: state.merge_policy ?? "auto"
   });
   const previous = state.phase_status ?? {};
   state.track = track;
@@ -189,13 +225,39 @@ function modelOption(value) {
   return model;
 }
 
+/** A pull request URL: https://<host>/<owner>/<repo>/pull/<n>. */
+const PR_URL = /^https?:\/\/[^/\s]+\/[^/\s]+\/[^/\s]+\/pull\/\d+\/?$/i;
+
+/** The --pr URL to adopt, or null; anything else is a usage error. */
+function adoptOption(value) {
+  if (value === true)
+    throw new ShipError("--pr requires a pull request URL", 2);
+  const pr = stringOption(value)?.trim() || null;
+  if (pr !== null && !PR_URL.test(pr))
+    throw new ShipError(
+      `--pr must be a pull request URL (https://<host>/<owner>/<repo>/pull/<n>), got: ${pr}`,
+      2
+    );
+  return pr;
+}
+
+/** A value option checked against its allowed values, or null when absent. */
+function choiceOption(value, allowed, name) {
+  const given = stringOption(value);
+  if (given !== null && !allowed.includes(given))
+    throw new ShipError(`--${name} must be one of ${allowed.join(", ")}`, 2);
+  return given;
+}
+
 /**
- * The request of a new run: --request, else the title of the plan already in
- * the run directory (a run started by esp-plan), else its path.
+ * The request of a new run: --request, else the adopted pull request, else
+ * the title of the plan already in the run directory (a run started by
+ * esp-plan), else its path.
  */
-function requestOf(dir, options) {
+function requestOf(dir, options, pr = null) {
   const given = stringOption(options.request)?.trim();
   if (given) return given;
+  if (pr) return `Adopt ${pr}`;
   const latest = latestPlan(dir).path;
   if (!latest)
     throw new ShipError(
@@ -215,13 +277,37 @@ export function cmdInit(options, env = process.env) {
   }
   if (options.resume)
     throw new ShipError(`No ship.json in ${dir}: nothing to resume`, 2);
-  const request = requestOf(dir, options);
+  // Validate the options before the parent link and the frozen config.
+  const pr = adoptOption(options.pr);
+  const request = requestOf(dir, options, pr);
   const model = modelOption(options.model);
-  const track = stringOption(options.track) ?? "orchestrated";
+  // --pr pins the inline track: the pull request already holds the work.
+  const track = stringOption(options.track) ?? (pr ? "inline" : "orchestrated");
   if (!TRACKS.includes(track))
     throw new ShipError(`--track must be one of ${TRACKS.join(", ")}`, 2);
+  if (pr && track !== "inline")
+    throw new ShipError("--pr adopts a pull request on the inline track", 2);
+  if (pr && options["no-pr"])
+    throw new ShipError("--pr and --no-pr cannot be combined", 2);
+  choiceOption(options["merge-policy"], MERGE_POLICIES, "merge-policy");
+  const checks =
+    choiceOption(options.checks, CHECKS_MODES, "checks") ?? "required";
+  if (options["parent-run"] === true)
+    throw new ShipError("--parent-run requires a run directory", 2);
   const projectDir = projectDirOf(options, null);
-  const snapshot = freezeConfig(dir, { projectDir });
+  // --parent-run links both run.json files, then the frozen config starts
+  // from the parent snapshot with this project config over it.
+  const parentRun = stringOption(options["parent-run"])
+    ? linkParent(dir, options["parent-run"], env)
+    : null;
+  const parentSnapshot = parentRun
+    ? join(parentRun.path, "config.snapshot.json")
+    : null;
+  const snapshot = freezeConfig(dir, {
+    projectDir,
+    parentSnapshot:
+      parentSnapshot && existsSync(parentSnapshot) ? parentSnapshot : null
+  });
   const config = configOf(snapshot);
   const settings = shipSettings(config, track);
   const interactive =
@@ -242,6 +328,12 @@ export function cmdInit(options, env = process.env) {
     config.ship?.review_mode,
     REVIEW_MODES,
     "review-mode"
+  );
+  const mergePolicy = modeOf(
+    options["merge-policy"],
+    config.ship?.merge_policy,
+    MERGE_POLICIES,
+    "merge-policy"
   );
   if (options["base-sha"] && !SHA.test(options["base-sha"]))
     throw new ShipError("--base-sha must be a commit SHA", 2);
@@ -273,7 +365,13 @@ export function cmdInit(options, env = process.env) {
     review_gate: null,
     milestones: null,
     commit: null,
-    pr: null,
+    pr,
+    // --pr: the run adopts an open pull request (branch, review wait, merge).
+    adopted_pr: Boolean(pr),
+    merge_policy: mergePolicy.mode,
+    merge_policy_source: mergePolicy.source,
+    checks,
+    parent_run: parentRun,
     summary: null,
     interactive,
     reviewers: stringOption(options.reviewers),
@@ -319,6 +417,20 @@ export function cmdInit(options, env = process.env) {
   };
   applyTrack(state, track, config);
   writeNewState(dir, state);
+  if (pr) cmdUpdate({ "run-dir": dir, pr }, env);
+  if (checks === "none-expected")
+    appendDecision(
+      dir,
+      {
+        phase: "ship",
+        source: "policy",
+        risk: "low",
+        decision: "Merge without the checks grace period",
+        rationale:
+          "--checks none-expected: the pull request runs no checks, so an empty check list does not wait for the grace period; failing or pending checks still block"
+      },
+      env
+    );
   return { state_path: path, created: true, ...state };
 }
 
@@ -424,6 +536,12 @@ export function dispatch(dir, state, at, config) {
     return { action: "finish", reason: `halted (${state.halt.key})` };
   if (state.stop)
     return { action: "finish", reason: `stopped: ${state.stop.reason}` };
+  // Completion comes before the budget: a run whose last phase is done (for
+  // example a pull request merged after a long human merge wait) keeps its
+  // outcome instead of halting on the wall time it no longer spends.
+  const phase = nextPhase(state);
+  if (!phase)
+    return { action: "finish", reason: "every phase is done or skipped" };
   const budget = budgetCheck(state, at);
   if (budget.action === "halt")
     return {
@@ -432,9 +550,6 @@ export function dispatch(dir, state, at, config) {
       reason: `wall time ${budget.elapsed_minutes} min over ${budget.max_wall_minutes}`,
       budget
     };
-  const phase = nextPhase(state);
-  if (!phase)
-    return { action: "finish", reason: "every phase is done or skipped" };
   const cwd = state.worktree ?? state.project_dir;
   const out = {
     action: "run",
@@ -530,6 +645,13 @@ export function dispatch(dir, state, at, config) {
     base.rounds = state.pr_rounds.done + 1;
     base.wait_step = WAIT_STEP;
     base.wait_checks = true;
+    // A pull request that runs no checks does not wait for them to register.
+    if (state.checks === "none-expected") base.checks_grace_seconds = 0;
+  }
+  if (phase === "branch" && state.adopted_pr) base.pr = state.pr;
+  if (phase === "merge") {
+    base.merge_policy = state.merge_policy ?? "auto";
+    base.checks = state.checks ?? "required";
   }
   if (phase === "pr") Object.assign(base, prOptions(state, config));
   return base;

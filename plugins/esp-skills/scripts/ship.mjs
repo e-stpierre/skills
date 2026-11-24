@@ -13,7 +13,7 @@
 // <run-dir>/state.json, so an interrupted run resumes.
 //
 // The logic lives in lib/ship/: state, phases, review-loop, tail, inline,
-// milestones, steps, gates, workspace, triage and review-gate.
+// milestones, steps, gates, workspace, triage, review-gate and base-sync.
 //
 // Every command prints JSON to stdout. Exit codes: 0 ok, 1 failure or invalid
 // state, 2 usage.
@@ -43,6 +43,7 @@ import {
   cmdPhase,
   cmdStop
 } from "./lib/ship/phases.mjs";
+import { cmdBaseSync } from "./lib/ship/base-sync.mjs";
 import { reviewLoop } from "./lib/ship/review-loop.mjs";
 import { readState, runDirOf, ShipError } from "./lib/ship/state.mjs";
 import { cmdRecord } from "./lib/ship/steps.mjs";
@@ -95,6 +96,13 @@ Commands:
                        --new-branch never reuses the current branch, and replaces a recorded
                        workspace that only reused it
   worktree             Create the task worktree on --branch <name> (from --from, default origin/<base>)
+  base-sync            Before the pull request: fetch origin/<base> in the workspace and compare it
+                       with the base of the branch: { action: none|rebase|gates|push, base, onto,
+                       behind } (gates or push: a resume after an unfinished rebase or gates)
+                       (an adopted pull request returns none with a reason). --record --result
+                       rebased|conflict|pass|fail [--reason <text>] records the outcome in
+                       base_sync: rebased updates base_sha, conflict stops awaiting-human, fail
+                       halts gates-exhausted (a failed stop when the key is not in halt_on)
   budget               Elapsed wall time vs the track's max_wall_minutes
   scope                Inline track: changed files since the base vs max_files_changed
                        (--estimate <n> checks a planned file count instead)
@@ -135,7 +143,8 @@ Options:
   --project-dir <dir>       Repository root (default: recorded at init, else the git root)
   --track <track>           init, triage: inline or orchestrated (init default: orchestrated)
   --request <text>          init, triage: the task, an issue reference or a file path
-  --record                  triage: log the decisions and write triage.json
+  --record                  triage: log the decisions and write triage.json; base-sync: record
+                            the --result of the rebase or of the gates after it
   --plan-source <source>    init: reuse, import, generate or synthesize the plan (default: reuse
                             a plan in the run directory, else generate)
   --plan-mode <mode>        init, triage: auto, skip or always (default: ship.plan_mode)
@@ -151,6 +160,18 @@ Options:
   --max-rounds <n>          init: pull request fix rounds (default: fix-review.max_rounds)
   --interactive <mode>      init: off, plan or all (default: defaults.interactive)
   --reviewers <names>       init: reviewers to wait for and fix
+  --pr <url>                init: adopt an open pull request (inline track): context, implement and
+                            pr are skipped; branch checks out its head, then the review wait, the
+                            fix rounds and the merge run (default request: the URL)
+  --merge-policy <policy>   init: auto (esp-merge merges), human (wait for a person to merge) or
+                            none (skip the merge) (default: ship.merge_policy); next returns it
+                            for the merge phase
+  --checks <mode>           init: required, or none-expected for a pull request that runs no
+                            checks: no checks grace period (next returns checks_grace_seconds 0
+                            for fix-review), logged as a policy decision (default: required)
+  --parent-run <dir>        init: link the run and its parent run (both run.json files) and
+                            freeze the config from the parent config.snapshot.json, with the
+                            project config over it
   --help                    Show this help`;
 
 const BOOLEAN_FLAGS = new Set([
@@ -246,6 +267,8 @@ export function run(argv, env = process.env) {
       return { output: cmdWorkspace(options, env) };
     case "worktree":
       return { output: cmdWorktree(options, env) };
+    case "base-sync":
+      return { output: cmdBaseSync(options, env) };
     case "budget":
       return { output: budgetCheck(readState(runDirOf(options)), now(env)) };
     case "scope":

@@ -23,6 +23,10 @@ When `workspace` ran without `--branch` and returned `existing-branch` with `fro
 
 `workspace` is idempotent: once the branch is recorded, for example after a track switch or a resume, it returns `action: use` with the recorded workspace and `cwd`, and changes nothing. The one exception is `--new-branch` (see Open Pull Request).
 
+### Adopted Pull Request
+
+With `--pr`, `next` returns `phase: branch` with `pr`: the work is already on the head branch of that pull request. Read its branches with `gh pr view <pr> --json headRefName,baseRefName,isCrossRepository` (the base was already passed to `init`), then run `ship.mjs workspace --branch <headRefName>`: it checks the branch out when it exists locally, or tracks it from `origin`, as `existing-branch`. A local branch is checked out as it is, so bring it up to date in `cwd`: `git fetch origin <headRefName>`, then `git merge --ff-only origin/<headRefName>`. When the fast-forward fails (the local branch diverged from the pull request), stop with `ship.mjs stop --status failed --reason "--pr: local <headRefName> diverged from origin"`: the fix rounds push with a plain `git push`. Skip the Open Pull Request check (the open pull request is the task) and never build a branch name. Check this before `workspace`: a pull request from a fork (`isCrossRepository: true`) has no head branch on `origin`, and `workspace` would create a new branch instead: stop with `ship.mjs stop --status failed --reason "--pr: fork pull requests are not adopted"`.
+
 ### Branch Name
 
 Read the `branch` section once (`config.mjs get branch --run-dir <run-dir>`, the run's frozen config) and fill its pattern:
