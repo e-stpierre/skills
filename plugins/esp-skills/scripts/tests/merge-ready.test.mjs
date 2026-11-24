@@ -21,10 +21,12 @@ import {
   haltSignals,
   MergeError,
   mergePolicy,
+  mergeWaitSettings,
   report,
   resolveMethod,
   run,
   waitForChecks,
+  waitForMerge,
   waitSettings
 } from "../merge-ready.mjs";
 import { appendDecision, checkFile } from "../runs.mjs";
@@ -677,6 +679,43 @@ describe("check", () => {
     );
   });
 
+  test("--checks none-expected skips the grace period; a failing check still fails", () => {
+    const at = new Date(NOW);
+    const tenSecondsAgo = new Date(at.getTime() - 10_000).toISOString();
+    const noChecks = () => {
+      const client = fakeClient(facts({ checks: [], required: [] }));
+      client.commitDate = () => tenSecondsAgo;
+      return client;
+    };
+    const checksOf = (out) => out.conditions.find((c) => c.name === "checks");
+    const io = { now: () => at };
+    const byDefault = report(ctx(noChecks(), { io }), "9");
+    assert.equal(byDefault.outcome, "pending");
+    assert.equal(checksOf(byDefault).status, "pending");
+    const none = report(
+      ctx(noChecks(), { io, options: { checks: "none-expected" } }),
+      "9"
+    );
+    assert.equal(checksOf(none).status, "pass");
+    assert.equal(none.outcome, "ready");
+    const failing = fakeClient(
+      facts({ checks: [{ name: "test", bucket: "fail" }] })
+    );
+    const out = report(
+      ctx(failing, { io, options: { checks: "none-expected" } }),
+      "9"
+    );
+    assert.equal(checksOf(out).status, "fail");
+    assert.equal(out.outcome, "blocked");
+  });
+
+  test("--checks rejects an unknown mode with a usage error", () => {
+    assert.throws(
+      () => ctx(fakeClient(), { options: { checks: "optional" } }),
+      (err) => err instanceof MergeError && err.exitCode === 2
+    );
+  });
+
   test("--wait polls until checks finish", async () => {
     const data = facts({ checks: [{ name: "test", bucket: "pending" }] });
     const client = fakeClient(data);
@@ -727,6 +766,147 @@ describe("check", () => {
   });
 });
 
+describe("wait-merge", () => {
+  const MERGE_SHA = "e".repeat(40);
+
+  // A clock that each sleep moves forward by the slept time.
+  function clock(start = NOW) {
+    let at = new Date(start).getTime();
+    return {
+      now: () => new Date(at),
+      advance: (ms) => {
+        at += ms;
+      }
+    };
+  }
+
+  function waitCtx(client, time, onSleep = () => {}) {
+    return ctx(client, {
+      io: {
+        now: time.now,
+        sleep: async (ms) => {
+          time.advance(ms);
+          onSleep();
+        }
+      }
+    });
+  }
+
+  const state = () =>
+    JSON.parse(readFileSync(join(runDir, "merge-wait.json"), "utf8"));
+
+  test("returns merged with the merge commit once someone merges the pull request", async () => {
+    const client = fakeClient();
+    const time = clock();
+    let polls = 0;
+    const block = await waitForMerge(
+      waitCtx(client, time, () => {
+        polls += 1;
+        if (polls === 2)
+          client.data.pr = {
+            ...client.data.pr,
+            state: "MERGED",
+            merge_commit: MERGE_SHA
+          };
+      }),
+      "9",
+      { timeoutMinutes: 60, pollSeconds: 30 }
+    );
+    assert.equal(block.status, "merged");
+    assert.equal(block.outputs.merge_commit, MERGE_SHA);
+    assert.equal(block.outputs.pr, 9);
+    assert.equal(block.outputs.url, URL);
+    assert.equal(block.outputs.polls, 3);
+    assert.equal(block.blockers, undefined);
+    assert.equal(state().status, "merged");
+    assert.equal(client.calls.merge.length, 0);
+  });
+
+  test("returns failed for a pull request closed without merging", async () => {
+    const client = fakeClient(facts({ pr: { state: "CLOSED" } }));
+    const block = await waitForMerge(waitCtx(client, clock()), "9", {
+      timeoutMinutes: 60,
+      pollSeconds: 30
+    });
+    assert.equal(block.status, "failed");
+    assert.equal(block.outputs.reason, "closed");
+    assert.match(block.blockers[0], /closed without merging/);
+  });
+
+  test("returns awaiting-human at the deadline, and a rerun keeps the first deadline", async () => {
+    const time = clock();
+    const first = await waitForMerge(waitCtx(fakeClient(), time), "9", {
+      timeoutMinutes: 2,
+      pollSeconds: 30
+    });
+    assert.equal(first.status, "awaiting-human");
+    assert.equal(first.outputs.timed_out, true);
+    assert.equal(first.outputs.deadline, "2026-11-08T12:02:00.000Z");
+    assert.equal(time.now().toISOString(), "2026-11-08T12:02:00.000Z");
+
+    // A rerun with a longer timeout still ends at the first deadline.
+    const rerun = await waitForMerge(waitCtx(fakeClient(), time), "9", {
+      timeoutMinutes: 60,
+      pollSeconds: 30
+    });
+    assert.equal(rerun.status, "awaiting-human");
+    assert.equal(rerun.outputs.deadline, "2026-11-08T12:02:00.000Z");
+    assert.equal(rerun.outputs.polls, 1);
+    assert.equal(state().deadline, "2026-11-08T12:02:00.000Z");
+  });
+
+  test("an interrupted wait resumes with its deadline; another pull request starts a new one", async () => {
+    writeFileSync(
+      join(runDir, "merge-wait.json"),
+      JSON.stringify({
+        pr: 9,
+        url: URL,
+        started_at: "2026-11-08T11:00:00.000Z",
+        deadline: "2026-11-08T12:01:00.000Z",
+        status: "waiting",
+        ended_at: null
+      })
+    );
+    const time = clock();
+    const resumed = await waitForMerge(waitCtx(fakeClient(), time), "9", {
+      timeoutMinutes: 60,
+      pollSeconds: 30
+    });
+    assert.equal(resumed.status, "awaiting-human");
+    assert.equal(resumed.outputs.polls, 3);
+    assert.equal(state().started_at, "2026-11-08T11:00:00.000Z");
+
+    const other = fakeClient(
+      facts({ pr: { number: 10, url: "https://github.com/o/r/pull/10" } })
+    );
+    const fresh = await waitForMerge(waitCtx(other, clock()), "10", {
+      timeoutMinutes: 1,
+      pollSeconds: 30
+    });
+    assert.equal(fresh.outputs.deadline, "2026-11-08T12:01:00.000Z");
+    assert.equal(state().pr, 10);
+    assert.equal(state().started_at, NOW);
+  });
+
+  test("reads merge.human_wait_minutes and merge.poll_seconds unless given", () => {
+    assert.deepEqual(mergeWaitSettings({}, {}), {
+      timeoutMinutes: 1440,
+      pollSeconds: 30
+    });
+    assert.deepEqual(
+      mergeWaitSettings({}, { human_wait_minutes: 60, poll_seconds: 10 }),
+      { timeoutMinutes: 60, pollSeconds: 10 }
+    );
+    assert.deepEqual(
+      mergeWaitSettings(
+        { "wait-minutes": "5", "poll-seconds": "2" },
+        { human_wait_minutes: 60 }
+      ),
+      { timeoutMinutes: 5, pollSeconds: 2 }
+    );
+  });
+});
+
 describe("CLI", () => {
   test("check and merge through the command line with a fake gh", () => {
     const fakeGh = join(tmp, "gh.cjs");
@@ -771,6 +951,39 @@ else { console.error("unexpected: " + a); process.exit(1); }
 
     const usage = cli(SCRIPT, ["merge", "--method", "fast"], ghEnv);
     assert.equal(usage.code, 2);
+    const checksUsage = cli(SCRIPT, ["check", "--checks", "some"], ghEnv);
+    assert.equal(checksUsage.code, 2);
+    assert.match(
+      checksUsage.stderr,
+      /--checks must be required or none-expected/
+    );
+  });
+
+  test("wait-merge prints the outcome block and exits 1 for a closed pull request", async () => {
+    const io = { client: fakeClient(), sleep: async () => {}, log: () => {} };
+    io.client.data.pr = {
+      ...io.client.data.pr,
+      state: "MERGED",
+      merge_commit: "f".repeat(40)
+    };
+    const merged = await run(
+      ["wait-merge", "9", "--run-dir", runDir, "--project-dir", tmp],
+      env(),
+      io
+    );
+    assert.equal(merged.exitCode, 0);
+    assert.equal(
+      JSON.parse(merged.output).outputs.merge_commit,
+      "f".repeat(40)
+    );
+    io.client.data.pr = { ...io.client.data.pr, state: "CLOSED" };
+    const closed = await run(
+      ["wait-merge", "9", "--project-dir", tmp],
+      env(),
+      io
+    );
+    assert.equal(closed.exitCode, 1);
+    assert.equal(JSON.parse(closed.output).status, "failed");
   });
 
   test("run without a command prints usage with exit 2", async () => {

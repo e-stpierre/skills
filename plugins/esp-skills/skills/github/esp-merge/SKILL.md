@@ -1,7 +1,7 @@
 ---
 name: esp-merge
 description: Merge a pull request once its objective conditions hold. Use when asked to merge a PR.
-argument-hint: "[-n|--dry-run] [-m|--method <method>] [-i|--interactive <mode>] [-p|--pr <pr>] [-d|--run-dir <path>]"
+argument-hint: "[-n|--dry-run] [-m|--method <method>] [-c|--checks <mode>] [-i|--interactive <mode>] [-p|--pr <pr>] [-d|--run-dir <path>]"
 ---
 
 # ESP Merge
@@ -18,6 +18,7 @@ Read each option by its short or its long name (`-m squash`, `--method squash` o
 
 - **`[-n|--dry-run]`** (optional): Check the conditions and resolve the method, rebase nothing, merge nothing. The outcome reports what would happen.
 - **`[-m|--method <method>]`** (optional): `repo`, `squash`, `rebase` or `merge`. Defaults to `merge.method` (`repo`: pick from what the repository allows). An explicit method the repository does not allow is an error, never a silent fallback.
+- **`[-c|--checks <mode>]`** (optional): `required` or `none-expected`. Defaults to `required`: a head with no checks yet counts as pending for a short grace period while checks register. `none-expected` is for a pull request that runs no checks (for example one opened with `GITHUB_TOKEN`): no grace period, and checks that do exist still block when failing or pending. Passed to every `merge-ready.mjs check` and `merge` call as `--checks <mode>`.
 - **`[-i|--interactive <mode>]`** (optional): `off`, `plan` or `all`. Only `all` stops for a confirmation before merging; `plan` behaves like `off` in this skill. Defaults to `defaults.interactive` (`off`). Headless sessions always use `off`.
 - **`[-p|--pr <pr>]`** (optional): Pull request number, `#<number>`, or URL. Defaults to the pull request of the current branch.
 - **`[-d|--run-dir <path>]`** (optional): Run directory owned by a parent skill (esp-ship). Halt decisions and the run status count as halt signals, the method decision goes to the run, and under esp-ship the outcome is recorded as step `merge` in `ship.json`. Without it, no run is created.
@@ -29,7 +30,7 @@ Arguments: $ARGUMENTS
 ## Additional Resources
 
 - For the Halt class, the `ship.halt_on` stop conditions and the reply format (Replies), see [decision-policy.md](../../../references/decision-policy.md): read it before halting or reporting
-- For how the script resolves the method, see [merge-script.md](references/merge-script.md): read it to explain a method choice
+- For how the script resolves the method, the `--checks` modes and `wait-merge`, see [merge-script.md](references/merge-script.md): read it to explain a method choice
 
 ## Core Principles
 
@@ -71,7 +72,7 @@ If a command exits with code 1 (invalid config), report its error and stop. If i
 
 ### Scripts
 
-Every `merge-ready.mjs` call takes the `--pr` value as `<pr>` (omitted without it), plus `--run-dir <path>`:
+Every `merge-ready.mjs` call takes the `--pr` value as `<pr>` (omitted without it), plus `--run-dir <path>`, and `check` and `merge` take `--checks <mode>` when `--checks` is given:
 
 - **Check**: `merge-ready.mjs check [<pr>] [--method <m>]` (report: `ready`, `outcome`, `conditions`, `method`)
 - **Wait for checks**: `merge-ready.mjs check [<pr>] --wait` (polls every `merge.poll_seconds` up to `merge.checks_timeout_minutes`)

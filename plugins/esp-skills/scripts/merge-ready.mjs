@@ -11,13 +11,21 @@
 //   method [pr]  Resolve the merge method, print it
 //   merge [pr]   Check again right before merging, merge, clean up, log the
 //                decision, print the outcome as JSON ({ status, summary, outputs })
+//   wait-merge [pr]  Wait for someone else to merge or close the pull request,
+//                print the outcome as JSON ({ status, summary, outputs })
 //
 // Exit codes: 0 ok (check and method when they ran, read `ready` / `method`;
-// merge with any status but failed), 1 failed, 2 usage error.
+// merge and wait-merge with any status but failed), 1 failed, 2 usage error.
 
 import { spawnSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
-import { join, relative, resolve, sep } from "node:path";
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  renameSync,
+  writeFileSync
+} from "node:fs";
+import { dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   ConfigError,
@@ -38,6 +46,8 @@ export class MergeError extends Error {
 }
 
 export const METHODS = ["squash", "rebase", "merge"];
+export const CHECKS_MODES = ["required", "none-expected"];
+export const MERGE_WAIT_FILE = "merge-wait.json";
 export const CONDITIONS = [
   "open",
   "halt",
@@ -99,7 +109,8 @@ const PR_FIELDS = [
   "mergeStateStatus",
   "reviewDecision",
   "latestReviews",
-  "autoMergeRequest"
+  "autoMergeRequest",
+  "mergeCommit"
 ].join(",");
 
 /** A `gh`-backed client. `ESP_GH_CMD` (a JSON array) replaces `gh`, for tests. */
@@ -153,7 +164,8 @@ export function ghClient({ cwd, env = process.env } = {}) {
           login: r.author?.login ?? null,
           state: r.state
         })),
-        auto_merge: Boolean(pr.autoMergeRequest)
+        auto_merge: Boolean(pr.autoMergeRequest),
+        merge_commit: pr.mergeCommit?.oid ?? null
       };
     },
     commitDate(repo, sha) {
@@ -651,8 +663,14 @@ export function gather(ctx, target) {
     requireGreen: merge.require_green_checks !== false
   });
   // Checks register a short time after a push: an empty list on a head
-  // committed within the grace period is pending, not "no checks".
-  if (open && all.length === 0 && typeof client.commitDate === "function") {
+  // committed within the grace period is pending, not "no checks". With
+  // --checks none-expected the pull request runs no checks: no grace period.
+  if (
+    open &&
+    all.length === 0 &&
+    ctx.checks !== "none-expected" &&
+    typeof client.commitDate === "function"
+  ) {
     const grace = config["fix-review"]?.wait?.checks_grace_seconds ?? 120;
     const since = Date.parse(client.commitDate(repo, pr.head) ?? "");
     const at = (ctx.now ?? (() => new Date()))().getTime();
@@ -733,6 +751,143 @@ export async function waitForChecks(
     );
     await sleep(Math.min(pollSeconds * 1000, remaining));
   }
+}
+
+// ---------------------------------------------------------------------------
+// Waiting for a human merge
+// ---------------------------------------------------------------------------
+
+const MAX_WAIT_ERRORS = 3;
+
+function readJson(path) {
+  if (!path || !existsSync(path)) return null;
+  try {
+    return JSON.parse(readFileSync(path, "utf8"));
+  } catch {
+    return null;
+  }
+}
+
+function writeJson(path, value) {
+  if (!path) return;
+  mkdirSync(dirname(path), { recursive: true });
+  const tmp = `${path}.${process.pid}.tmp`;
+  writeFileSync(tmp, `${JSON.stringify(value, null, 2)}\n`);
+  renameSync(tmp, path);
+}
+
+/**
+ * `wait-merge`: poll the pull request until someone else merges it (`merged`),
+ * closes it (`failed`), or the deadline passes (`awaiting-human`). With a run
+ * directory, the deadline lives in `<run-dir>/merge-wait.json`: a rerun on the
+ * same pull request keeps the first deadline, so a wait cut into slices still
+ * ends at the time the first call set.
+ */
+export async function waitForMerge(
+  ctx,
+  target,
+  { timeoutMinutes, pollSeconds = 30 }
+) {
+  const { client, sleep, now = () => new Date(), log = () => {} } = ctx;
+  const statePath = ctx.runDir ? join(ctx.runDir, MERGE_WAIT_FILE) : null;
+  const previous = readJson(statePath);
+  const startedAt = now();
+  let pr = client.pr(target);
+  const samePr =
+    previous &&
+    Number.isFinite(Date.parse(previous.deadline ?? "")) &&
+    (String(previous.pr) === String(pr.number) || previous.url === pr.url);
+  const state = samePr
+    ? { ...previous, resumed_at: startedAt.toISOString() }
+    : {
+        pr: pr.number,
+        url: pr.url,
+        started_at: startedAt.toISOString(),
+        deadline: new Date(
+          startedAt.getTime() + timeoutMinutes * 60_000
+        ).toISOString(),
+        timeout_minutes: timeoutMinutes
+      };
+  state.status = "waiting";
+  state.ended_at = null;
+  writeJson(statePath, state);
+  const deadline = Date.parse(state.deadline);
+  let polls = 0;
+  let errors = 0;
+
+  const finish = (status, summary, extra = {}) => {
+    state.status = status;
+    state.ended_at = now().toISOString();
+    state.polls = polls;
+    writeJson(statePath, state);
+    const block = {
+      status,
+      summary,
+      max_risk: "low",
+      pr: pr.url,
+      outputs: {
+        pr: pr.number,
+        url: pr.url,
+        merge_commit: pr.merge_commit ?? null,
+        state: pr.state,
+        deadline: state.deadline,
+        polls,
+        ...extra
+      }
+    };
+    if (status !== "merged") block.blockers = [summary];
+    return block;
+  };
+
+  for (;;) {
+    polls += 1;
+    if (pr.state === "MERGED")
+      return finish(
+        "merged",
+        `#${pr.number} was merged${pr.merge_commit ? ` as ${shortHead(pr.merge_commit)}` : ""}.`
+      );
+    if (pr.state === "CLOSED")
+      return finish("failed", `#${pr.number} was closed without merging.`, {
+        reason: "closed"
+      });
+    const remaining = deadline - now().getTime();
+    if (remaining <= 0)
+      return finish(
+        "awaiting-human",
+        `#${pr.number} is still open at the merge wait deadline (${state.deadline}): merge or close it and wait again, or delete ${MERGE_WAIT_FILE} for a new deadline.`,
+        { timed_out: true }
+      );
+    log(
+      `poll ${polls}: #${pr.number} is ${String(pr.state).toLowerCase()}, waiting for a merge until ${state.deadline}`
+    );
+    await sleep(Math.min(pollSeconds * 1000, remaining));
+    try {
+      pr = client.pr(target);
+      errors = 0;
+    } catch (err) {
+      if (!(err instanceof MergeError)) throw err;
+      errors += 1;
+      if (errors >= MAX_WAIT_ERRORS) throw err;
+      log(`poll ${polls}: ${err.message} (retrying)`);
+    }
+  }
+}
+
+/**
+ * `wait-merge` timeout and poll interval: the CLI options, else
+ * merge.human_wait_minutes and merge.poll_seconds.
+ */
+export function mergeWaitSettings(options, merge = {}) {
+  return {
+    timeoutMinutes:
+      options["wait-minutes"] !== undefined
+        ? positiveNumber(options["wait-minutes"], "wait-minutes", 0)
+        : (merge.human_wait_minutes ?? 1440),
+    pollSeconds:
+      options["poll-seconds"] !== undefined
+        ? positiveNumber(options["poll-seconds"], "poll-seconds", 1)
+        : (merge.poll_seconds ?? 30)
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -1029,21 +1184,28 @@ Commands:
   method [pr]             Resolve the merge method only
   merge [pr]              Check again, merge, clean up, log the decision, print the
                           outcome { status, summary, outputs }
+  wait-merge [pr]         Wait for someone else to merge or close the pull request,
+                          print the outcome { status, summary, outputs }: merged,
+                          failed (closed) or awaiting-human (deadline)
 
 [pr] is a number, #<n>, or a URL (default: the pull request of the current branch).
 
 Options:
   --method <m>            repo, squash, rebase or merge (default: merge.method)
+  --checks <mode>         check, merge: required (default) or none-expected (the pull
+                          request runs no checks: no grace period for checks to register)
   --wait                  check: poll while checks are pending
-  --wait-minutes <n>      check --wait timeout (default: merge.checks_timeout_minutes)
-  --poll-seconds <n>      check --wait interval (default: merge.poll_seconds)
+  --wait-minutes <n>      check --wait timeout (default: merge.checks_timeout_minutes);
+                          wait-merge deadline (default: merge.human_wait_minutes)
+  --poll-seconds <n>      check --wait and wait-merge interval (default: merge.poll_seconds)
   --dry-run               merge: evaluate only, never merge
   --halt <reason>         merge: record a Halt and report halted, never merge
-  --run-dir <path>        Run directory: halt signals and decisions
+  --run-dir <path>        Run directory: halt signals and decisions; wait-merge keeps
+                          its deadline in <run-dir>/merge-wait.json across reruns
   --project-dir <dir>     Repository root (default: nearest git root)
 
-Exit codes: 0 ok (check and method when they ran; merge with any status but failed),
-1 failed, 2 usage error.
+Exit codes: 0 ok (check and method when they ran; merge and wait-merge with any
+status but failed), 1 failed, 2 usage error.
 
 Environment:
   ESP_GH_CMD              JSON array replacing the gh command (tests)`;
@@ -1122,11 +1284,14 @@ export function buildContext(options, env = process.env, io = {}) {
   ) {
     throw new MergeError(`--method must be repo, ${METHODS.join(", ")}`, 2);
   }
+  if (options.checks !== undefined && !CHECKS_MODES.includes(options.checks))
+    throw new MergeError(`--checks must be ${CHECKS_MODES.join(" or ")}`, 2);
   return {
     config,
     projectDir,
     runDir,
     method: options.method ?? null,
+    checks: options.checks ?? "required",
     env,
     sleep: io.sleep ?? ((ms) => new Promise((done) => setTimeout(done, ms))),
     now: io.now ?? (() => new Date()),
@@ -1172,6 +1337,17 @@ export async function run(argv, env = process.env, io = {}) {
         dryRun: Boolean(options["dry-run"]),
         halt: options.halt
       });
+      return {
+        output: JSON.stringify(block),
+        exitCode: block.status === "failed" ? 1 : 0
+      };
+    }
+    case "wait-merge": {
+      const block = await waitForMerge(
+        ctx,
+        target,
+        mergeWaitSettings(options, merge)
+      );
       return {
         output: JSON.stringify(block),
         exitCode: block.status === "failed" ? 1 : 0
