@@ -13,7 +13,7 @@
 // <run-dir>/state.json, so an interrupted run resumes.
 //
 // The logic lives in lib/ship/: state, phases, review-loop, tail, inline,
-// milestones, steps, gates, workspace, triage and review-gate.
+// milestones, steps, gates, workspace, triage, review-gate and base-sync.
 //
 // Every command prints JSON to stdout. Exit codes: 0 ok, 1 failure or invalid
 // state, 2 usage.
@@ -43,6 +43,7 @@ import {
   cmdPhase,
   cmdStop
 } from "./lib/ship/phases.mjs";
+import { cmdBaseSync } from "./lib/ship/base-sync.mjs";
 import { reviewLoop } from "./lib/ship/review-loop.mjs";
 import { readState, runDirOf, ShipError } from "./lib/ship/state.mjs";
 import { cmdRecord } from "./lib/ship/steps.mjs";
@@ -95,6 +96,12 @@ Commands:
                        --new-branch never reuses the current branch, and replaces a recorded
                        workspace that only reused it
   worktree             Create the task worktree on --branch <name> (from --from, default origin/<base>)
+  base-sync            Before the pull request: fetch origin/<base> in the workspace and compare it
+                       with the base of the branch: { action: none|rebase, base, onto, behind }
+                       (an adopted pull request returns none with a reason). --record --result
+                       rebased|conflict|pass|fail [--reason <text>] records the outcome in
+                       base_sync: rebased updates base_sha, conflict stops awaiting-human, fail
+                       halts gates-exhausted (a failed stop when the key is not in halt_on)
   budget               Elapsed wall time vs the track's max_wall_minutes
   scope                Inline track: changed files since the base vs max_files_changed
                        (--estimate <n> checks a planned file count instead)
@@ -135,7 +142,8 @@ Options:
   --project-dir <dir>       Repository root (default: recorded at init, else the git root)
   --track <track>           init, triage: inline or orchestrated (init default: orchestrated)
   --request <text>          init, triage: the task, an issue reference or a file path
-  --record                  triage: log the decisions and write triage.json
+  --record                  triage: log the decisions and write triage.json; base-sync: record
+                            the --result of the rebase or of the gates after it
   --plan-source <source>    init: reuse, import, generate or synthesize the plan (default: reuse
                             a plan in the run directory, else generate)
   --plan-mode <mode>        init, triage: auto, skip or always (default: ship.plan_mode)
@@ -258,6 +266,8 @@ export function run(argv, env = process.env) {
       return { output: cmdWorkspace(options, env) };
     case "worktree":
       return { output: cmdWorktree(options, env) };
+    case "base-sync":
+      return { output: cmdBaseSync(options, env) };
     case "budget":
       return { output: budgetCheck(readState(runDirOf(options)), now(env)) };
     case "scope":
