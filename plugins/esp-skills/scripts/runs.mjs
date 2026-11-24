@@ -218,7 +218,9 @@ export function raiseRunRisk(dir, risk, env) {
   });
 }
 
-const RUN_FIELDS = [
+// Text fields of run.json in file order. `parent` is set by linkParent only,
+// never copied from an option, so the parent also lists the child.
+const RUN_LAYOUT = [
   "title",
   "workflow",
   "parent",
@@ -229,6 +231,61 @@ const RUN_FIELDS = [
   "pr",
   "runtime"
 ];
+
+const RUN_FIELDS = RUN_LAYOUT.filter((field) => field !== "parent");
+
+/** Resolve --parent to the parent run directory and its run.json. */
+function parentRun(parentDir) {
+  if (parentDir === undefined || parentDir === true || parentDir === "")
+    throw new RunsError("--parent requires a run directory", 2);
+  const dir = resolve(expandHome(String(parentDir)));
+  const path = join(dir, "run.json");
+  if (!existsSync(path))
+    throw new RunsError(`Parent is not a run directory (no run.json): ${dir}`);
+  return { dir, path, run: readJsonFile(path) };
+}
+
+/**
+ * Link a child run and its parent: the child run.json `parent` gets the
+ * parent ID, and the parent run.json `children` gets `{ id, path }` for the
+ * child (skipped when an entry with that ID exists). Both writes hold the
+ * run.json lock. A missing parent fails before the child is touched.
+ */
+export function linkParent(childDir, parentDir, env = process.env) {
+  const parent = parentRun(parentDir);
+  const child = resolve(expandHome(String(childDir)));
+  const childPath = join(child, "run.json");
+  if (!existsSync(childPath))
+    throw new RunsError(`Not a run directory (no run.json): ${child}`);
+  if (parent.dir === child)
+    throw new RunsError(`A run cannot be its own parent: ${child}`, 2);
+  const parentId = parent.run.id;
+  const at = now(env).toISOString();
+  const childRun = withLock(childPath, () => {
+    const run = readJsonFile(childPath);
+    if (run.parent && run.parent !== parentId)
+      throw new RunsError(
+        `${run.id} already has parent ${run.parent}, not ${parentId}`
+      );
+    if (run.parent === parentId) return run;
+    run.parent = parentId;
+    run.updated_at = at;
+    assertValid("run", run, childPath);
+    writeJsonAtomic(childPath, run);
+    return run;
+  });
+  const entry = { id: childRun.id, path: child };
+  withLock(parent.path, () => {
+    const run = readJsonFile(parent.path);
+    const children = Array.isArray(run.children) ? run.children : [];
+    if (children.some((c) => c?.id === entry.id)) return;
+    run.children = [...children, entry];
+    run.updated_at = at;
+    assertValid("run", run, parent.path);
+    writeJsonAtomic(parent.path, run);
+  });
+  return { id: parentId, path: parent.dir };
+}
 
 export function cmdCreate(slugArg, options, env = process.env) {
   const at = now(env);
@@ -244,8 +301,15 @@ export function cmdCreate(slugArg, options, env = process.env) {
     for (let n = 2; existsSync(dir); n++) dir = join(root, `${base}-${n}`);
   }
   const runPath = join(dir, "run.json");
+  const linking = options.parent !== undefined;
+  // A missing parent fails before anything is written for the child.
+  if (linking) parentRun(options.parent);
+  const link = (result) =>
+    linking
+      ? { ...result, parent: linkParent(dir, options.parent, env) }
+      : result;
   if (existsSync(runPath)) {
-    return { run_dir: dir, id: runId(dir), created: false };
+    return link({ run_dir: dir, id: runId(dir), created: false });
   }
   const id = basename(dir);
   if (!ID_PATTERN.test(id))
@@ -254,7 +318,8 @@ export function cmdCreate(slugArg, options, env = process.env) {
     id,
     type: options.type ?? "skill"
   };
-  for (const field of RUN_FIELDS) run[field] = options[field] ?? null;
+  for (const field of RUN_LAYOUT)
+    run[field] = field === "parent" ? null : (options[field] ?? null);
   Object.assign(run, {
     status: "running",
     max_risk: null,
@@ -267,7 +332,7 @@ export function cmdCreate(slugArg, options, env = process.env) {
   assertValid("run", run, runPath);
   mkdirSync(dir, { recursive: true });
   writeJsonAtomic(runPath, run);
-  return { run_dir: dir, id, created: true };
+  return link({ run_dir: dir, id, created: true });
 }
 
 export function cmdGet(options) {
@@ -287,6 +352,11 @@ function parsePairs(values, what) {
 
 export function cmdUpdate(options, env = process.env) {
   const dir = requireRunDir(options);
+  if (options.parent !== undefined)
+    throw new RunsError(
+      "update cannot set parent; link runs with create --parent <dir>",
+      2
+    );
   const path = join(dir, "run.json");
   return withLock(path, () => {
     const current = readJsonFile(path);
@@ -727,7 +797,9 @@ export function cmdPrBody(options) {
 const USAGE = `Usage: node runs.mjs <command> [args] [options]
 
 Commands:
-  create [slug]          Create a run dir (<runs.root>/<YYYY-MM-DD>-<slug>, or --run-dir) and run.json
+  create [slug]          Create a run dir (<runs.root>/<YYYY-MM-DD>-<slug>, or --run-dir) and run.json;
+                         --parent <dir> links it to a parent run (child parent = parent ID, parent
+                         children += { id, path }), also when the run already exists
   get                    Print run.json
   update                 Update run.json fields (--status, --pr, --branch, --max-risk, --model, --budget, ...)
   decision               Append to decisions.jsonl (--json <object> or stdin); fills id and at
@@ -743,6 +815,7 @@ Commands:
 Options:
   --run-dir <path>          Run directory (required by every command except create, index, check)
   --root <dir>              Runs root for create, or a root to index (repeatable)
+  --parent <dir>            Parent run directory for create
   --project-dir <dir>       Project root for config resolution
   --help                    Show this help`;
 
