@@ -780,8 +780,9 @@ function writeJson(path, value) {
  * `wait-merge`: poll the pull request until someone else merges it (`merged`),
  * closes it (`failed`), or the deadline passes (`awaiting-human`). With a run
  * directory, the deadline lives in `<run-dir>/merge-wait.json`: a rerun on the
- * same pull request keeps the first deadline, so a wait cut into slices still
- * ends at the time the first call set.
+ * same pull request after an interrupted wait keeps the first deadline, so a
+ * wait cut into slices still ends at the time the first call set. A rerun after
+ * a wait that ended (deadline reached, merged, closed) starts a new deadline.
  */
 export async function waitForMerge(
   ctx,
@@ -795,6 +796,7 @@ export async function waitForMerge(
   let pr = client.pr(target);
   const samePr =
     previous &&
+    !previous.ended_at &&
     Number.isFinite(Date.parse(previous.deadline ?? "")) &&
     (String(previous.pr) === String(pr.number) || previous.url === pr.url);
   const state = samePr
@@ -854,7 +856,7 @@ export async function waitForMerge(
     if (remaining <= 0)
       return finish(
         "awaiting-human",
-        `#${pr.number} is still open at the merge wait deadline (${state.deadline}): merge or close it and wait again, or delete ${MERGE_WAIT_FILE} for a new deadline.`,
+        `#${pr.number} is still open at the merge wait deadline (${state.deadline}): merge or close it, then wait again: a rerun starts a new deadline.`,
         { timed_out: true }
       );
     log(
@@ -1201,7 +1203,8 @@ Options:
   --dry-run               merge: evaluate only, never merge
   --halt <reason>         merge: record a Halt and report halted, never merge
   --run-dir <path>        Run directory: halt signals and decisions; wait-merge keeps
-                          its deadline in <run-dir>/merge-wait.json across reruns
+                          its deadline in <run-dir>/merge-wait.json across an
+                          interrupted wait
   --project-dir <dir>     Repository root (default: nearest git root)
 
 Exit codes: 0 ok (check and method when they ran; merge and wait-merge with any

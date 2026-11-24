@@ -833,16 +833,21 @@ describe("wait-merge", () => {
     assert.match(block.blockers[0], /closed without merging/);
   });
 
-  test("returns awaiting-human at the deadline, and a rerun keeps the first deadline", async () => {
+  test("a rerun after an interrupted wait keeps the first deadline", async () => {
     const time = clock();
-    const first = await waitForMerge(waitCtx(fakeClient(), time), "9", {
-      timeoutMinutes: 2,
-      pollSeconds: 30
-    });
-    assert.equal(first.status, "awaiting-human");
-    assert.equal(first.outputs.timed_out, true);
-    assert.equal(first.outputs.deadline, "2026-11-08T12:02:00.000Z");
-    assert.equal(time.now().toISOString(), "2026-11-08T12:02:00.000Z");
+    // The shell kills the first wait during its first sleep.
+    await assert.rejects(
+      waitForMerge(
+        waitCtx(fakeClient(), time, () => {
+          throw new Error("killed");
+        }),
+        "9",
+        { timeoutMinutes: 2, pollSeconds: 30 }
+      ),
+      /killed/
+    );
+    assert.equal(state().ended_at, null);
+    assert.equal(state().deadline, "2026-11-08T12:02:00.000Z");
 
     // A rerun with a longer timeout still ends at the first deadline.
     const rerun = await waitForMerge(waitCtx(fakeClient(), time), "9", {
@@ -850,9 +855,30 @@ describe("wait-merge", () => {
       pollSeconds: 30
     });
     assert.equal(rerun.status, "awaiting-human");
+    assert.equal(rerun.outputs.timed_out, true);
     assert.equal(rerun.outputs.deadline, "2026-11-08T12:02:00.000Z");
-    assert.equal(rerun.outputs.polls, 1);
-    assert.equal(state().deadline, "2026-11-08T12:02:00.000Z");
+    assert.equal(time.now().toISOString(), "2026-11-08T12:02:00.000Z");
+    assert.equal(state().started_at, NOW);
+  });
+
+  test("a rerun after a wait that ended at its deadline starts a new deadline", async () => {
+    const time = clock();
+    const first = await waitForMerge(waitCtx(fakeClient(), time), "9", {
+      timeoutMinutes: 2,
+      pollSeconds: 30
+    });
+    assert.equal(first.status, "awaiting-human");
+    assert.equal(first.outputs.deadline, "2026-11-08T12:02:00.000Z");
+    assert.match(first.blockers[0], /a rerun starts a new deadline/);
+
+    const rerun = await waitForMerge(waitCtx(fakeClient(), time), "9", {
+      timeoutMinutes: 3,
+      pollSeconds: 30
+    });
+    assert.equal(rerun.status, "awaiting-human");
+    assert.equal(rerun.outputs.deadline, "2026-11-08T12:05:00.000Z");
+    assert.equal(state().started_at, "2026-11-08T12:02:00.000Z");
+    assert.equal(state().deadline, "2026-11-08T12:05:00.000Z");
   });
 
   test("an interrupted wait resumes with its deadline; another pull request starts a new one", async () => {
