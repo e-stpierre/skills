@@ -389,7 +389,8 @@ describe("base snapshot layer", () => {
       () =>
         loadConfig({ projectDir: project, base: join(root, "none.json"), env }),
       (err) =>
-        err instanceof ConfigError && /base snapshot not found/.test(err.message)
+        err instanceof ConfigError &&
+        /base snapshot not found/.test(err.message)
     );
   });
 

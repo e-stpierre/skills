@@ -180,10 +180,12 @@ Keys read by the current skills:
 | `merge.require_green_checks`                 | `true`                                                          | `esp-merge`                               | Every check must pass (`false`: required checks only)                              |
 | `merge.use_auto_merge`                       | `false`                                                         | `esp-merge`                               | Enable auto-merge on pending checks instead of waiting                             |
 | `merge.checks_timeout_minutes`               | `30`                                                            | `esp-merge`                               | Wait for pending checks                                                            |
+| `merge.human_wait_minutes`                   | `1440`                                                          | `esp-ship`                                | `--merge-policy human`: how long the merge wait polls for a person to merge        |
 | `merge.poll_seconds`                         | `30`                                                            | `esp-merge`                               | Seconds between check polls during that wait                                       |
 | `worktrees.cleanup`                          | `on-merge`                                                      | `esp-merge`                               | Remove the task worktree after the merge (`never` keeps it)                        |
 | `ship.phases`                                | every phase of the track                                        | `esp-ship`                                | Phases to run, filtered per track (`implement` or `build` is required)             |
 | `ship.plan_mode`                             | `auto`                                                          | `esp-ship`                                | `--plan-mode` default: `auto`, `skip` (no planning model) or `always`              |
+| `ship.merge_policy`                          | `auto`                                                          | `esp-ship`                                | `--merge-policy` default: `auto` (esp-merge), `human` or `none` (no merge phase)   |
 | `ship.review_mode`                           | `auto`                                                          | `esp-ship`                                | `--review` default: `auto`, `internal`, `pr`, `both` or `none`                     |
 | `ship.auto.review_max_files`                 | `3`                                                             | `esp-ship`                                | Review gate: at most this many changed files may skip the internal review          |
 | `ship.auto.review_max_lines`                 | `150`                                                           | `esp-ship`                                | Review gate: at most this many changed lines may skip the internal review          |
@@ -260,12 +262,14 @@ node scripts/plan.mjs import docs/backlog.md --run-dir ~/.esp-skills/runs/2026-1
 
 ### Shipping
 
-`esp-ship` takes any task to a merged PR: `preflight -> triage -> [plan] -> branch -> implement (inline) or build (milestones) -> final gates -> [internal review <-> fix] -> PR -> [wait (reviews + checks) <-> fix-review] -> refresh PR body -> merge -> summary`. `scripts/ship.mjs` keeps the state (`ship.json`) and decides what runs next, with which model, and when the task stops:
+`esp-ship` takes any task to a merged PR: `preflight -> triage -> [plan] -> branch -> implement (inline) or build (milestones) -> final gates -> [internal review <-> fix] -> base sync -> PR -> [wait (reviews + checks) <-> fix-review] -> refresh PR body -> merge -> summary`. `scripts/ship.mjs` keeps the state (`ship.json`) and decides what runs next, with which model, and when the task stops:
 
 ```bash
 node scripts/ship.mjs triage --request docs/backlog.md
 node scripts/ship.mjs next --run-dir <run>
 node scripts/ship.mjs review-gate --run-dir <run>
+node scripts/ship.mjs base-sync --run-dir <run>
+node scripts/ship.mjs base-sync --run-dir <run> --record --result rebased
 node scripts/ship.mjs pr-loop --run-dir <run> --after fix
 node scripts/ship.mjs pr-body --run-dir <run> --out <run>/pr-body.md
 node scripts/review.mjs parse <run>/review-1.md --out <run>/review-1.json | node scripts/ship.mjs record review-1 --run-dir <run>
@@ -277,6 +281,10 @@ node scripts/ship.mjs outcome --run-dir <run>
 - **Orchestrated track**: a plan file in the run, then the milestone loop (see Milestones), the full gates once, and the internal review in a fresh `esp-reviewer`. `--review auto` decides the internal review from the real diff (`review-gate`): small, low-risk changes outside `ship.review.always_paths` skip it
 - **Workspace**: an existing branch is used as is, `--branch` checks out or creates a named one, and a dirty working tree moves the task to a worktree under `worktrees.root`, leaving the changes untouched
 - **Tail**: both tracks open the PR, wait for the bot reviews and the CI checks of the head commit in a background script, fix both with `esp-fix-review` rounds, refresh the PR body from the run artifacts and merge with `esp-merge`. Halt conditions (`ship.halt_on`) stop the task and write the summary; a halted task is never merged
+- **Base sync**: before the PR opens, `base-sync` fetches `origin/<base>` and reports when it moved past the branch base. The session rebases, aborts on a conflict (`awaiting-human`), runs the full gates and records the result: a rebase moves `base_sha`, failing gates halt with `gates-exhausted`
+- **Adopting a PR**: `--pr <url>` takes over an open PR on the inline track with no triage: its head branch is checked out, then the review wait, the fix rounds and the merge run
+- **Merge policy**: `--merge-policy` (else `ship.merge_policy`) picks who merges: `auto` (`esp-merge`), `human` (`merge-ready.mjs wait-merge` waits up to `merge.human_wait_minutes` for a person, recorded as the `merge` step) or `none` (no merge phase, PR left open). `--checks none-expected` is for a PR that runs no checks: the wait and the merge skip the checks grace period
+- **Units of a larger change**: `--parent-run <run>` links the run to a parent run (`runs.mjs create --parent` does the same for any run) and freezes the config from the parent snapshot with the project config over it. `--project-dir <repo>` ships in another repository than the current one
 - **Draft**: `--draft` (else `pr.draft`) opens the PR as a draft and keeps it so: the task stops before the merge with `awaiting-human` and the PR left open
 - **Commit titles**: review, CI and gate fix commits follow `commit.style`: `Fix review findings: ...`, `Fix CI: ...`, `Fix gate failures: ...` (plain) or `fix(review)`, `fix(ci)`, `fix(gates)` (conventional)
 - `--run-dir <run>` with no context ships the plan of a run started by `esp-plan`
@@ -605,6 +613,7 @@ Arguments follow CLI conventions: every discrete value is a named option with a 
 
 - `[-n|--dry-run]` - Check the conditions and resolve the method without rebasing or merging
 - `[-m|--method <method>]` - `repo`, `squash`, `rebase` or `merge`; errors when the repository does not allow it (default: `merge.method`)
+- `[-c|--checks <mode>]` - `required`, or `none-expected` for a PR that runs no checks: no grace period while checks register, existing checks still block (default: `required`)
 - `[-i|--interactive <mode>]` - `off`, `plan` or `all`; `all` asks before merging (default: `defaults.interactive`)
 - `[-p|--pr <pr>]` - Pull request number, `#<n>` or URL (default: the PR of the current branch)
 - `[-d|--run-dir <path>]` - Read halt signals from a run directory, log the decision, record step `merge`
@@ -624,6 +633,10 @@ Arguments follow CLI conventions: every discrete value is a named option with a 
 
 # Merge as a workflow step: halts in the run block the merge
 /esp-skills:esp-merge --pr 42 --run-dir ~/.esp-skills/runs/2026-11-10-add-oauth-login
+
+# Merge a PR that runs no checks, without waiting for checks to register
+/esp-skills:esp-merge --checks none-expected --pr 42
+/esp-skills:esp-merge -c none-expected -p 42
 ```
 
 ### /esp-skills:esp-review
@@ -752,6 +765,11 @@ node scripts/codex.mjs doctor
 - `[-r|--reviewers <name>...]` - Reviewers to wait for and fix (default: `fix-review.wait.default_reviewers`)
 - `[-i|--interactive <mode>]` - `off`, `plan` (approve the plan or the inline approach) or `all` (also review findings, PR rounds and merge) (default: `defaults.interactive`)
 - `[-d|--run-dir <path>]` - Run directory to use or to resume (default: a new run under `runs.root`)
+- `[-p|--pr <url>]` - Adopt an open PR: no triage, its head branch, then the review wait, the fix rounds and the merge
+- `[-g|--merge-policy <policy>]` - `auto` (`esp-merge` merges), `human` (wait for a person to merge, up to `merge.human_wait_minutes`) or `none` (no merge) (default: `ship.merge_policy`)
+- `[-c|--checks <mode>]` - `required`, or `none-expected` for a PR that runs no checks: no checks grace period in the wait and the merge (default: `required`)
+- `[-T|--parent-run <path>]` - Link the run to a parent run and freeze the config from the parent snapshot, with the project config over it
+- `[-C|--project-dir <path>]` - Repository to ship in (default: the git root of the current directory)
 - `[context]` - The task: a description, an issue URL or `#<number>`, or a path to a plan, a task list or a design document
 
 **Examples:**
@@ -790,6 +808,18 @@ node scripts/codex.mjs doctor
 
 # Continue an interrupted run
 /esp-skills:esp-ship --resume --run-dir ~/.esp-skills/runs/2026-11-10-add-oauth-login
+
+# Adopt an open PR: wait for the reviews, fix them, then let a person merge it
+/esp-skills:esp-ship --pr https://github.com/o/r/pull/42 --merge-policy human
+/esp-skills:esp-ship -p https://github.com/o/r/pull/42 -g human
+
+# A PR that runs no checks, left open for a person to merge
+/esp-skills:esp-ship --checks none-expected --merge-policy none Update the release notes
+/esp-skills:esp-ship -c none-expected -g none Update the release notes
+
+# One unit of a larger change, in a sibling repository, under a parent run
+/esp-skills:esp-ship --parent-run ~/.esp-skills/runs/2026-11-10-orchestrate-auth --project-dir ../api Add the token endpoint
+/esp-skills:esp-ship -T ~/.esp-skills/runs/2026-11-10-orchestrate-auth -C ../api Add the token endpoint
 
 ```
 
