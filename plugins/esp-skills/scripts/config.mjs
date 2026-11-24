@@ -5,6 +5,8 @@
 //   1. Built-in defaults: references/config-defaults.json
 //   2. User config: ~/.esp-skills/config.json (ESP_SKILLS_HOME overrides ~/.esp-skills)
 //   3. Project config: <repo>/.esp-skills/config.json
+//   Base snapshot (loadConfig({ base }), a parent run's config.snapshot.json):
+//      replaces layer 2 only; the project layer is still merged over it
 //   4. A frozen snapshot (loadConfig({ snapshot }), esp-ship's config.snapshot.json):
 //      replaces layers 2 and 3 (defaults still fill missing keys). With
 //      --run-dir <path>, the snapshot of that run, when it has one
@@ -141,6 +143,7 @@ export function runSnapshot(runDir) {
 export function layerPaths({
   projectDir,
   snapshot,
+  base,
   runDir,
   env = process.env
 } = {}) {
@@ -154,7 +157,8 @@ export function layerPaths({
     defaults: DEFAULTS_PATH,
     user: join(espHome, "config.json"),
     project: join(project, ".esp-skills", "config.json"),
-    snapshot: snapshot ? resolve(snapshot) : runSnapshot(runDir)
+    snapshot: snapshot ? resolve(snapshot) : runSnapshot(runDir),
+    base: base ? resolve(expandHome(String(base))) : null
   };
 }
 
@@ -182,8 +186,20 @@ export function loadConfig(options = {}) {
     layers.push({ layer: "project", path: paths.project, used: false });
     layers.push({ layer: "snapshot", path: paths.snapshot, used: true });
   } else {
+    if (paths.base && !existsSync(paths.base)) {
+      throw new ConfigError(`Config base snapshot not found: ${paths.base}`);
+    }
     for (const layer of ["user", "project"]) {
       const path = paths[layer];
+      if (layer === "user" && paths.base) {
+        // The base snapshot takes the place of the user layer.
+        layers.push({ layer, path, used: false });
+        const data = readJson(paths.base);
+        assertValid(data, paths.base);
+        config = deepMerge(config, data);
+        layers.push({ layer: "base", path: paths.base, used: true });
+        continue;
+      }
       // The project layer can point at the same file as the user layer (repo at ~).
       const duplicate = layer === "project" && path === paths.user;
       const used = !duplicate && existsSync(path) && statSync(path).isFile();

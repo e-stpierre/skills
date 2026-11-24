@@ -296,6 +296,11 @@
           "description": "Seconds between check polls while merge-ready.mjs check --wait waits for pending checks.",
           "type": "integer",
           "minimum": 1
+        },
+        "human_wait_minutes": {
+          "description": "Minutes to wait for a person to merge the pull request under ship.merge_policy human before the run stops awaiting a human.",
+          "type": "integer",
+          "minimum": 1
         }
       }
     },
@@ -330,6 +335,10 @@
         "review_mode": {
           "description": "auto: decide the internal review from the real diff, keep the pull request review. internal, pr, both: the reviews to run. none: no review (the merge still needs green checks).",
           "enum": ["auto", "internal", "pr", "both", "none"]
+        },
+        "merge_policy": {
+          "description": "Who merges the pull request. auto: esp-merge merges it once ready. human: wait for a person to merge it (merge.human_wait_minutes). none: stop once the pull request is ready, without merging.",
+          "enum": ["auto", "human", "none"]
         },
         "auto": {
           "description": "Thresholds of review_mode auto: the internal review is skipped only within both limits.",
