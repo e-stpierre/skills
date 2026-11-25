@@ -810,6 +810,46 @@ describe("resume", () => {
     shipJson("lib-change", { branch: "feature/lib" });
     assert.equal(next().resume, true);
   });
+
+  test("resumed units of one checkout relaunch one at a time", () => {
+    init("--no-housekeeping");
+    intake({ units: [build("a", "o/lib"), build("b", "o/lib")] });
+    ok("unit", "start", "a");
+    ok("unit", "blocked", "a", "--reason", "Question", "--question", "Go?");
+    ok("unit", "start", "b");
+    ok("unit", "blocked", "b", "--reason", "Question", "--question", "Go?");
+    shipJson("a", { branch: "feature/a" });
+    shipJson("b", { branch: "feature/b" });
+    assert.deepEqual(ok("resume").resumed, ["a", "b"]);
+
+    const first = next();
+    assert.equal(first.unit, "a");
+    assert.equal(first.resume, true);
+    ok("unit", "start", "a");
+    const idle = next();
+    assert.equal(idle.action, "idle");
+    fails(1, /a is running in .*one at a time/, "unit", "start", "b");
+    ok("unit", "done", "a", "--status", "merged");
+    const second = next();
+    assert.equal(second.unit, "b");
+    assert.equal(second.resume, true);
+    assert.equal(ok("unit", "start", "b").resumed, true);
+  });
+
+  test("resumed units relaunch within max_parallel", () => {
+    init("--no-housekeeping", "--max-parallel", "1");
+    intake({ units: [build("a", "o/lib"), build("b", "o/app")] });
+    ok("unit", "start", "a");
+    ok("unit", "blocked", "a", "--reason", "Question", "--question", "Go?");
+    ok("unit", "start", "b");
+    ok("unit", "blocked", "b", "--reason", "Question", "--question", "Go?");
+    ok("resume");
+    assert.equal(next().unit, "a");
+    ok("unit", "start", "a");
+    assert.equal(next().action, "idle");
+    ok("unit", "done", "a", "--status", "merged");
+    assert.equal(next().unit, "b");
+  });
 });
 
 describe("invalid transitions", () => {

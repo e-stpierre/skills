@@ -12,7 +12,9 @@
 // Readiness: a unit is ready when every dependency is merged or done. A
 // pending unit with a failed, awaiting-human, halted or blocked dependency is
 // blocked. At most max_parallel units or waits run at once, and never two
-// units with the same repo_dir.
+// units with the same repo_dir. A unit marked for resume holds its slot and
+// its checkout until it is relaunched, and relaunches only when its checkout
+// is free and a slot is left among the units and waits already live.
 
 import { existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
@@ -109,14 +111,22 @@ export function samePath(a, b) {
   return norm(a) === norm(b);
 }
 
-/** The checkouts of the esp-ship units running now. */
-function busyRepos(state, graph) {
+/** A running unit marked for resume, not relaunched yet. */
+export const awaitsRelaunch = (entry) =>
+  entry?.status === "running" && entry.resume === true;
+
+/**
+ * The checkouts of the esp-ship units running now. With `live`, only the
+ * units already relaunched: a unit awaiting relaunch is left out.
+ */
+function busyRepos(state, graph, { live = false } = {}) {
   return graph.units
     .filter(
       (u) =>
         u.repo_dir &&
         PR_KINDS.includes(u.kind) &&
-        state.units[u.id]?.status === "running"
+        state.units[u.id]?.status === "running" &&
+        !(live && awaitsRelaunch(state.units[u.id]))
     )
     .map((u) => u.repo_dir);
 }
@@ -403,10 +413,19 @@ export function nextAction(state, graph, env = {}, { runDir } = {}) {
         return housekeepAction(state, unit, graph, statuses, dir);
     }
 
-  for (const id of order) {
-    const e = entry(id);
-    if (e.status === "running" && e.resume === true)
-      return spawnAction(state, byId.get(id), { runDir: dir, env, statuses });
+  const live = order.filter(
+    (id) => ACTIVE.has(statuses[id]) && !awaitsRelaunch(entry(id))
+  );
+  if (live.length < state.settings.max_parallel) {
+    const liveBusy = busyRepos(state, graph, { live: true });
+    for (const id of order) {
+      const unit = byId.get(id);
+      if (
+        awaitsRelaunch(entry(id)) &&
+        !liveBusy.some((d) => samePath(d, unit.repo_dir))
+      )
+        return spawnAction(state, unit, { runDir: dir, env, statuses });
+    }
   }
   for (const id of order) {
     const e = entry(id);

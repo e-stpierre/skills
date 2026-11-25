@@ -19,6 +19,7 @@ import { now } from "../../runs.mjs";
 import { runDirOf, SHA, stringOption } from "../ship/state.mjs";
 import { PR_KINDS, topoOrder } from "./graph.mjs";
 import {
+  awaitsRelaunch,
   effectiveStatuses,
   isReady,
   isWaitUnit,
@@ -201,18 +202,21 @@ function unitStart(dir, graph, unit, options, env) {
           throw new OrchestrateError(
             `Unit ${unit.id} has no checkout of ${unit.repo}: resolve its repository first`
           );
-        const other = graph.units.find(
-          (u) =>
-            u.id !== unit.id &&
-            PR_KINDS.includes(u.kind) &&
-            s.units[u.id]?.status === "running" &&
-            samePath(u.repo_dir, unit.repo_dir)
-        );
-        if (other)
-          throw new OrchestrateError(
-            `Unit ${other.id} is running in ${unit.repo_dir}: units of one checkout run one at a time`
-          );
       }
+      // A resumed unit only waits for the units already relaunched: the
+      // others of its checkout are still awaiting their own relaunch.
+      const other = graph.units.find(
+        (u) =>
+          u.id !== unit.id &&
+          PR_KINDS.includes(u.kind) &&
+          s.units[u.id]?.status === "running" &&
+          !(resumed && awaitsRelaunch(s.units[u.id])) &&
+          samePath(u.repo_dir, unit.repo_dir)
+      );
+      if (other)
+        throw new OrchestrateError(
+          `Unit ${other.id} is running in ${unit.repo_dir}: units of one checkout run one at a time`
+        );
       const at = now(env).toISOString();
       const resolved =
         mode ??
