@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.12.0
+
+- Added the `esp-orchestrate` skill (**Beta**): takes a change that spans several pull requests or repositories to merged code. Intake writes a master plan and a task graph of `build`, `adopt`, `await-pr` and `check` units; each pull request unit runs as an esp-ship child run under `units/<id>/`, waits run in the background, local checkouts are tidied after each merge, and a last unit ticks the source task document. A stopped unit blocks only its dependents, and the run ends `partial`
+- Added `scripts/orchestrate.mjs` (`init`, `intake`, `approve`, `next`, `unit`, `wait`, `housekeep`, `resume`, `outcome`): the run state (`orchestrate.json`), the task graph (`graph.json`) and the next action, read from the files so a run resumes from disk
+- Added `scripts/wait-for.mjs`: waits until a command exits 0 (`command`) or a matching pull request exists (`pr`), with a deadline kept across restarts (`--state`)
+- Added `scripts/housekeep.mjs`: after a merge, fast-forwards the base, removes the run worktrees, deletes the merged local branch and rebases later branches; never pushes, and leaves a dirty checkout alone
+- New `orchestrate` config section: `repos`, `unit_mode`, `max_parallel`, `wait.timeout_minutes`, `wait.interval_seconds`, `housekeeping`, `write_back`
+- Runs: new terminal status `partial`; `runs.mjs create --parent` links a parent and a child run both ways, and `runs.mjs index` lists the child runs under `units/<id>`
+- esp-recap nests child runs under their parent in `collect` and `show`, tags `risks` and `sources` items with their `parent`, and reads one unit with `show <parent-id>/<unit-id>`
+- esp-ship:
+  - Model invocation is allowed, with a description written for it
+  - `-p|--pr <url>` adopts an open pull request: its head branch, then the review wait, the fix rounds and the merge
+  - `-g|--merge-policy auto|human|none` (`ship.merge_policy`): `human` waits for a person to merge with the new `merge-ready.mjs wait-merge` (deadline `merge.human_wait_minutes`), `none` leaves the pull request open
+  - `-c|--checks none-expected` skips the checks grace period in the review wait and in esp-merge (also `esp-merge -c|--checks`)
+  - `-T|--parent-run <path>` links the run to a parent run and freezes its config from the parent snapshot, with the project config over it
+  - `ship.mjs base-sync` detects a moved `origin/<base>` before the pull request: the run rebases, reruns the full gates and force-pushes with lease a branch already on `origin`; a conflict stops it with `awaiting-human`
+  - `-C|--project-dir <path>` ships in another repository than the current one
+
 ## 0.11.0
 
 - **Breaking removals**:
