@@ -10,7 +10,7 @@
 //       Run the shell command until it exits 0
 //   pr --repo <owner/name> (--head <branch> | --author <login>)
 //      [--base <branch>] [--title <regex>]
-//       List the pull requests of the repository until one matches
+//       List the open pull requests of the repository until one matches
 //
 // With --state <file>, the deadline is persisted: a rerun with the same kind
 // and target after an interrupted wait keeps the first deadline, so a wait cut
@@ -101,7 +101,7 @@ export function ghClient(env = process.env) {
         "--repo",
         repo,
         "--state",
-        "all",
+        "open",
         "--limit",
         "50",
         "--json",
@@ -138,14 +138,17 @@ function authorLogin(pr) {
 }
 
 /**
- * The pull request of `list` matching every given field of `match` (`head`,
- * `author`, `base` exactly, `title` as a regular expression), open ones
- * first, then the newest. `null` when none matches.
+ * The newest open pull request of `list` matching every given field of
+ * `match` (`head`, `author`, `base` exactly, `title` as a regular
+ * expression). Closed and merged ones never match: a bot that reuses its head
+ * branch leaves the previous release's pull request behind. `null` when none
+ * matches.
  */
 export function findPr(list, match) {
   const title = match.title ? new RegExp(match.title) : null;
   const found = list.filter(
     (pr) =>
+      pr.state === "OPEN" &&
       (!match.head || pr.headRefName === match.head) &&
       (!match.author ||
         authorLogin(pr).toLowerCase() === match.author.toLowerCase()) &&
@@ -153,11 +156,7 @@ export function findPr(list, match) {
       (!title || title.test(pr.title ?? ""))
   );
   if (found.length === 0) return null;
-  found.sort((a, b) => {
-    const openA = a.state === "OPEN" ? 0 : 1;
-    const openB = b.state === "OPEN" ? 0 : 1;
-    return openA - openB || (b.number ?? 0) - (a.number ?? 0);
-  });
+  found.sort((a, b) => (b.number ?? 0) - (a.number ?? 0));
   return found[0];
 }
 

@@ -10,8 +10,9 @@
 //   - A dirty checkout is reported and left untouched
 //   - A non-fast-forward base is reported, never forced
 //   - A branch is deleted only when `gh pr view` reports its pull request
-//     merged with a matching head (squash-safe: never `git branch --merged`),
-//     never the base branch, never a branch checked out in another worktree
+//     merged with a matching head (squash-safe: never `git branch --merged`)
+//     and the local tip is in that pull request, never the base branch, never
+//     a branch checked out in another worktree
 //   - A worktree is removed only when it is a linked worktree of this
 //     repository under worktrees.root, without --force
 //   - A conflicting rebase is aborted, and the base branch checked out again
@@ -71,7 +72,14 @@ export function ghPrView(pr, { cwd, env = process.env } = {}) {
   }
   const res = spawnSync(
     prefix[0],
-    [...prefix.slice(1), "pr", "view", pr, "--json", "state,headRefName"],
+    [
+      ...prefix.slice(1),
+      "pr",
+      "view",
+      pr,
+      "--json",
+      "state,headRefName,headRefOid"
+    ],
     { cwd, encoding: "utf8", windowsHide: true }
   );
   if (res.error) return { error: `gh could not run: ${res.error.message}` };
@@ -221,6 +229,22 @@ function syncBase(ctx) {
   );
 }
 
+/**
+ * Whether every commit of the local branch is in the pull request: its tip is
+ * the pull request head, or an ancestor of it.
+ */
+function tipInPr(repoDir, branch, headOid) {
+  if (typeof headOid !== "string" || headOid === "") return false;
+  const tip = git(repoDir, ["rev-parse", `refs/heads/${branch}`]);
+  if (tip.ok && tip.stdout === headOid) return true;
+  return git(repoDir, [
+    "merge-base",
+    "--is-ancestor",
+    `refs/heads/${branch}`,
+    headOid
+  ]).ok;
+}
+
 /** Delete the merged local task branch, under every guard. */
 function deleteBranch(ctx, branch, pr) {
   const { repoDir, base, dryRun, env } = ctx;
@@ -243,6 +267,13 @@ function deleteBranch(ctx, branch, pr) {
       branch,
       "kept",
       `pull request head is ${view.headRefName}, not ${branch}`
+    );
+  if (!tipInPr(repoDir, branch, view.headRefOid))
+    return step(
+      "branch",
+      branch,
+      "kept",
+      `local commits not in pull request ${pr}`
     );
   const other = otherCheckout(repoDir, branch, ctx.planned);
   if (other)

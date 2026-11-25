@@ -293,7 +293,7 @@ describe("pull request matching", () => {
     }
   ];
 
-  test("prefers an open pull request, then the newest", () => {
+  test("matches only an open pull request, the newest first", () => {
     assert.equal(findPr(LIST, { head: "changeset-release/main" }).number, 14);
     assert.equal(findPr(LIST, { author: "App/GitHub-Actions" }).number, 14);
     assert.equal(findPr(LIST, { author: "someone", base: "main" }), null);
@@ -302,6 +302,15 @@ describe("pull request matching", () => {
       15
     );
     assert.equal(findPr(LIST, { head: "feature/x", title: "^Version" }), null);
+  });
+
+  test("never matches a closed or merged pull request", () => {
+    const closed = [
+      { ...LIST[0], state: "MERGED" },
+      { ...LIST[0], number: 13, state: "CLOSED" }
+    ];
+    assert.equal(findPr(closed, { head: "changeset-release/main" }), null);
+    assert.equal(findPr(closed, { author: "app/github-actions" }), null);
   });
 });
 
@@ -426,7 +435,7 @@ console.log(readFileSync(file, "utf8"));
     assert.equal(block.outputs.pr.head, "changeset-release/main");
     assert.match(
       readFileSync(countFile, "utf8"),
-      /pr list --repo o\/r --state all --limit 50 --json number,url,headRefName,author,title,baseRefName,state/
+      /pr list --repo o\/r --state open --limit 50 --json number,url,headRefName,author,title,baseRefName,state/
     );
   });
 
@@ -450,6 +459,40 @@ console.log(readFileSync(file, "utf8"));
     assert.equal(r.code, 0, r.stderr);
     assert.equal(r.json().status, "waiting");
     assert.equal(r.json().outputs.pr, undefined);
+  });
+
+  test("pr keeps polling past a merged pull request until an open one appears", async () => {
+    let calls = 0;
+    const merged = {
+      number: 12,
+      url: "https://github.com/o/r/pull/12",
+      headRefName: "changeset-release/main",
+      state: "MERGED"
+    };
+    const client = {
+      list() {
+        calls += 1;
+        if (calls <= 2) return [merged];
+        return [
+          merged,
+          {
+            number: 16,
+            url: "https://github.com/o/r/pull/16",
+            headRefName: "changeset-release/main",
+            state: "OPEN"
+          }
+        ];
+      }
+    };
+    const res = await run(
+      ["pr", "--repo", "o/r", "--head", "changeset-release/main"],
+      env(),
+      io(clock(), { client })
+    );
+    const block = JSON.parse(res.output);
+    assert.equal(block.status, "done");
+    assert.equal(block.outputs.pr.number, 16);
+    assert.equal(block.outputs.polls, 3);
   });
 
   test("three gh errors in a row are tolerated, the fourth fails", () => {

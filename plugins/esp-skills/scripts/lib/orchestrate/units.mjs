@@ -569,22 +569,25 @@ export function cmdHousekeep(options, env = process.env) {
  * (--resume, same unit run directory), started waits restart with their
  * state file (keeping the deadline), and units that stopped awaiting a human
  * go again: an esp-ship unit resumes, a wait restarts with a new deadline.
- * Their blocked dependents become pending.
+ * Their blocked dependents become pending. A run stopped before its graph
+ * was recorded or approved has nothing to resume: `next` picks it up.
  */
 export function cmdResume(options, env = process.env) {
-  const { dir, graph } = loadRun(options);
+  const dir = runDirOf(options);
+  const state = readState(dir);
+  const graph = readGraph(dir);
+  if (!graph || state.phase === "intake" || state.phase === "approve")
+    return {
+      phase: state.phase,
+      resumed: [],
+      restarted: [],
+      unblocked: [],
+      reason: `Nothing to resume in phase ${state.phase}`
+    };
   const byId = new Map(graph.units.map((u) => [u.id, u]));
   return updateState(
     dir,
     (s) => {
-      if (s.phase === "intake" || s.phase === "approve")
-        return {
-          phase: s.phase,
-          resumed: [],
-          restarted: [],
-          unblocked: [],
-          reason: `Nothing to resume in phase ${s.phase}`
-        };
       const at = now(env).toISOString();
       const resumed = [];
       const restarted = [];

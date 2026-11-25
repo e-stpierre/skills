@@ -210,7 +210,11 @@ describe("usage", () => {
 describe("dirty checkout", () => {
   test("is reported and left unchanged", () => {
     taskBranch("feature/a", "a2.txt");
-    setPr({ state: "MERGED", headRefName: "feature/a" });
+    setPr({
+      state: "MERGED",
+      headRefName: "feature/a",
+      headRefOid: git("rev-parse", "feature/a")
+    });
     moveOriginMain();
     git("switch", "-q", "feature/a");
     writeFileSync(join(repo, "a.txt"), "edited\n");
@@ -259,12 +263,18 @@ describe("task branch", () => {
     git("fetch", "-q", "origin", "main");
     // Squash merges are invisible to git branch --merged.
     assert.doesNotMatch(git("branch", "--merged", "origin/main"), /feature\/a/);
-    setPr({ state: "MERGED", headRefName: "feature/a" });
+    setPr({
+      state: "MERGED",
+      headRefName: "feature/a",
+      headRefOid: git("rev-parse", "feature/a")
+    });
     const out = runIn("--branch", "feature/a", "--pr", PR);
     assert.equal(out.status, "done");
     assert.deepEqual(results(out), ["base:fast-forwarded", "branch:deleted"]);
     assert.deepEqual(branches(), ["main"]);
-    assert.deepEqual(ghCalls(), [`pr view ${PR} --json state,headRefName`]);
+    assert.deepEqual(ghCalls(), [
+      `pr view ${PR} --json state,headRefName,headRefOid`
+    ]);
   });
 
   for (const state of ["OPEN", "CLOSED"]) {
@@ -278,6 +288,22 @@ describe("task branch", () => {
       assert.equal(git("rev-parse", "feature/a"), sha);
     });
   }
+
+  test("a branch with local commits after the pull request head is kept", () => {
+    const pushed = taskBranch("feature/a", "feat.txt");
+    git("switch", "-q", "feature/a");
+    const local = commitIn(repo, "later.txt", "later\n", "local only");
+    git("switch", "-q", "main");
+    setPr({ state: "MERGED", headRefName: "feature/a", headRefOid: pushed });
+    const out = runIn("--branch", "feature/a", "--pr", PR);
+    assert.equal(out.status, "partial");
+    assert.equal(stepOf(out, "branch").result, "kept");
+    assert.match(
+      stepOf(out, "branch").detail,
+      /local commits not in pull request/
+    );
+    assert.equal(git("rev-parse", "feature/a"), local);
+  });
 
   test("a merged pull request with another head keeps the branch", () => {
     taskBranch("feature/a");
@@ -308,7 +334,11 @@ describe("task branch", () => {
     taskBranch("feature/a");
     const elsewhere = join(tmp, "elsewhere");
     git("worktree", "add", "-q", elsewhere, "feature/a");
-    setPr({ state: "MERGED", headRefName: "feature/a" });
+    setPr({
+      state: "MERGED",
+      headRefName: "feature/a",
+      headRefOid: git("rev-parse", "feature/a")
+    });
     const out = runIn("--branch", "feature/a", "--pr", PR);
     assert.equal(out.status, "partial");
     assert.equal(stepOf(out, "branch").result, "kept");
@@ -322,7 +352,11 @@ describe("worktrees", () => {
     taskBranch("feature/a");
     const wt = join(root, "run-1");
     git("worktree", "add", "-q", wt, "feature/a");
-    setPr({ state: "MERGED", headRefName: "feature/a" });
+    setPr({
+      state: "MERGED",
+      headRefName: "feature/a",
+      headRefOid: git("rev-parse", "feature/a")
+    });
     const out = runIn("--worktree", wt, "--branch", "feature/a", "--pr", PR);
     assert.equal(out.status, "done");
     assert.deepEqual(results(out), [
@@ -409,7 +443,11 @@ describe("dry run", () => {
     squashMerge("feat.txt", "feature/a\n");
     git("fetch", "-q", "origin", "main");
     moveOriginMain();
-    setPr({ state: "MERGED", headRefName: "feature/a" });
+    setPr({
+      state: "MERGED",
+      headRefName: "feature/a",
+      headRefOid: git("rev-parse", "feature/a")
+    });
     const before = snapshot();
     const out = runIn(
       "--dry-run",

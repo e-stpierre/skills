@@ -715,6 +715,15 @@ describe("scheduling rules", () => {
 });
 
 describe("resume", () => {
+  test("a run stopped before intake has nothing to resume", () => {
+    init();
+    const resumed = ok("resume");
+    assert.equal(resumed.phase, "intake");
+    assert.deepEqual(resumed.resumed, []);
+    assert.match(resumed.reason, /Nothing to resume in phase intake/);
+    assert.equal(next().action, "intake");
+  });
+
   test("an interrupted unit resumes and a started wait restarts", () => {
     init();
     intake({

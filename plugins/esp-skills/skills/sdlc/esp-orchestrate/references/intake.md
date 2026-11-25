@@ -35,7 +35,7 @@ Write the graph to `<run-dir>/graph.draft.json`. `intake` fills every default, s
 - **`brief`** (required for `build`): what the unit changes; the task of its esp-ship run when it plans itself
 - **`settings`**: `merge` (`auto`, `human`, `none`; defaults to the run's `--merge-policy`), `review` (an `esp-ship --review` mode), `reviewers` (a list), `max_rounds` (defaults to the run's `--max-rounds`), `draft`, `branch` (an existing branch to build on), `checks` (`required` or `none-expected`, for a pull request that runs no checks), `timeout_minutes` (the wait of a `check` or `await-pr`)
 - **`pr`** (required for `adopt`): the URL of an open pull request of `repo`
-- **`match`** (`await-pr`): `head` or `author` (one is required), and optional `base` and `title` (a regular expression)
+- **`match`** (`await-pr`): `head` or `author` (one is required), and optional `base` and `title` (a regular expression). Only an open pull request matches, so a closed or merged one on a reused head branch is never adopted
 - **`command`** (required for `check`): a shell command that exits 0 once the condition holds; **`cwd`**: where it runs (defaults to the unit checkout)
 
 ### Example
