@@ -573,10 +573,15 @@ function matchesRepo(repo, wanted) {
   return a === b || a.endsWith(`/${b}`);
 }
 
+// Subdirectories that hold child runs, each child in its own <id> directory:
+// overseer tasks and esp-orchestrate units.
+const CHILD_DIRS = ["tasks", "units"];
+
 /**
  * List runs under `roots`. Date filters use directory names only; every other
- * filter reads run.json and nothing else. Child runs under `tasks/` inherit
- * the date of their parent directory.
+ * filter reads run.json and nothing else. Child runs under `tasks/<id>` and
+ * `units/<id>` inherit the date of their parent directory, and their `parent`
+ * is the run.json value, else the parent ID.
  */
 export function indexRuns(roots, filters = {}, fs = DEFAULT_FS) {
   const statuses = splitList(filters.status);
@@ -627,10 +632,11 @@ export function indexRuns(roots, filters = {}, fs = DEFAULT_FS) {
         ended_at: run.ended_at ?? null
       });
     }
-    const tasks = join(dir, "tasks");
-    if (fs.existsSync(tasks)) {
-      for (const child of fs.readdirSync(tasks).sort()) {
-        visit(join(tasks, child), date, run.id);
+    for (const nest of CHILD_DIRS) {
+      const children = join(dir, nest);
+      if (!fs.existsSync(children)) continue;
+      for (const child of fs.readdirSync(children).sort()) {
+        visit(join(children, child), date, run.id);
       }
     }
   };
