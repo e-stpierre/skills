@@ -544,6 +544,54 @@
         "default_range_days": { "type": "integer", "minimum": 1 },
         "fan_out_threshold": { "type": "integer", "minimum": 1 }
       }
+    },
+    "orchestrate": {
+      "description": "esp-orchestrate: repository map, unit execution mode, parallelism, wait settings and housekeeping.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "repos": {
+          "description": "Map of owner/name to the local checkout directory of that repository.",
+          "type": "object",
+          "propertyNames": { "pattern": "^[^/\\s]+/[^/\\s]+$" },
+          "additionalProperties": { "type": "string", "minLength": 1 }
+        },
+        "unit_mode": {
+          "description": "How pull request units run: auto picks per unit, subagent spawns one, inline runs in the main session.",
+          "enum": ["auto", "subagent", "inline"]
+        },
+        "max_parallel": {
+          "description": "Maximum number of units running at once.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4
+        },
+        "wait": {
+          "description": "Settings of the background waits (check and await-pr units).",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "timeout_minutes": {
+              "description": "Minutes before a wait hands the unit to a human.",
+              "type": "integer",
+              "minimum": 1
+            },
+            "interval_seconds": {
+              "description": "Seconds between two polls of a wait.",
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        },
+        "housekeeping": {
+          "description": "Tidy local checkouts (fast-forward the base, delete merged branches, remove worktrees) after each merge.",
+          "type": "boolean"
+        },
+        "write_back": {
+          "description": "Write the outcome of each unit back to its source (issue or pull request comment).",
+          "type": "boolean"
+        }
+      }
     }
   },
   "$defs": {
