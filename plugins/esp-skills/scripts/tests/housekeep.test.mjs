@@ -368,6 +368,17 @@ describe("worktrees", () => {
     assert.deepEqual(branches(), ["main"]);
   });
 
+  test("a run worktree already removed after the merge is skipped", () => {
+    taskBranch("feature/a");
+    const wt = join(root, "run-1");
+    git("worktree", "add", "-q", wt, "feature/a");
+    git("worktree", "remove", wt);
+    const out = runIn("--worktree", wt);
+    assert.equal(out.status, "done");
+    assert.deepEqual(results(out), ["base:up-to-date", "worktree:skipped"]);
+    assert.match(stepOf(out, "worktree").detail, /already removed/);
+  });
+
   test("a foreign worktree is kept", () => {
     taskBranch("feature/a");
     const foreign = join(tmp, "foreign");

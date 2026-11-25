@@ -298,6 +298,8 @@ function removeWorktree(ctx, path) {
   const entry = listWorktrees(repoDir).find(
     (w) => canonical(w.path) === wanted
   );
+  if (!entry && !existsSync(target))
+    return step("worktree", target, "skipped", "already removed");
   if (!entry)
     return step(
       "worktree",
@@ -486,7 +488,8 @@ Steps:
   3. Each --worktree: git worktree remove (no --force), only for a linked
      worktree of this repository under worktrees.root
   4. --branch with --pr: git branch -D, only when gh pr view reports the pull
-     request MERGED with that head, and the branch is not checked out elsewhere
+     request MERGED with that head, the local tip is in the pull request, and
+     the branch is not checked out elsewhere
   5. Each --rebase: git rebase origin/<base> <branch>; a conflict is aborted
 
 Options:

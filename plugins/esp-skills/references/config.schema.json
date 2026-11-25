@@ -588,7 +588,7 @@
           "type": "boolean"
         },
         "write_back": {
-          "description": "Write the outcome of each unit back to its source (issue or pull request comment).",
+          "description": "Add a final unit that ticks the steps of the source task document, with their status and pull request links (false is like --no-write-back).",
           "type": "boolean"
         }
       }
