@@ -13,7 +13,9 @@
 // interrupted run rebuilds what to do from disk.
 //
 // The logic lives in lib/orchestrate/: state (orchestrate.json, graph.json,
-// init, show) and graph (validation, order, repositories, intake).
+// init, show), graph (validation, order, repositories, intake), next (the
+// single next action, its payload and the outcome) and units (the unit, wait,
+// approval, housekeeping and resume transitions).
 //
 // Every command prints JSON to stdout. Exit codes: 0 ok, 1 failure or invalid
 // state, 2 usage.
@@ -21,11 +23,20 @@
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { cmdIntake } from "./lib/orchestrate/graph.mjs";
+import { cmdNext } from "./lib/orchestrate/next.mjs";
 import {
   cmdInit,
   cmdShow,
   OrchestrateError
 } from "./lib/orchestrate/state.mjs";
+import {
+  cmdApprove,
+  cmdHousekeep,
+  cmdOutcome,
+  cmdResume,
+  cmdUnit,
+  cmdWait
+} from "./lib/orchestrate/units.mjs";
 
 export { OrchestrateError };
 
@@ -45,16 +56,41 @@ Commands:
                        writes graph.json, sets every unit pending, moves the run to approve (run
                        with -i off) and logs one decision per sizing choice and per non-auto
                        merge policy. An invalid graph exits 1 with every error and writes nothing
-  approve              Record the approval of the graph and the master plan
-  next                 What to run now, exactly one action: intake, checkpoint, housekeep,
-                       spawn-unit, run-unit-inline, start-wait, idle or finish
-  unit <cmd> <id>      Unit status: start, done, failed or blocked
-  wait <cmd> <id>      Wait of a check or await-pr unit: start, or record the wait-for.mjs result
+  approve              Record the approval of the graph and the master plan: phase run
+  next                 What to run now, exactly one action, read from the files only:
+                       intake (no graph), checkpoint (approve-plan with -i plan or all,
+                       before-unit with -i all, unresolved-repo), housekeep (a merged unit
+                       not housekept: the housekeep.mjs run arguments, with --rebase for the
+                       branches of later unstarted build units of the checkout), spawn-unit or
+                       run-unit-inline (a unit to resume, then a ready build, adopt, or
+                       await-pr that found its pull request: the /esp-skills:esp-ship
+                       arguments), start-wait (a wait to restart, then a ready check or
+                       await-pr: the wait-for.mjs arguments), idle (units or waits running)
+                       or finish (every unit terminal). A unit is ready when its dependencies
+                       are merged or done; at most max_parallel units or waits run at once,
+                       never two units of one checkout. Unit mode auto runs inline with -i
+                       all, with CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH below 3, or for the
+                       last unit left, else as a subagent
+  unit <cmd> <id>      Unit transitions: start [--mode subagent|inline] (pending and ready,
+                       or resumable, -> running), done --status merged|done [--pr <url>]
+                       [--merge-commit <sha>] (running -> merged or done), failed --reason
+                       <text> [--status failed|halted] and blocked --reason <text>
+                       [--question <text>] (-> awaiting-human). A stopped unit blocks its
+                       dependents
+  wait <cmd> <id>      Wait of a check or await-pr unit: start (pending and ready -> waiting,
+                       prints the wait-for.mjs arguments) or record --result <json|file>
+                       (the wait-for.mjs output: a check ends done, an await-pr keeps the
+                       found pull request and is ready to adopt, awaiting-human and failed
+                       stop the unit)
   housekeep            Record the housekeep.mjs result of a merged unit (--unit <id>
-                       --result <json|file>)
-  resume               Make running units resumable and restart the started waits
-  outcome              Outcome of the run: merged, partial, awaiting-human, halted or failed,
-                       one entry per unit, and the command that resumes the run
+                       --result <json|file>): the unit is housekept, the dirty checkout and
+                       the rebased branches are recorded
+  resume               Make running units resumable (--resume, same unit run directory),
+                       restart the started waits with their state file, and send the units
+                       awaiting a human again; their blocked dependents become pending
+  outcome              Outcome of the run: merged, partial, awaiting-human, halted or failed
+                       (running until every unit is terminal), one entry per unit, the dirty
+                       checkouts, and the command that resumes the run
 
 Options:
   --run-dir <path>          Run directory (required)
@@ -73,6 +109,15 @@ Options:
   --no-write-back           init: skip the write-back unit
   --graph <file>            intake: the task graph (JSON)
   --record                  intake: write graph.json and the decisions
+  --mode <mode>             unit start: subagent or inline (default: the mode next resolved)
+  --status <status>         unit done: merged or done; unit failed: failed or halted
+  --pr <url>                unit done: the pull request of the unit
+  --merge-commit <sha>      unit done: the merge commit
+  --reason <text>           unit failed, unit blocked: why the unit stopped
+  --question <text>         unit blocked: what the human has to answer
+  --result <json|file>      wait record, housekeep: the JSON output of wait-for.mjs or
+                            housekeep.mjs, inline or as a file (its last JSON line)
+  --unit <id>               housekeep: the merged unit
   --help                    Show this help`;
 
 const BOOLEAN_FLAGS = new Set([
@@ -106,7 +151,7 @@ export function parseArgs(argv) {
 }
 
 export function run(argv, env = process.env) {
-  const { command, options } = parseArgs(argv);
+  const { command, args, options } = parseArgs(argv);
   if (options.help || !command)
     return { output: USAGE, exitCode: options.help ? 0 : 2 };
   switch (command) {
@@ -116,6 +161,20 @@ export function run(argv, env = process.env) {
       return { output: cmdShow(options) };
     case "intake":
       return { output: cmdIntake(options, env) };
+    case "approve":
+      return { output: cmdApprove(options, env) };
+    case "next":
+      return { output: cmdNext(options, env) };
+    case "unit":
+      return { output: cmdUnit(args, options, env) };
+    case "wait":
+      return { output: cmdWait(args, options, env) };
+    case "housekeep":
+      return { output: cmdHousekeep(options, env) };
+    case "resume":
+      return { output: cmdResume(options, env) };
+    case "outcome":
+      return { output: cmdOutcome(options, env) };
     default:
       throw new OrchestrateError(`Unknown command: ${command}\n\n${USAGE}`, 2);
   }
