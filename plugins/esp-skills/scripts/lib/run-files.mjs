@@ -17,7 +17,8 @@ export const RUN_STATUSES = [
   "failed",
   "canceled",
   "done",
-  "merged"
+  "merged",
+  "partial"
 ];
 
 export const TERMINAL_RUN_STATUSES = [
@@ -25,7 +26,8 @@ export const TERMINAL_RUN_STATUSES = [
   "failed",
   "canceled",
   "done",
-  "merged"
+  "merged",
+  "partial"
 ];
 
 export const DECISION_SOURCES = ["agent", "operator", "policy"];
