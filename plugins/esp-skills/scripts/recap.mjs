@@ -9,12 +9,15 @@
 // Commands: collect (recap mode), show (one run in full, used by fan-out
 // subagents), risks (risk report), sources (Q&A candidates, in the source
 // order decisions -> summaries -> git -> pull requests).
+// Child runs (esp-orchestrate units under units/<id>, overseer tasks under
+// tasks/<id>) are nested under their parent run in collect and show, and their
+// decisions and findings carry the parent ID in risks and sources.
 // ESP_RUNS_NOW (ISO date-time) fixes the clock, for tests.
 //
 // Exit codes: 0 success, 1 failed operation, 2 usage error.
 
 import { existsSync, readdirSync, readFileSync } from "node:fs";
-import { basename, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { expandHome, loadConfig } from "./config.mjs";
 import { parseFrontmatter } from "./lib/frontmatter.mjs";
@@ -38,6 +41,7 @@ export class RecapError extends Error {
 }
 
 const BOM = String.fromCharCode(0xfeff);
+const DATE_PREFIX = /^(\d{4}-\d{2}-\d{2})-/;
 const DEFAULT_LIMIT = 10;
 const STOPWORDS = new Set(
   (
@@ -238,8 +242,100 @@ export function selectRuns(options, env = process.env) {
     throw err;
   }
   let runs = listed.runs;
-  if (options.limit) runs = runs.slice(-Number(options.limit));
+  if (options.limit) runs = limitTopLevel(runs, Number(options.limit));
   return { config, roots, range, runs, errors: listed.errors };
+}
+
+/**
+ * Path of the listed run that holds this one on disk (`<parent>/units/<id>`
+ * or `<parent>/tasks/<id>`), or null for a top-level run. `paths` is the set
+ * of listed run paths: a child whose parent is filtered out stays top-level.
+ */
+function nestingPath(entry, paths) {
+  if (!entry.parent) return null;
+  const up = dirname(dirname(entry.path));
+  return paths.has(up) ? up : null;
+}
+
+/** Path of the top-level run that holds this one (itself when top-level). */
+function topLevelPath(entry, byPath) {
+  const paths = new Set(byPath.keys());
+  let current = entry;
+  for (
+    let up = nestingPath(current, paths);
+    up;
+    up = nestingPath(current, paths)
+  )
+    current = byPath.get(up);
+  return current.path;
+}
+
+/** Keep the `limit` most recent top-level runs and every run nested in them. */
+function limitTopLevel(runs, limit) {
+  const byPath = new Map(runs.map((r) => [r.path, r]));
+  const top = runs.filter((r) => topLevelPath(r, byPath) === r.path);
+  const kept = new Set(top.slice(-limit).map((r) => r.path));
+  return runs.filter((r) => kept.has(topLevelPath(r, byPath)));
+}
+
+/**
+ * Children of a run from its run.json `children` (`{ id, path }`), with the
+ * status and pull request read from each child run.json (null when missing).
+ */
+function readChildren(run) {
+  const children = Array.isArray(run?.children) ? run.children : [];
+  return children
+    .filter((c) => c && typeof c.id === "string")
+    .map((c) => {
+      const child = c.path ? readJson(join(c.path, "run.json")) : null;
+      return {
+        id: c.id,
+        path: c.path ?? null,
+        status: child?.status ?? null,
+        pr: child?.pr ?? null
+      };
+    });
+}
+
+/** Index entry for a run directory, like runs.mjs indexRuns builds it. */
+function entryFor(dir, run, date, parentId) {
+  return {
+    id: run.id,
+    path: dir,
+    date,
+    parent: run.parent ?? parentId,
+    type: run.type,
+    workflow: run.workflow ?? null,
+    title: run.title ?? null,
+    repo: run.repo ?? null,
+    branch: run.branch ?? null,
+    pr: run.pr ?? null,
+    status: run.status,
+    max_risk: run.max_risk ?? null,
+    started_at: run.started_at ?? null,
+    ended_at: run.ended_at ?? null
+  };
+}
+
+/**
+ * Index entries of the child runs of `dir`: the run.json `children` first,
+ * then any other run directory under `units/` or `tasks/`.
+ */
+function childEntries(dir, run, date) {
+  const dirs = [];
+  const add = (path) => {
+    if (path && !dirs.includes(resolve(path))) dirs.push(resolve(path));
+  };
+  for (const c of readChildren(run)) add(c.path);
+  for (const nest of ["units", "tasks"]) {
+    const base = join(dir, nest);
+    if (!existsSync(base)) continue;
+    for (const name of readdirSync(base).sort()) add(join(base, name));
+  }
+  return dirs.flatMap((path) => {
+    const child = readJson(join(path, "run.json"));
+    return child ? [entryFor(path, child, date, run.id)] : [];
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -272,6 +368,7 @@ export function digestRun(entry) {
   const decisions = readDecisions(dir);
   const steps = readStepResults(dir);
   const critical = readCriticalFindings(dir);
+  const run = readJson(join(dir, "run.json"));
   const fm = summary?.frontmatter ?? {};
   return {
     id: entry.id,
@@ -299,6 +396,7 @@ export function digestRun(entry) {
     ),
     steps: steps.map((s) => ({ step: s.step, status: s.result.status })),
     commits: runCommits(dir, steps).length,
+    children: readChildren(run),
     sources: {
       run: join(dir, "run.json"),
       summary: summary ? join(dir, "summary.md") : null,
@@ -307,7 +405,10 @@ export function digestRun(entry) {
   };
 }
 
-/** Everything about one run, for a detailed recap or a fan-out subagent. */
+/**
+ * Everything about one run, for a detailed recap or a fan-out subagent. A
+ * parent run also gets `units`: the digest of each of its child runs.
+ */
 export function showRun(dir) {
   const run = readJson(join(dir, "run.json"));
   if (!run)
@@ -349,7 +450,12 @@ export function showRun(dir) {
       source: join(dir, s.step === "triage" ? "triage.json" : "ship.json")
     })),
     commits: runCommits(dir, steps),
-    critical_findings: readCriticalFindings(dir)
+    critical_findings: readCriticalFindings(dir),
+    units: childEntries(
+      dir,
+      run,
+      DATE_PREFIX.exec(basename(dir))?.[1] ?? null
+    ).map(digestRun)
   };
 }
 
@@ -364,41 +470,85 @@ function chunk(items, size) {
 // Commands
 // ---------------------------------------------------------------------------
 
-/** Recap mode: one digest per run, and fan-out batches above the threshold. */
+/**
+ * Nest digests under their parent: each digest gets `units` (the digests of
+ * its child runs in range), and only top-level digests are returned.
+ */
+function nestDigests(runs) {
+  const paths = new Set(runs.map((r) => r.path));
+  const digests = new Map(
+    runs.map((r) => [r.path, { ...digestRun(r), units: [] }])
+  );
+  const top = [];
+  for (const r of runs) {
+    const up = nestingPath(r, paths);
+    if (up) digests.get(up).units.push(digests.get(r.path));
+    else top.push(digests.get(r.path));
+  }
+  return top;
+}
+
+/**
+ * Recap mode: one digest per top-level run, child runs nested under their
+ * parent (`units`), and fan-out batches of top-level runs above the threshold
+ * (a fan-out subagent reads the units through `show` of the parent).
+ */
 export function cmdCollect(options, env = process.env) {
   const { config, roots, range, runs, errors } = selectRuns(options, env);
   const threshold = config.recap?.fan_out_threshold ?? 5;
-  const fanOut = runs.length > threshold;
+  const top = nestDigests(runs);
+  const fanOut = top.length > threshold;
   return {
     roots,
     range,
-    count: runs.length,
+    count: top.length,
+    unit_count: runs.length - top.length,
     fan_out: fanOut,
     fan_out_threshold: threshold,
     batches: fanOut
       ? chunk(
-          runs.map((r) => r.path),
+          top.map((r) => r.path),
           threshold
         )
       : [],
-    runs: runs.map(digestRun),
+    runs: top,
     errors
   };
 }
 
-/** Resolve `show <run-id|path>` against the roots. */
+const runLabel = (r) => (r.parent ? `${r.parent}/${r.id}` : r.id);
+
+/**
+ * Resolve `show <run-id|parent-id/unit-id|path>` against the roots. A bare ID
+ * that names several runs (units of different parents) fails with the
+ * candidates, to be retried as `<parent-id>/<unit-id>`.
+ */
 export function findRun(target, options) {
   if (options["run-dir"]) target = options["run-dir"];
-  if (!target)
-    throw new RecapError("Usage: show <run-id|path> (or --run-dir <path>)", 2);
-  const direct = resolve(expandHome(String(target)));
+  if (!target || target === true)
+    throw new RecapError(
+      "Usage: show <run-id|parent-id/unit-id|path> (or --run-dir <path>)",
+      2
+    );
+  target = String(target);
+  const direct = resolve(expandHome(target));
   if (existsSync(join(direct, "run.json"))) return direct;
   const roots = resolveRoots(options, configFor(options));
   const { runs } = indexRuns(roots, {});
-  const hit = runs.find((r) => r.id === target || basename(r.path) === target);
-  if (!hit)
+  const named = (r, id) => r.id === id || basename(r.path) === id;
+  const pair = /^([^/\\]+)\/([^/\\]+)$/.exec(target);
+  const hits = runs.filter((r) =>
+    pair ? r.parent === pair[1] && named(r, pair[2]) : named(r, target)
+  );
+  const unique = [...new Map(hits.map((r) => [r.path, r])).values()];
+  if (unique.length === 0)
     throw new RecapError(`No run named ${target} under ${roots.join(", ")}`);
-  return hit.path;
+  if (unique.length > 1)
+    throw new RecapError(
+      `${target} names ${unique.length} runs; pass one of:\n` +
+        unique.map((r) => `  ${runLabel(r)}  (${r.path})`).join("\n")
+    );
+  return unique[0].path;
 }
 
 export function cmdShow(target, options) {
@@ -427,7 +577,13 @@ export function cmdRisks(options, env = process.env) {
     const summary = readSummary(dir);
     const critical = readCriticalFindings(dir);
     const title = summary?.frontmatter?.title ?? entry.title ?? entry.id;
-    const ref = { run: entry.id, title, repo: entry.repo, pr: entry.pr };
+    const ref = {
+      run: entry.id,
+      parent: entry.parent ?? null,
+      title,
+      repo: entry.repo,
+      pr: entry.pr
+    };
     for (const d of readDecisions(dir)) {
       if (RISK_ORDER.indexOf(d.risk) < floor) continue;
       decisions.push({
@@ -532,6 +688,7 @@ export function cmdSources(options, env = process.env) {
   const prs = [];
   for (const entry of runs) {
     const dir = entry.path;
+    const parent = entry.parent ?? null;
     let hits = 0;
     const files = new Set();
     for (const d of readDecisions(dir)) {
@@ -551,6 +708,7 @@ export function cmdSources(options, env = process.env) {
       decisions.push({
         score: s,
         run: entry.id,
+        parent,
         id: d.id,
         phase: d.phase,
         risk: d.risk,
@@ -571,6 +729,7 @@ export function cmdSources(options, env = process.env) {
       summaries.push({
         score: s,
         run: entry.id,
+        parent,
         section: heading,
         text,
         source: `${join(dir, "summary.md")}#${heading}`
@@ -584,13 +743,14 @@ export function cmdSources(options, env = process.env) {
       for (const f of s.result.files_changed ?? []) files.add(f);
     git.push({
       run: entry.id,
+      parent,
       title,
       repo: entry.repo,
       branch: entry.branch,
       commits: runCommits(dir, steps),
       files: [...files].sort()
     });
-    if (entry.pr) prs.push({ run: entry.id, title, pr: entry.pr });
+    if (entry.pr) prs.push({ run: entry.id, parent, title, pr: entry.pr });
   }
   const byScore = (a, b) =>
     b.score - a.score || String(a.run).localeCompare(String(b.run));
@@ -616,10 +776,14 @@ export function cmdSources(options, env = process.env) {
 const USAGE = `Usage: node recap.mjs <command> [args] [options]
 
 Commands:
-  collect                Recap mode: one digest per run in range, and fan-out batches
-                         when the count is above recap.fan_out_threshold
-  show <run-id|path>     One run in full: run.json, summary sections, decisions, steps,
-                         commits and critical findings, each with its source path
+  collect                Recap mode: one digest per top-level run in range, with its
+                         child runs nested in units, and fan-out batches when the
+                         top-level count is above recap.fan_out_threshold
+  show <run>             One run in full: run.json, summary sections, decisions, steps,
+                         commits, critical findings and child run digests (units),
+                         each with its source path. <run> is a run ID, a path, or
+                         <parent-id>/<unit-id> for a child run; an ambiguous ID fails
+                         with the candidates
   risks                  Risk report: decisions at or above --min-risk (default high),
                          critical review findings, and halted or waiting runs
   sources                Q&A candidates for --question <text>, in source order:
@@ -633,7 +797,8 @@ Filters (collect, risks, sources):
   --repo <name>          Repo, matched on the run.json repo suffix
   --status <s,...>       run.json status (repeatable or comma-separated)
   --risk <level>         Minimum run.json max_risk
-  --limit <N>            Keep the N most recent runs (sources: N results per source)
+  --limit <N>            Keep the N most recent top-level runs and their child runs
+                         (sources: N results per source)
 
 Options:
   --min-risk <level>        risks: lowest decision risk to report (default high)

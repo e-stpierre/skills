@@ -149,6 +149,42 @@ describe("schema and defaults", () => {
     );
   });
 
+  test("orchestrate declares the defaults and rejects invalid values", () => {
+    const { orchestrate } = readJson(DEFAULTS_PATH);
+    assert.deepEqual(orchestrate, {
+      repos: {},
+      unit_mode: "auto",
+      max_parallel: 2,
+      wait: { timeout_minutes: 60, interval_seconds: 30 },
+      housekeeping: true,
+      write_back: true
+    });
+    const schema = readJson(SCHEMA_PATH);
+    for (const config of [
+      { orchestrate: { unit_mode: "x" } },
+      { orchestrate: { max_parallel: 0 } },
+      { orchestrate: { max_parallel: 5 } },
+      { orchestrate: { parallel: 2 } },
+      { orchestrate: { repos: { skills: "/work/skills" } } },
+      { orchestrate: { wait: { timeout_minutes: 0 } } }
+    ])
+      assert.notDeepEqual(
+        validate(schema, config).errors,
+        [],
+        JSON.stringify(config)
+      );
+    assert.deepEqual(
+      validate(schema, {
+        orchestrate: {
+          repos: { "acme/skills": "/work/skills" },
+          unit_mode: "inline",
+          max_parallel: 4
+        }
+      }).errors,
+      []
+    );
+  });
+
   test("codex declares the run defaults and rejects invalid values", () => {
     const { codex, defaults } = readJson(DEFAULTS_PATH);
     assert.deepEqual(codex, {

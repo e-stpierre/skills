@@ -779,6 +779,48 @@ describe("index", () => {
     assert.equal(child.date, "2026-11-09");
   });
 
+  test("descends into units/ children of an orchestrated run", () => {
+    const runs = seed();
+    const parent = join(runs, "2026-11-07-orchestrate");
+    const write = (dir, run) => {
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(
+        join(dir, "run.json"),
+        JSON.stringify({ type: "skill", started_at: NOW, ...run })
+      );
+    };
+    write(parent, {
+      id: "2026-11-07-orchestrate",
+      workflow: "esp-orchestrate",
+      status: "running"
+    });
+    write(join(parent, "units", "app"), {
+      id: "app",
+      workflow: "esp-ship",
+      status: "done",
+      repo: "acme/app"
+    });
+    write(join(parent, "units", "lib"), {
+      id: "lib",
+      workflow: "esp-ship",
+      status: "merged",
+      parent: "2026-11-07-orchestrate"
+    });
+    const units = indexRuns([runs], { workflow: "esp-ship" }).runs;
+    assert.deepEqual(
+      units.map((r) => [r.id, r.parent, r.date]),
+      [
+        ["app", "2026-11-07-orchestrate", "2026-11-07"],
+        ["lib", "2026-11-07-orchestrate", "2026-11-07"]
+      ]
+    );
+    assert.deepEqual(
+      indexRuns([runs], { since: "2026-11-08" }).runs.map((r) => r.id),
+      ["2026-11-09-epic", "T01-child"],
+      "units are skipped with their out-of-range parent"
+    );
+  });
+
   test("filters by workflow, so an active loop run is findable", () => {
     const runs = seed();
     const loop = join(runs, "2026-11-11-loop");

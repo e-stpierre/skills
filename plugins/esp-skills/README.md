@@ -2,7 +2,7 @@
 
 ## Overview
 
-A single plugin bundling every skill in this repository: standardized git workflows, GitHub PR maintenance, high-signal code review, interactive SDLC planning and analysis, lightweight helpers, markdown style enforcement, and skill authoring. Skills are human-in-the-loop by default: they infer what they can from context and ask clarifying questions only when needed. Skills marked **Beta** are usable but may change.
+A single plugin bundling every skill in this repository: standardized git workflows, GitHub PR maintenance, high-signal code review, interactive SDLC planning and analysis, lightweight helpers, markdown style enforcement, skill authoring, and the orchestration of changes that span several pull requests or repositories. Skills are human-in-the-loop by default: they infer what they can from context and ask clarifying questions only when needed. Skills marked **Beta** are usable but may change.
 
 Every skill is invoked as `/esp-skills:<skill>`. Unqualified names (`/esp-commit`, `/esp-qna`) also work as long as no other installed plugin provides a skill with the same name.
 
@@ -20,6 +20,7 @@ Arguments work like a standard CLI: discrete values are named options with a sho
 - `/esp-skills:esp-ship https://github.com/o/r/issues/31` - Ship an issue: triage picks the inline track or a generated plan from its size
 - `/esp-skills:esp-ship ~/.esp-skills/runs/2026-11-10-add-oauth-login/plan.md` - Ship a plan: one verified commit per milestone, internal review, bot review and CI fixes, merge
 - `/esp-skills:esp-ship docs/backlog.md` - Ship the unchecked packages of a task list (checkbox list plus one heading per package), imported as a plan and built in parallel batches where their files do not overlap
+- `/esp-skills:esp-orchestrate docs/presets-rollout.md` - Take a change that spans several PRs or repositories to merged code: a task graph of esp-ship units, PR waits and release checks, with local cleanup after each merge
 - `/esp-skills:esp-ralph ~/.esp-skills/runs/2026-11-10-add-oauth-login/plan.md` - Build a ralph loop prompt from a plan, review it, and run the loop as a background workflow: one fresh agent and one commit per milestone, steered by a message in the same session
 - `/esp-skills:esp-codex Explain why the export test is flaky` - Delegate a task to Codex in a read-only sandbox and report its answer; `--review` runs a Codex review instead
 - `/esp-skills:esp-recap --last 7d` - Recap the runs of the last week; `--risks` lists high-risk decisions and critical findings, and a question gets an answer with sources
@@ -74,13 +75,14 @@ Subagents spawned by the workflow skills. Each ends with a short markdown reply 
 
 ### SDLC
 
-| Skill                     | Description                                                           |
-| ------------------------- | --------------------------------------------------------------------- |
-| `/esp-skills:esp-plan`    | **Beta** - Create or amend a machine-readable implementation plan     |
-| `/esp-skills:esp-ship`    | **Beta** - Any task to merged PR: inline, or as verified milestones   |
-| `/esp-skills:esp-ralph`   | **Beta** - Build a ralph loop prompt, then run the loop as a workflow |
-| `/esp-skills:esp-recap`   | **Beta** - Recap runs, report their risks, or answer with sources     |
-| `/esp-skills:esp-analyze` | **Beta** - Analyze codebase for bugs, debt, docs, security, or style  |
+| Skill                         | Description                                                                               |
+| ----------------------------- | ----------------------------------------------------------------------------------------- |
+| `/esp-skills:esp-plan`        | **Beta** - Create or amend a machine-readable implementation plan                         |
+| `/esp-skills:esp-ship`        | **Beta** - Any task to merged PR: inline, or as verified milestones                       |
+| `/esp-skills:esp-orchestrate` | **Beta** - A change across several PRs or repositories, as a task graph of esp-ship units |
+| `/esp-skills:esp-ralph`       | **Beta** - Build a ralph loop prompt, then run the loop as a workflow                     |
+| `/esp-skills:esp-recap`       | **Beta** - Recap runs, report their risks, or answer with sources                         |
+| `/esp-skills:esp-analyze`     | **Beta** - Analyze codebase for bugs, debt, docs, security, or style                      |
 
 ### Runtime
 
@@ -139,86 +141,93 @@ Objects merge key by key; arrays and scalars replace. Invalid config fails with 
 
 Keys read by the current skills:
 
-| Key                                          | Default                                                         | Read by                                   | Effect                                                                             |
-| -------------------------------------------- | --------------------------------------------------------------- | ----------------------------------------- | ---------------------------------------------------------------------------------- |
-| `defaults.language`                          | `en-US`                                                         | `esp-commit`, `esp-pr`                    | Language of generated messages                                                     |
-| `branch.pattern`                             | `{category}/{issue}_{name}`                                     | `esp-branch`                              | Branch name when an issue ID is known                                              |
-| `branch.pattern_without_issue`               | `{category}/{name}`                                             | `esp-branch`                              | Branch name when no issue ID is known                                              |
-| `branch.default_category`                    | `feature`                                                       | `esp-branch`                              | Category when none is given or inferred                                            |
-| `branch.categories`                          | `feature, fix, chore, doc, refactor, poc`                       | `esp-branch`                              | Suggested categories (others still work)                                           |
-| `commit.style`                               | `plain`                                                         | `esp-commit`, `esp-pr`, `esp-fix-review`  | `plain` imperative title or `conventional` commits, for commits and PR titles      |
-| `commit.co_author`                           | `true`                                                          | `esp-commit`                              | Add the `Co-Authored-By` trailer                                                   |
-| `commit.plan_step_prefix`                    | `true`                                                          | `esp-commit`                              | Prefix titles with `[Task N]` when following a plan                                |
-| `pr.base`                                    | `null`                                                          | `esp-pr`                                  | Base branch, `null` uses the repository default branch                             |
-| `pr.draft`                                   | `false`                                                         | `esp-pr`, `esp-ship`                      | Open PRs as drafts (esp-ship then stops before the merge)                          |
-| `pr.attribution`                             | `true`                                                          | `esp-pr`                                  | Append the AI attribution line                                                     |
-| `analyze.output_dir`                         | `analysis`                                                      | `esp-analyze`                             | Directory for analysis reports                                                     |
-| `plan.default_type`                          | `auto`                                                          | `esp-plan`                                | Plan type when `--type` is not given                                               |
-| `plan.explore_agents`                        | `feature: 3, bug: 2, chore: 2`                                  | `esp-plan`                                | Explore subagents per plan type                                                    |
-| `defaults.interactive`                       | `off`                                                           | `esp-plan`, `esp-review`, `esp-ship`      | When skills stop to ask (`off`, `plan`, `all`)                                     |
-| `defaults.models`                            | see `references/model-selection.md`                             | `esp-plan`, `esp-review`, `esp-ship`      | Model and effort per subagent role                                                 |
-| `worktrees.root`                             | `~/.esp-skills/worktrees`                                       | `esp-ship`                                | Where task and parallel milestone worktrees are created                            |
-| `review.dimensions`                          | `correctness, security, conventions, plan-conformance`          | `esp-review`                              | Dimensions checked when `--focus` names none                                       |
-| `review.min_severity`                        | `medium`                                                        | `esp-review`                              | Findings below it are dropped                                                      |
-| `review.verify_findings`                     | `true`                                                          | `esp-review`                              | Run the verify pass that rejects false positives                                   |
-| `review.second_opinion`                      | `none`                                                          | `esp-review`                              | `codex`: add a read-only Codex review whose findings the reviewer verifies         |
-| `fix-review.wait.reviewers`                  | `claude`, `codex` (`@codex review` trigger)                     | `esp-fix-review`, `esp-ship`              | Reviewer names, GitHub logins and trigger comments                                 |
-| `fix-review.wait.default_reviewers`          | `["claude"]`                                                    | `esp-fix-review`, `esp-ship`              | Reviewers waited for when `--reviewers` is not given                               |
-| `fix-review.wait.timeout_minutes`            | `30`                                                            | `esp-fix-review`, `esp-ship`              | Time before the wait gives up                                                      |
-| `fix-review.wait.poll_seconds`               | `60`                                                            | `esp-fix-review`, `esp-ship`              | First poll interval, backing off to 5x                                             |
-| `fix-review.wait.auto_trigger`               | `false`                                                         | `esp-fix-review`, `esp-ship`              | Post the reviewers' trigger comments after a push                                  |
-| `fix-review.wait.checks_grace_seconds`       | `120`                                                           | `esp-fix-review`, `esp-ship`              | An empty check list counts as pending this long after the head commit              |
-| `fix-review.max_rounds`                      | `3`                                                             | `esp-ship`                                | PR fix rounds when `esp-ship --max-rounds` is not given                            |
-| `fix-review.fix_ci`                          | `true`                                                          | `esp-fix-review`                          | Diagnose and fix failing CI checks                                                 |
-| `fix-review.reply_to_rejected`               | `true`                                                          | `esp-fix-review`                          | Reply with the reason to rejected comments                                         |
-| `fix-review.deferred_items`                  | `follow-up`                                                     | `esp-fix-review`                          | `follow-up` (reply, resolve, discovered item) or `block`                           |
-| `merge.enabled`                              | `true`                                                          | `esp-merge`                               | `false` leaves the PR open                                                         |
-| `merge.method`                               | `repo`                                                          | `esp-merge`                               | `repo` resolves it from the repository, else forced                                |
-| `merge.preference`                           | `squash, rebase, merge`                                         | `esp-merge`                               | Order when the repository allows several methods                                   |
-| `merge.delete_branch`                        | `true`                                                          | `esp-merge`                               | Delete the remote head branch, and the local one unless in another worktree        |
-| `merge.require_resolved_threads`             | `true`                                                          | `esp-merge`                               | Unresolved review threads block the merge                                          |
-| `merge.require_green_checks`                 | `true`                                                          | `esp-merge`                               | Every check must pass (`false`: required checks only)                              |
-| `merge.use_auto_merge`                       | `false`                                                         | `esp-merge`                               | Enable auto-merge on pending checks instead of waiting                             |
-| `merge.checks_timeout_minutes`               | `30`                                                            | `esp-merge`                               | Wait for pending checks                                                            |
-| `merge.human_wait_minutes`                   | `1440`                                                          | `esp-ship`                                | `--merge-policy human`: how long the merge wait polls for a person to merge        |
-| `merge.poll_seconds`                         | `30`                                                            | `esp-merge`                               | Seconds between check polls during that wait                                       |
-| `worktrees.cleanup`                          | `on-merge`                                                      | `esp-merge`                               | Remove the task worktree after the merge (`never` keeps it)                        |
-| `ship.phases`                                | every phase of the track                                        | `esp-ship`                                | Phases to run, filtered per track (`implement` or `build` is required)             |
-| `ship.plan_mode`                             | `auto`                                                          | `esp-ship`                                | `--plan-mode` default: `auto`, `skip` (no planning model) or `always`              |
-| `ship.merge_policy`                          | `auto`                                                          | `esp-ship`                                | `--merge-policy` default: `auto` (esp-merge), `human` or `none` (no merge phase)   |
-| `ship.review_mode`                           | `auto`                                                          | `esp-ship`                                | `--review` default: `auto`, `internal`, `pr`, `both` or `none`                     |
-| `ship.auto.review_max_files`                 | `3`                                                             | `esp-ship`                                | Review gate: at most this many changed files may skip the internal review          |
-| `ship.auto.review_max_lines`                 | `150`                                                           | `esp-ship`                                | Review gate: at most this many changed lines may skip the internal review          |
-| `ship.review.always_paths`                   | auth, security, migrations, CI config globs                     | `esp-ship`                                | A changed path matching one always runs the internal review                        |
-| `ship.internal_review_rounds`                | `2`                                                             | `esp-ship`                                | Review and fix rounds before the PR (`0` is like `--review pr`)                    |
-| `ship.worktree`                              | `false`                                                         | `esp-ship`                                | Work in a task worktree under `worktrees.root`                                     |
-| `ship.dirty_tree`                            | `worktree`                                                      | `esp-ship`                                | A dirty working tree moves the task to a worktree (`fail` stops)                   |
-| `ship.inline.max_files_changed`              | `10`                                                            | `esp-ship`                                | More changed files moves an inline task to the orchestrated track                  |
-| `ship.inline.escalate`                       | `true`                                                          | `esp-ship`                                | `false`: continue over the file limit, halt on gates                               |
-| `ship.budgets.inline.max_wall_minutes`       | `60`                                                            | `esp-ship`                                | Inline wall time budget, checked at each phase boundary                            |
-| `ship.budgets.orchestrated.max_wall_minutes` | `240`                                                           | `esp-ship`                                | Orchestrated wall time budget, checked at each phase boundary                      |
-| `ship.budgets.orchestrated.max_milestones`   | `12`                                                            | `esp-plan`, `esp-ship`                    | esp-plan plans within it; a larger plan halts with `budget`                        |
-| `ship.halt_on`                               | all five stop conditions                                        | `esp-ship`, `esp-fix-review`, `esp-merge` | Stop conditions honored (see `decision-policy.md`)                                 |
-| `ship.max_retries_per_milestone`             | `2`                                                             | `esp-ship`                                | Builder retries before the build halts                                             |
-| `ship.parallel`                              | `auto`                                                          | `esp-ship`                                | Parallel milestone batches: `auto` (when the plan has one), `on` or `off`          |
-| `ship.max_parallel`                          | `3`                                                             | `esp-ship`                                | Most milestones built at the same time                                             |
-| `ship.commit_per_milestone`                  | `true`                                                          | `esp-ship`                                | `false` squashes milestone commits at the end                                      |
-| `ship.gates`                                 | all `null` (auto-detect), `always: []`                          | `esp-ship`, `esp-merge`, `esp-fix-review` | Gate commands: `test`, `lint`, `typecheck`, `build`; `always` runs in every scope  |
-| `ship.gates_scope`                           | `milestone`                                                     | `esp-ship`                                | Builders and verifiers run the milestone's validation commands (`full`: all gates) |
-| `ship.reuse.limit_tokens`                    | `250000`                                                        | `esp-ship`                                | Context budget of a builder continued with the next milestone                      |
-| `ship.reuse.cost`                            | `low: 40000, medium: 70000, high: 120000`                       | `esp-ship`                                | Estimated context per milestone complexity, for builder reuse                      |
-| `pr.body_from_run`                           | `true`                                                          | `esp-ship`, `esp-pr`                      | Build the PR body from the run artifacts                                           |
-| `pr.body_sections`                           | `summary, milestones, decisions, review-resolution, follow-ups` | `esp-ship`, `esp-pr`                      | Sections of that body, in order                                                    |
-| `ralph.max_iterations`                       | `25`                                                            | `esp-ralph`                               | Iterations of one loop launch when `--max-iterations` is not given                 |
-| `ralph.no_progress_limit`                    | `2`                                                             | `esp-ralph`                               | Consecutive iterations with no commit and no progress note before the loop stops   |
-| `ralph.allow_subagents`                      | `false`                                                         | `esp-ralph`                               | Run iterations as `general-purpose` agents, which may spawn subagents              |
-| `codex.model`                                | `null`                                                          | `esp-codex`, `esp-review`                 | Codex model, `null` uses the Codex config                                          |
-| `codex.sandbox`                              | `read-only`                                                     | `esp-codex`                               | Sandbox of a Codex task: `read-only` or `workspace-write`                          |
-| `codex.timeout_minutes`                      | `30`                                                            | `esp-codex`, `esp-review`                 | Minutes before the Codex process tree is killed                                    |
-| `recap.roots`                                | `["~/.esp-skills/runs"]`                                        | `esp-recap`                               | Runs roots read by the recap, besides `runs.root` (add any other runs root)        |
-| `recap.default_range_days`                   | `7`                                                             | `esp-recap`                               | Days covered when no date option is given                                          |
-| `recap.fan_out_threshold`                    | `5`                                                             | `esp-recap`                               | Above this many runs, digest them in parallel subagents                            |
-| `runs.root`                                  | `~/.esp-skills/runs`                                            | `scripts/runs.mjs`                        | Where standalone run directories are created                                       |
+| Key                                          | Default                                                         | Read by                                   | Effect                                                                                         |
+| -------------------------------------------- | --------------------------------------------------------------- | ----------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| `defaults.language`                          | `en-US`                                                         | `esp-commit`, `esp-pr`                    | Language of generated messages                                                                 |
+| `branch.pattern`                             | `{category}/{issue}_{name}`                                     | `esp-branch`                              | Branch name when an issue ID is known                                                          |
+| `branch.pattern_without_issue`               | `{category}/{name}`                                             | `esp-branch`                              | Branch name when no issue ID is known                                                          |
+| `branch.default_category`                    | `feature`                                                       | `esp-branch`                              | Category when none is given or inferred                                                        |
+| `branch.categories`                          | `feature, fix, chore, doc, refactor, poc`                       | `esp-branch`                              | Suggested categories (others still work)                                                       |
+| `commit.style`                               | `plain`                                                         | `esp-commit`, `esp-pr`, `esp-fix-review`  | `plain` imperative title or `conventional` commits, for commits and PR titles                  |
+| `commit.co_author`                           | `true`                                                          | `esp-commit`                              | Add the `Co-Authored-By` trailer                                                               |
+| `commit.plan_step_prefix`                    | `true`                                                          | `esp-commit`                              | Prefix titles with `[Task N]` when following a plan                                            |
+| `pr.base`                                    | `null`                                                          | `esp-pr`                                  | Base branch, `null` uses the repository default branch                                         |
+| `pr.draft`                                   | `false`                                                         | `esp-pr`, `esp-ship`                      | Open PRs as drafts (esp-ship then stops before the merge)                                      |
+| `pr.attribution`                             | `true`                                                          | `esp-pr`                                  | Append the AI attribution line                                                                 |
+| `analyze.output_dir`                         | `analysis`                                                      | `esp-analyze`                             | Directory for analysis reports                                                                 |
+| `plan.default_type`                          | `auto`                                                          | `esp-plan`                                | Plan type when `--type` is not given                                                           |
+| `plan.explore_agents`                        | `feature: 3, bug: 2, chore: 2`                                  | `esp-plan`                                | Explore subagents per plan type                                                                |
+| `defaults.interactive`                       | `off`                                                           | `esp-plan`, `esp-review`, `esp-ship`      | When skills stop to ask (`off`, `plan`, `all`)                                                 |
+| `defaults.models`                            | see `references/model-selection.md`                             | `esp-plan`, `esp-review`, `esp-ship`      | Model and effort per subagent role                                                             |
+| `worktrees.root`                             | `~/.esp-skills/worktrees`                                       | `esp-ship`                                | Where task and parallel milestone worktrees are created                                        |
+| `review.dimensions`                          | `correctness, security, conventions, plan-conformance`          | `esp-review`                              | Dimensions checked when `--focus` names none                                                   |
+| `review.min_severity`                        | `medium`                                                        | `esp-review`                              | Findings below it are dropped                                                                  |
+| `review.verify_findings`                     | `true`                                                          | `esp-review`                              | Run the verify pass that rejects false positives                                               |
+| `review.second_opinion`                      | `none`                                                          | `esp-review`                              | `codex`: add a read-only Codex review whose findings the reviewer verifies                     |
+| `fix-review.wait.reviewers`                  | `claude`, `codex` (`@codex review` trigger)                     | `esp-fix-review`, `esp-ship`              | Reviewer names, GitHub logins and trigger comments                                             |
+| `fix-review.wait.default_reviewers`          | `["claude"]`                                                    | `esp-fix-review`, `esp-ship`              | Reviewers waited for when `--reviewers` is not given                                           |
+| `fix-review.wait.timeout_minutes`            | `30`                                                            | `esp-fix-review`, `esp-ship`              | Time before the wait gives up                                                                  |
+| `fix-review.wait.poll_seconds`               | `60`                                                            | `esp-fix-review`, `esp-ship`              | First poll interval, backing off to 5x                                                         |
+| `fix-review.wait.auto_trigger`               | `false`                                                         | `esp-fix-review`, `esp-ship`              | Post the reviewers' trigger comments after a push                                              |
+| `fix-review.wait.checks_grace_seconds`       | `120`                                                           | `esp-fix-review`, `esp-ship`              | An empty check list counts as pending this long after the head commit                          |
+| `fix-review.max_rounds`                      | `3`                                                             | `esp-ship`                                | PR fix rounds when `esp-ship --max-rounds` is not given                                        |
+| `fix-review.fix_ci`                          | `true`                                                          | `esp-fix-review`                          | Diagnose and fix failing CI checks                                                             |
+| `fix-review.reply_to_rejected`               | `true`                                                          | `esp-fix-review`                          | Reply with the reason to rejected comments                                                     |
+| `fix-review.deferred_items`                  | `follow-up`                                                     | `esp-fix-review`                          | `follow-up` (reply, resolve, discovered item) or `block`                                       |
+| `merge.enabled`                              | `true`                                                          | `esp-merge`                               | `false` leaves the PR open                                                                     |
+| `merge.method`                               | `repo`                                                          | `esp-merge`                               | `repo` resolves it from the repository, else forced                                            |
+| `merge.preference`                           | `squash, rebase, merge`                                         | `esp-merge`                               | Order when the repository allows several methods                                               |
+| `merge.delete_branch`                        | `true`                                                          | `esp-merge`                               | Delete the remote head branch, and the local one unless in another worktree                    |
+| `merge.require_resolved_threads`             | `true`                                                          | `esp-merge`                               | Unresolved review threads block the merge                                                      |
+| `merge.require_green_checks`                 | `true`                                                          | `esp-merge`                               | Every check must pass (`false`: required checks only)                                          |
+| `merge.use_auto_merge`                       | `false`                                                         | `esp-merge`                               | Enable auto-merge on pending checks instead of waiting                                         |
+| `merge.checks_timeout_minutes`               | `30`                                                            | `esp-merge`                               | Wait for pending checks                                                                        |
+| `merge.human_wait_minutes`                   | `1440`                                                          | `esp-ship`                                | `--merge-policy human`: how long the merge wait polls for a person to merge                    |
+| `merge.poll_seconds`                         | `30`                                                            | `esp-merge`                               | Seconds between check polls during that wait                                                   |
+| `worktrees.cleanup`                          | `on-merge`                                                      | `esp-merge`                               | Remove the task worktree after the merge (`never` keeps it)                                    |
+| `ship.phases`                                | every phase of the track                                        | `esp-ship`                                | Phases to run, filtered per track (`implement` or `build` is required)                         |
+| `ship.plan_mode`                             | `auto`                                                          | `esp-ship`                                | `--plan-mode` default: `auto`, `skip` (no planning model) or `always`                          |
+| `ship.merge_policy`                          | `auto`                                                          | `esp-ship`                                | `--merge-policy` default: `auto` (esp-merge), `human` or `none` (no merge phase)               |
+| `ship.review_mode`                           | `auto`                                                          | `esp-ship`                                | `--review` default: `auto`, `internal`, `pr`, `both` or `none`                                 |
+| `ship.auto.review_max_files`                 | `3`                                                             | `esp-ship`                                | Review gate: at most this many changed files may skip the internal review                      |
+| `ship.auto.review_max_lines`                 | `150`                                                           | `esp-ship`                                | Review gate: at most this many changed lines may skip the internal review                      |
+| `ship.review.always_paths`                   | auth, security, migrations, CI config globs                     | `esp-ship`                                | A changed path matching one always runs the internal review                                    |
+| `ship.internal_review_rounds`                | `2`                                                             | `esp-ship`                                | Review and fix rounds before the PR (`0` is like `--review pr`)                                |
+| `ship.worktree`                              | `false`                                                         | `esp-ship`                                | Work in a task worktree under `worktrees.root`                                                 |
+| `ship.dirty_tree`                            | `worktree`                                                      | `esp-ship`                                | A dirty working tree moves the task to a worktree (`fail` stops)                               |
+| `ship.inline.max_files_changed`              | `10`                                                            | `esp-ship`                                | More changed files moves an inline task to the orchestrated track                              |
+| `ship.inline.escalate`                       | `true`                                                          | `esp-ship`                                | `false`: continue over the file limit, halt on gates                                           |
+| `ship.budgets.inline.max_wall_minutes`       | `60`                                                            | `esp-ship`                                | Inline wall time budget, checked at each phase boundary                                        |
+| `ship.budgets.orchestrated.max_wall_minutes` | `240`                                                           | `esp-ship`                                | Orchestrated wall time budget, checked at each phase boundary                                  |
+| `ship.budgets.orchestrated.max_milestones`   | `12`                                                            | `esp-plan`, `esp-ship`                    | esp-plan plans within it; a larger plan halts with `budget`                                    |
+| `ship.halt_on`                               | all five stop conditions                                        | `esp-ship`, `esp-fix-review`, `esp-merge` | Stop conditions honored (see `decision-policy.md`)                                             |
+| `ship.max_retries_per_milestone`             | `2`                                                             | `esp-ship`                                | Builder retries before the build halts                                                         |
+| `ship.parallel`                              | `auto`                                                          | `esp-ship`                                | Parallel milestone batches: `auto` (when the plan has one), `on` or `off`                      |
+| `ship.max_parallel`                          | `3`                                                             | `esp-ship`                                | Most milestones built at the same time                                                         |
+| `ship.commit_per_milestone`                  | `true`                                                          | `esp-ship`                                | `false` squashes milestone commits at the end                                                  |
+| `ship.gates`                                 | all `null` (auto-detect), `always: []`                          | `esp-ship`, `esp-merge`, `esp-fix-review` | Gate commands: `test`, `lint`, `typecheck`, `build`; `always` runs in every scope              |
+| `ship.gates_scope`                           | `milestone`                                                     | `esp-ship`                                | Builders and verifiers run the milestone's validation commands (`full`: all gates)             |
+| `ship.reuse.limit_tokens`                    | `250000`                                                        | `esp-ship`                                | Context budget of a builder continued with the next milestone                                  |
+| `ship.reuse.cost`                            | `low: 40000, medium: 70000, high: 120000`                       | `esp-ship`                                | Estimated context per milestone complexity, for builder reuse                                  |
+| `pr.body_from_run`                           | `true`                                                          | `esp-ship`, `esp-pr`                      | Build the PR body from the run artifacts                                                       |
+| `pr.body_sections`                           | `summary, milestones, decisions, review-resolution, follow-ups` | `esp-ship`, `esp-pr`                      | Sections of that body, in order                                                                |
+| `ralph.max_iterations`                       | `25`                                                            | `esp-ralph`                               | Iterations of one loop launch when `--max-iterations` is not given                             |
+| `ralph.no_progress_limit`                    | `2`                                                             | `esp-ralph`                               | Consecutive iterations with no commit and no progress note before the loop stops               |
+| `ralph.allow_subagents`                      | `false`                                                         | `esp-ralph`                               | Run iterations as `general-purpose` agents, which may spawn subagents                          |
+| `codex.model`                                | `null`                                                          | `esp-codex`, `esp-review`                 | Codex model, `null` uses the Codex config                                                      |
+| `codex.sandbox`                              | `read-only`                                                     | `esp-codex`                               | Sandbox of a Codex task: `read-only` or `workspace-write`                                      |
+| `codex.timeout_minutes`                      | `30`                                                            | `esp-codex`, `esp-review`                 | Minutes before the Codex process tree is killed                                                |
+| `orchestrate.repos`                          | `{}`                                                            | `esp-orchestrate`                         | Map of `owner/name` to its local checkout, read before the sibling directory lookup            |
+| `orchestrate.unit_mode`                      | `auto`                                                          | `esp-orchestrate`                         | `--unit-mode` default: `auto`, `subagent` (background subagent) or `inline` (the main session) |
+| `orchestrate.max_parallel`                   | `2`                                                             | `esp-orchestrate`                         | `--max-parallel` default: units or waits running at once (`1` to `4`)                          |
+| `orchestrate.wait.timeout_minutes`           | `60`                                                            | `esp-orchestrate`, `wait-for.mjs`         | Minutes before a `check` or `await-pr` wait hands the unit to a human                          |
+| `orchestrate.wait.interval_seconds`          | `30`                                                            | `esp-orchestrate`, `wait-for.mjs`         | Seconds between two polls of a wait                                                            |
+| `orchestrate.housekeeping`                   | `true`                                                          | `esp-orchestrate`                         | Tidy the local checkout after each merge (`false` is like `--no-housekeeping`)                 |
+| `orchestrate.write_back`                     | `true`                                                          | `esp-orchestrate`                         | Add the unit that ticks the source task document (`false` is like `--no-write-back`)           |
+| `recap.roots`                                | `["~/.esp-skills/runs"]`                                        | `esp-recap`                               | Runs roots read by the recap, besides `runs.root` (add any other runs root)                    |
+| `recap.default_range_days`                   | `7`                                                             | `esp-recap`                               | Days covered when no date option is given                                                      |
+| `recap.fan_out_threshold`                    | `5`                                                             | `esp-recap`                               | Above this many runs, digest them in parallel subagents                                        |
+| `runs.root`                                  | `~/.esp-skills/runs`                                            | `scripts/runs.mjs`                        | Where standalone run directories are created                                                   |
 
 Reserved keys are accepted and validated, but belong to skills that are not shipped yet. Their defaults are in `references/config-defaults.json`:
 
@@ -364,12 +373,39 @@ node scripts/merge-ready.mjs merge 42 --run-dir <run>
 - After a rebase, the gates come from `scripts/gates.mjs resolve --project-dir <repo>`: `ship.gates`, else detected from the project files. `esp-fix-review` uses the same script for the checks of the files it fixed (`--files <a,b>`)
 - `merge.delete_branch` deletes the remote head branch (never a fork branch) and the merged local branch (switching to the base first when it is the current branch), except one checked out in another worktree
 
+### Orchestration
+
+`esp-orchestrate` takes one request that needs several PRs, possibly in several repositories, to merged code: `preflight -> intake -> graph + master plan -> [approve] -> schedule units -> (esp-ship unit | adopt PR | await PR | check) per unit -> housekeeping -> write-back -> summary`. `scripts/orchestrate.mjs` owns `orchestrate.json` and `graph.json` and decides the single next action from the files of the run, so an interrupted run resumes where it stopped:
+
+```bash
+node scripts/orchestrate.mjs init --request "Switch the app to the shared presets" --project-dir . --run-dir <run>
+node scripts/orchestrate.mjs intake --graph <run>/graph.draft.json --record --run-dir <run>
+node scripts/orchestrate.mjs next --run-dir <run>
+node scripts/orchestrate.mjs unit done app-presets --status merged --pr https://github.com/acme/app/pull/40 --run-dir <run>
+node scripts/orchestrate.mjs outcome --run-dir <run>
+```
+
+- **Intake**: the request (a prompt, a task document with `Depends on:` lines, an issue, or a run from esp-plan) becomes a master plan (`plan.md`), a plan per small `build` unit (`plans/<id>.md`) and a task graph. `intake` validates the graph (IDs, kinds, dependencies, cycles, settings) and resolves each repository from `orchestrate.repos`, the project or a sibling directory whose `origin` matches; a missing one is asked for, or cloned under `worktrees.root`
+- **Units**: `build` (a new change: esp-ship with the unit plan or its brief), `adopt` (`esp-ship --pr <url>`), `await-pr` (a wait for a PR someone else opens, then adopted) and `check` (a command polled until it exits 0, such as a release). Each unit has its own `settings`: merge policy, review mode, reviewers, fix rounds, draft, branch, checks mode and wait timeout
+- **Execution**: a unit is ready when its dependencies are `merged` or `done`. Up to `--max-parallel` units or waits run at once, never two units of one checkout. `--unit-mode auto` runs a unit in a background subagent, or inline in the main session with `-i all`, a subagent depth below 3, or for the last unit left. Every esp-ship unit gets `--parent-run` and `--project-dir`, so its run lives at `<run>/units/<id>` and starts from the parent config snapshot
+- **Stops**: a stopped unit blocks only its dependents; independent units still finish, the run ends `partial`, and a merged unit is never reverted. Unattended, units decide and log, except on the critical stops: an undecidable B-Decide or B-Scope item, an open security or data-loss finding, a destructive git operation, an unplanned architecture change
+- **Waits**: `scripts/wait-for.mjs` polls in the background with no tokens spent: `command --run <cmd>` until it exits 0, or `pr --repo <owner/name> --head <branch>` (or `--author`, with `--base` and a `--title` regex) until a matching PR exists. `--state <file>` keeps the deadline across restarts, and a reached deadline hands the unit to a human
+- **Housekeeping**: after each merge, `scripts/housekeep.mjs run` tidies a clean checkout: it fast-forwards the base, removes the run worktrees, deletes the merged local branch and rebases later unstarted branches, aborting on a conflict. It never pushes or forces, and leaves a dirty checkout alone (`--no-housekeeping` skips it)
+- **Write-back**: a last unit ticks the checkboxes of the source task document (`--no-write-back` skips it)
+
+```bash
+node scripts/wait-for.mjs command --run "npm view @acme/presets@0.1.0 version" --state <run>/waits/lib-release.json --run-dir <run>
+node scripts/wait-for.mjs pr --repo acme/lib --head changeset-release/main --base main --once
+node scripts/housekeep.mjs run --repo-dir ../lib --base main --branch feature/shared-presets --pr https://github.com/acme/lib/pull/12 --dry-run
+```
+
 ### Run Directories
 
-Workflow skills record their work in a run directory: `run.json`, `decisions.jsonl`, `ship.json` (the esp-ship state and its step records), `notes.md` (builder facts and operator corrections) and plan versions. Standalone runs go to `<runs.root>/<YYYY-MM-DD>-<slug>`; a parent skill (esp-ship) passes `--run-dir <path>` instead. Skills never write these files by hand: `scripts/runs.mjs` creates, updates, checks and indexes them. `references/run-directory.md` describes each file, who writes it, its field checks and the append lock.
+Workflow skills record their work in a run directory: `run.json`, `decisions.jsonl`, `ship.json` (the esp-ship state and its step records), `notes.md` (builder facts and operator corrections) and plan versions. Standalone runs go to `<runs.root>/<YYYY-MM-DD>-<slug>`; a parent skill (esp-ship) passes `--run-dir <path>` instead. A parent run and its child runs are linked both ways (`runs.mjs create --parent <dir>`, or `esp-ship --parent-run`): an esp-orchestrate run keeps one full esp-ship run per unit under `units/<id>/`, and `runs.mjs index` lists those child runs with their `parent`. An esp-orchestrate run that landed some units and stopped others ends `partial`. Skills never write these files by hand: `scripts/runs.mjs` creates, updates, checks and indexes them. `references/run-directory.md` describes each file, who writes it, its field checks and the append lock.
 
 ```bash
 node scripts/runs.mjs create fix-login-timeout --workflow esp-ship
+node scripts/runs.mjs create --run-dir ~/.esp-skills/runs/2026-11-24-shared-presets/units/app-presets --parent ~/.esp-skills/runs/2026-11-24-shared-presets
 node scripts/runs.mjs index --last 7d --status merged,done --risk medium
 node scripts/runs.mjs notes --append "Keep the public API unchanged" --from operator --run-dir ~/.esp-skills/runs/2026-11-10-fix-login-timeout
 node scripts/runs.mjs check ~/.esp-skills/runs/2026-11-10-fix-login-timeout/decisions.jsonl
@@ -377,12 +413,13 @@ node scripts/runs.mjs check ~/.esp-skills/runs/2026-11-10-fix-login-timeout/deci
 
 ### Recaps
 
-`esp-recap` reads the run directories of every root in `recap.roots` and `runs.root`, and cites a source for each statement. `scripts/recap.mjs` selects the runs through the `runs.mjs index` filters and returns compact JSON: `collect` (one digest per run, and fan-out batches above `recap.fan_out_threshold`), `show` (one run in full), `risks` (high-risk decisions, critical findings, stopped runs) and `sources` (Q&A candidates in the order decisions -> summaries -> git log and blame -> PR descriptions and comments):
+`esp-recap` reads the run directories of every root in `recap.roots` and `runs.root`, and cites a source for each statement. `scripts/recap.mjs` selects the runs through the `runs.mjs index` filters and returns compact JSON: `collect` (one digest per run, and fan-out batches above `recap.fan_out_threshold`), `show` (one run in full), `risks` (high-risk decisions, critical findings, stopped runs) and `sources` (Q&A candidates in the order decisions -> summaries -> git log and blame -> PR descriptions and comments). A parent run comes with its child runs nested in `units` and listed in `children`, never as separate runs, and `show <parent-id>/<unit-id>` reads one unit:
 
 ```bash
 node scripts/recap.mjs collect --last 7d --repo api
 node scripts/recap.mjs risks --since 2026-11-01 --min-risk medium
 node scripts/recap.mjs sources --question "Why do refresh tokens rotate?"
+node scripts/recap.mjs show 2026-11-24-shared-presets/app-presets
 ```
 
 ### Long Work
@@ -823,6 +860,47 @@ node scripts/codex.mjs doctor
 
 ```
 
+### /esp-skills:esp-orchestrate
+
+**Arguments:**
+
+- `[-u|--resume]` - Continue the run in `--run-dir` from `orchestrate.json`: running units resume their esp-ship run, started waits keep their deadline, units awaiting a human go again
+- `[-H|--no-housekeeping]` - Skip the git housekeeping after each merge (default: `orchestrate.housekeeping`)
+- `[-W|--no-write-back]` - Skip the unit that ticks the source task document (default: `orchestrate.write_back`)
+- `[-i|--interactive <mode>]` - `off`, `plan` (approve the graph and the master plan) or `all` (also stop before each unit, and run every unit inline with its own checkpoints) (default: `defaults.interactive`)
+- `[-d|--run-dir <path>]` - Run directory to use or to resume; a run that holds an esp-plan plan uses it as the master plan source (default: a new run under `runs.root`)
+- `[-U|--unit-mode <mode>]` - `auto`, `subagent` or `inline` (default: `orchestrate.unit_mode`)
+- `[-l|--max-parallel <n>]` - Units or waits running at once, `1` to `4` (default: `orchestrate.max_parallel`)
+- `[-g|--merge-policy <policy>]` - Default merge policy of the units: `auto`, `human` or `none`; a unit may set its own (default: `ship.merge_policy`)
+- `[-m|--max-rounds <n>]` - Default PR fix rounds of each unit (default: `fix-review.max_rounds`)
+- `[context]` - The request: a description, a task document path, an issue URL or `#<number>` (required unless resuming or `--run-dir` holds a plan)
+
+**Examples:**
+
+```bash
+# A task document across two repositories: adopt a PR, wait for the release bot, then build in the app
+/esp-skills:esp-orchestrate docs/presets-rollout.md
+
+# Approve the graph and the master plan first, with 3 units at a time
+/esp-skills:esp-orchestrate --interactive plan --max-parallel 3 Move the auth client to the shared SDK in acme/api and acme/web
+/esp-skills:esp-orchestrate -i plan -l 3 Move the auth client to the shared SDK in acme/api and acme/web
+
+# Stop before each unit and each merge, every unit inline in this session
+/esp-skills:esp-orchestrate --interactive all --unit-mode inline https://github.com/acme/app/issues/77
+
+# Leave every PR for a person to merge, one fix round each, no local cleanup and no write-back
+/esp-skills:esp-orchestrate --merge-policy human --max-rounds 1 --no-housekeeping --no-write-back docs/presets-rollout.md
+/esp-skills:esp-orchestrate -g human -m 1 -H -W docs/presets-rollout.md
+
+# Orchestrate the plan of a run started by esp-plan, every unit in a background subagent
+/esp-skills:esp-orchestrate --run-dir ~/.esp-skills/runs/2026-11-24-shared-presets --unit-mode subagent
+/esp-skills:esp-orchestrate -d ~/.esp-skills/runs/2026-11-24-shared-presets -U subagent
+
+# Continue an interrupted run
+/esp-skills:esp-orchestrate --resume --run-dir ~/.esp-skills/runs/2026-11-24-shared-presets
+/esp-skills:esp-orchestrate -u -d ~/.esp-skills/runs/2026-11-24-shared-presets
+```
+
 ### /esp-skills:esp-ralph
 
 **Arguments:**
@@ -875,7 +953,7 @@ Workflow(esp-skills:esp-ralph-loop, args: { task: "<run-dir>/prompt.md", run_dir
 - `[-g|--repo <name>]` - Only runs of this repository
 - `[-t|--status <status>...]` - Only runs with these statuses
 - `[-x|--run-risk <level>]` - Only runs whose `max_risk` is at least `low`, `medium` or `high`
-- `[context]` - Empty for a recap, a run ID or path for one run, or a question for Q&A
+- `[context]` - Empty for a recap, a run ID or path for one run (`<parent-id>/<unit-id>` for one unit of a parent run), or a question for Q&A
 
 **Examples:**
 
@@ -889,6 +967,10 @@ Workflow(esp-skills:esp-ralph-loop, args: { task: "<run-dir>/prompt.md", run_dir
 
 # Recap one run
 /esp-skills:esp-recap 2026-11-10-add-token-refresh
+
+# Recap an esp-orchestrate run with its units, or one of its units
+/esp-skills:esp-recap 2026-11-24-shared-presets
+/esp-skills:esp-recap 2026-11-24-shared-presets/app-presets
 
 # Risk report over every run
 /esp-skills:esp-recap --risks --all

@@ -150,5 +150,13 @@
     "roots": ["~/.esp-skills/runs"],
     "default_range_days": 7,
     "fan_out_threshold": 5
+  },
+  "orchestrate": {
+    "repos": {},
+    "unit_mode": "auto",
+    "max_parallel": 2,
+    "wait": { "timeout_minutes": 60, "interval_seconds": 30 },
+    "housekeeping": true,
+    "write_back": true
   }
 }

@@ -485,6 +485,246 @@ describe("sources", () => {
   });
 });
 
+describe("parent and child runs", () => {
+  /** An esp-orchestrate parent run with esp-ship unit runs under units/<id>. */
+  function makeParent(date, slug, units) {
+    const now = `${date}T08:00:00.000Z`;
+    const { run_dir: parent } = runs(
+      [
+        "create",
+        slug,
+        "--root",
+        standalone,
+        "--date",
+        date,
+        "--title",
+        `Orchestrate ${slug}`,
+        "--workflow",
+        "esp-orchestrate",
+        "--type",
+        "workflow"
+      ],
+      now
+    );
+    for (const u of units) {
+      const dir = join(parent, "units", u.id);
+      runs(
+        [
+          "create",
+          "--run-dir",
+          dir,
+          "--parent",
+          parent,
+          "--title",
+          u.title,
+          "--workflow",
+          "esp-ship",
+          "--repo",
+          u.repo,
+          "--type",
+          "workflow"
+        ],
+        `${date}T09:00:00.000Z`
+      );
+      for (const d of u.decisions ?? []) {
+        runs(
+          [
+            "decision",
+            "--run-dir",
+            dir,
+            "--json",
+            JSON.stringify({
+              phase: "build",
+              source: "agent",
+              rationale: "because",
+              ...d
+            })
+          ],
+          now
+        );
+      }
+      if (u.summary) writeFileSync(join(dir, "summary.md"), u.summary);
+      const update = ["update", "--run-dir", dir, "--status", u.status];
+      if (u.pr) update.push("--pr", u.pr);
+      runs(update, `${date}T10:00:00.000Z`);
+    }
+    runs(
+      ["update", "--run-dir", parent, "--status", "done"],
+      `${date}T11:00:00.000Z`
+    );
+    return parent;
+  }
+
+  function seedParents() {
+    const presets = makeParent("2026-11-08", "shared-presets", [
+      {
+        id: "lib",
+        title: "Publish the presets",
+        repo: "o/lib",
+        status: "merged",
+        pr: "https://github.com/o/lib/pull/7",
+        decisions: [
+          {
+            decision: "Publish the presets as a minor version",
+            risk: "high"
+          }
+        ],
+        summary: summaryMd({
+          task: "lib",
+          title: "Publish the presets",
+          workflow: "esp-ship",
+          status: "merged",
+          outcome: "The presets are published as a minor version."
+        })
+      },
+      {
+        id: "app",
+        title: "Consume the presets",
+        repo: "o/app",
+        status: "merged",
+        pr: "https://github.com/o/app/pull/3"
+      }
+    ]);
+    const other = makeParent("2026-11-09", "other-work", [
+      { id: "lib", title: "Fix the lib build", repo: "o/lib", status: "done" }
+    ]);
+    return { presets, other };
+  }
+
+  test("collect nests the unit runs under their parent", () => {
+    const { presets } = seedParents();
+    const data = recap("collect").json();
+    assert.deepEqual(
+      data.runs.map((r) => r.id),
+      ["2026-11-08-shared-presets", "2026-11-09-other-work"]
+    );
+    assert.equal(data.count, 2);
+    assert.equal(data.unit_count, 3);
+    const [parent] = data.runs;
+    assert.equal(parent.workflow, "esp-orchestrate");
+    assert.deepEqual(
+      parent.units.map((u) => [u.id, u.parent, u.status, u.pr]),
+      [
+        [
+          "app",
+          "2026-11-08-shared-presets",
+          "merged",
+          "https://github.com/o/app/pull/3"
+        ],
+        [
+          "lib",
+          "2026-11-08-shared-presets",
+          "merged",
+          "https://github.com/o/lib/pull/7"
+        ]
+      ]
+    );
+    assert.deepEqual(
+      parent.children.map((c) => [c.id, c.status, c.pr]),
+      [
+        ["lib", "merged", "https://github.com/o/lib/pull/7"],
+        ["app", "merged", "https://github.com/o/app/pull/3"]
+      ]
+    );
+    assert.equal(parent.children[0].path, join(presets, "units", "lib"));
+    assert.deepEqual(parent.units[1].decisions.by_risk.high, 1);
+    assert.deepEqual(
+      recap("collect", "--limit", "1")
+        .json()
+        .runs.map((r) => [r.id, r.units.length]),
+      [["2026-11-09-other-work", 1]],
+      "--limit counts top-level runs and keeps their units"
+    );
+  });
+
+  test("fan-out batches hold top-level runs only", () => {
+    writeFileSync(
+      join(home, "config.json"),
+      JSON.stringify({
+        version: 1,
+        runs: { root: standalone },
+        recap: { roots: [standalone], fan_out_threshold: 1 }
+      })
+    );
+    const { presets, other } = seedParents();
+    const data = recap("collect").json();
+    assert.equal(data.fan_out, true);
+    assert.deepEqual(data.batches, [[presets], [other]]);
+  });
+
+  test("show of a parent attaches its unit digests", () => {
+    seedParents();
+    const out = recap("show", "2026-11-08-shared-presets");
+    assert.equal(out.code, 0, out.stderr);
+    const data = out.json();
+    assert.equal(data.run.children.length, 2);
+    assert.deepEqual(
+      data.units.map((u) => [u.id, u.repo, u.status]),
+      [
+        ["lib", "o/lib", "merged"],
+        ["app", "o/app", "merged"]
+      ]
+    );
+    assert.equal(
+      data.units[0].outcome,
+      "The presets are published as a minor version."
+    );
+  });
+
+  test("show resolves <parent-id>/<unit-id> and fails on an ambiguous ID", () => {
+    const { presets, other } = seedParents();
+    const unit = recap("show", "2026-11-09-other-work/lib");
+    assert.equal(unit.code, 0, unit.stderr);
+    assert.equal(unit.json().run.title, "Fix the lib build");
+    assert.equal(unit.json().path, join(other, "units", "lib"));
+    assert.equal(
+      recap("show", "app").json().run.parent,
+      "2026-11-08-shared-presets"
+    );
+    const ambiguous = recap("show", "lib");
+    assert.equal(ambiguous.code, 1);
+    assert.match(ambiguous.stderr, /lib names 2 runs/);
+    assert.match(ambiguous.stderr, /2026-11-08-shared-presets\/lib/);
+    assert.match(ambiguous.stderr, /2026-11-09-other-work\/lib/);
+    assert.ok(ambiguous.stderr.includes(join(presets, "units", "lib")));
+    assert.equal(recap("show", "2026-11-09-other-work/app").code, 1);
+  });
+
+  test("risks and sources label child items with their parent ID", () => {
+    seedParents();
+    const risks = recap("risks").json();
+    assert.deepEqual(
+      risks.decisions.map((d) => [d.run, d.parent, d.decision]),
+      [
+        [
+          "lib",
+          "2026-11-08-shared-presets",
+          "Publish the presets as a minor version"
+        ]
+      ]
+    );
+    const sources = recap(
+      "sources",
+      "--question",
+      "Why publish the presets as a minor version?"
+    ).json();
+    assert.equal(sources.decisions[0].parent, "2026-11-08-shared-presets");
+    assert.ok(
+      sources.summaries.every((s) => s.parent === "2026-11-08-shared-presets")
+    );
+    assert.ok(sources.summaries.length > 0);
+    const lib = sources.git.find((g) => g.run === "lib");
+    assert.equal(lib.parent, "2026-11-08-shared-presets");
+    assert.deepEqual(
+      sources.prs.map((p) => [p.run, p.parent]),
+      [
+        ["app", "2026-11-08-shared-presets"],
+        ["lib", "2026-11-08-shared-presets"]
+      ]
+    );
+  });
+});
+
 describe("runs written by esp-ship", () => {
   test("recaps an inline run switched to the orchestrated track", () => {
     const repo = join(tmp, "repo");
