@@ -89,8 +89,8 @@ Run `orchestrate.mjs next` and act on `action`, then run `next` again, until it 
 - **`checkpoint`**: see Interactive Checkpoints. `kind: unresolved-repo` (a ready unit with no known checkout) is not a question: resolve the checkout as in housekeeping.md when every unit is still pending and record the graph again, else run `unit failed <unit> --reason <reason>`
 - **`spawn-unit`**: run its `start` command (`orchestrate.mjs unit start <unit> --mode subagent`), then spawn the unit subagent in the background with the prompt of units.md and the `arguments` of the action. Do not wait for it: run `next` again
 - **`run-unit-inline`**: run its `start` command, then invoke `/esp-skills:esp-ship` with the Skill tool and the `arguments` of the action, in this session. Its reply is the unit reply (see units.md)
-- **`start-wait`**: run `orchestrate.mjs wait start <unit>`, then its `command` in the background, with its output saved to a file (see Waiting). `restart: true` restarts an interrupted wait with the same state file
-- **`housekeep`**: run its `command` and record the result with `orchestrate.mjs housekeep --unit <unit> --result <file>`. With `skip` (and `args: null`), run no command: record `{"status": "skipped", "summary": "<skip>"}` (see housekeeping.md)
+- **`start-wait`**: run `orchestrate.mjs wait start <unit>`, then its `command` in the background (see Waiting). `restart: true` restarts an interrupted wait with the same state file
+- **`housekeep`**: run its `command`, or record its `skip`, then record the result with `orchestrate.mjs housekeep` (see housekeeping.md)
 - **`idle`**: units or waits are running. End the turn: the next unit reply or wait exit wakes this session. When `running` and `waiting` are both empty, nothing can start: report the state from `show` and stop with `status: failed`
 - **`finish`**: every unit is terminal (`status` is the run status). Go to the outcome
 
@@ -100,7 +100,7 @@ A message the user sends while the run is going is read at the next action. Reco
 
 ### Waiting
 
-Waits cost no tokens: `check` and `await-pr` units, and every running unit subagent, run in the background, and this session ends its turn on `idle`. Run each wait command with the Bash tool's background execution and an exit notification, with a shell timeout above the wait timeout when the runtime takes one, and redirect its output to `<run-dir>/waits/<unit>.out`. On the exit notification, run `orchestrate.mjs wait record <unit> --result <run-dir>/waits/<unit>.out`. Without background execution, run the same command in the foreground with the longest shell timeout, and rerun it when the shell kills it first: the state file `<run-dir>/waits/<unit>.json` keeps the deadline. Details in housekeeping.md.
+Waits cost no tokens: `check` and `await-pr` units, and every running unit subagent, run in the background, and this session ends its turn on `idle`. The exit notification of a wait, or the reply of a unit, wakes it. How to run, record and restart a wait: housekeeping.md (Waits).
 
 ### Interactive Checkpoints
 
@@ -120,7 +120,7 @@ Unattended, this session and every unit decide, log and continue, except on:
 - A destructive git operation: a force-push outside a task branch, deleting a remote branch the run did not create, rewriting shared history
 - An architecture change or a large refactor that the master plan does not contain
 
-A critical stop ends the unit (`unit blocked`, or `unit failed --status halted` for a halt) and blocks its dependents; independent units still finish. Merging a pull request that triggers a publish or a release is not a stop: the plan contains it.
+The unit's esp-ship run halts on its own stop conditions (`ship.halt_on`); this session stops a unit itself when its reply or its outcome names one of the stops above. A critical stop ends the unit (`unit blocked`, or `unit failed --status halted` for a halt) and blocks its dependents; independent units still finish. Log each one with `runs.mjs decision` (`source: policy`, `risk: high`, the unit ID in `refs`). Merging a pull request that triggers a publish or a release is not a stop: the plan contains it.
 
 ## Instructions
 
@@ -132,7 +132,7 @@ A critical stop ends the unit (`unit blocked`, or `unit failed --status halted` 
 6. **Repositories and record** (see [housekeeping.md](references/housekeeping.md)): resolve every repository in `unresolved` (ask in `plan` or `all` mode, else clone under `worktrees.root`) and put its `repo_dir` in the graph file, then preflight each checkout. Run `orchestrate.mjs intake --graph <run-dir>/graph.draft.json --record`. Done when it prints `recorded: true` with an empty `unresolved` list, and the decisions of step 5 are logged.
 7. **Loop**: run `orchestrate.mjs next` and act on `action` (see Execution Loop, Interactive Checkpoints and [units.md](references/units.md)), recording every unit reply and wait result as it arrives. Done when `next` returns `finish`.
 8. **Outcome**: `orchestrate.mjs outcome`. Done when it prints a `status` other than `running`.
-9. **Summary and run status**: write `<run-dir>/summary.md` per the summary template (`workflow: esp-orchestrate`, `status` is the outcome status, `pr: null`), from the outcome, `decisions.jsonl` and each unit's `summary.md` (`units/<id>/summary.md`), naming each unit with its outcome, each dirty checkout and each housekeeping issue, until `runs.mjs check` passes on it. Set `runs.mjs update --status` to the outcome status (`merged`, `partial`, `awaiting-human`, `halted`, `failed`). Done when `runs.mjs check <run-dir>/summary.md` passes and `run.json` has the status.
+9. **Summary and run status**: write `<run-dir>/summary.md` per the summary template and its esp-orchestrate section (`workflow: esp-orchestrate`, `status` is the outcome status, `pr: null`), and set `runs.mjs update --status` to the outcome status. Done when `runs.mjs check <run-dir>/summary.md` passes and `run.json` has the status.
 10. **Report** (see Output Guidance), ending with the reply.
 
 ## Output Guidance

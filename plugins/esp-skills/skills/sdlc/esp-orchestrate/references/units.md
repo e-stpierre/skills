@@ -9,7 +9,7 @@ Each unit of the graph runs one way, picked by its kind. `next` returns the acti
 - **`await-pr`**: a pull request someone else opens (a release bot, a teammate). First a wait (`start-wait`, `wait-for.mjs pr`, see housekeeping.md); once `wait record` keeps the pull request it found, the unit is `pending` again and `next` adopts it like an `adopt` unit
 - **`check`**: no pull request. A wait only (`start-wait`, `wait-for.mjs command`): it ends `done` when the command exits 0
 
-Every esp-ship unit gets `--run-dir <run-dir>/units/<id> --parent-run <run-dir> --project-dir <repo_dir> --interactive off` (`--interactive all` for an inline unit under `-i all`), and the unit settings (`--merge-policy`, `--checks`, `--review`, `--max-rounds`, `--reviewers`, `--draft`, `--branch`). Pass the `arguments` of the action as they are.
+The `arguments` of the action hold every esp-ship argument of the unit (its run directory, the parent run, its checkout, the interactive mode and the unit settings): pass them as they are.
 
 ## Starting a Unit
 
@@ -36,7 +36,7 @@ End with the esp-ship reply (Status, Commit, Summary, ... lines), and nothing af
 
 Run the unit in this session: invoke `/esp-skills:esp-ship` with the Skill tool and the `arguments` of the action, and follow it to its reply. The loop waits for it: nothing else starts until the unit replies. Under `-i all`, esp-ship runs with `--interactive all` and asks its own checkpoints, including the one before the merge.
 
-`next` picks inline (`mode_reason` says why) when the unit mode is `inline`, with `-i all`, when `CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH` is below `3` (a unit subagent needs three levels: the unit, its builder or verifier, and their relay), or for the last unit left.
+`next` picks the mode by `--unit-mode` (`mode_reason` says why). The spawn depth threshold of `auto` is `3` because a unit subagent needs three levels: the unit, its builder or verifier, and their relay.
 
 ### Resumed Units
 
@@ -67,13 +67,3 @@ esp-ship replies `needs-decision` for an open question (a B-Decide item with no 
 - **`-i plan` or `all`, with only blockers** (no question): the unit waits for a person outside the run. `unit blocked <id> --reason <first blocker>`; the run resumes it with `--resume` once the blocker is gone
 
 A unit's `awaiting-human` or `halted` status blocks its dependents. `/esp-skills:esp-orchestrate --resume --run-dir <run-dir>` sends it again: `orchestrate.mjs resume` turns an esp-ship unit back to `running` with `--resume`, restarts a wait with a new deadline, and makes its blocked dependents `pending`.
-
-## Critical Stops
-
-The unit's esp-ship run halts on the stop conditions of `ship.halt_on` and replies `halted` or `needs-decision`. This session stops a unit itself (`unit blocked`, or `unit failed --status halted`) when its reply or its outcome names:
-
-- A security or data-loss finding still open after the unit's fix rounds
-- A destructive git operation it would need: a force-push outside its task branch, deleting a remote branch the run did not create, rewriting shared history
-- An architecture change or a large refactor that the master plan does not contain
-
-Log each critical stop with `runs.mjs decision` (`source: policy`, `risk: high`, the unit ID in `refs`). A merge that triggers a publish or a release is part of the plan, not a stop.
