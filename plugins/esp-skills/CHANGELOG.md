@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.12.1
+
+- esp-merge: `merge-ready.mjs` treats the rulesets API 403 "Upgrade to GitHub Pro" of a private repository on a free plan as no rulesets, as it does a 404, so the merge no longer stops there; any other 403 still fails
+
 ## 0.12.0
 
 - Added the `esp-orchestrate` skill (**Beta**): takes a change that spans several pull requests or repositories to merged code. Intake writes a master plan and a task graph of `build`, `adopt`, `await-pr` and `check` units; each pull request unit runs as an esp-ship child run under `units/<id>/`, waits run in the background, local checkouts are tidied after each merge, and a last unit ticks the source task document. A stopped unit blocks only its dependents, and the run ends `partial`

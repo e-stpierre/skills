@@ -18,6 +18,7 @@ import {
   classifyChecks,
   cmdMerge,
   evaluate,
+  ghClient,
   haltSignals,
   MergeError,
   mergePolicy,
@@ -929,6 +930,42 @@ describe("wait-merge", () => {
         { human_wait_minutes: 60 }
       ),
       { timeoutMinutes: 5, pollSeconds: 2 }
+    );
+  });
+});
+
+describe("gh client rules", () => {
+  const rulesWith = (stderr, code) => {
+    const fakeGh = join(tmp, "gh-rules.cjs");
+    writeFileSync(
+      fakeGh,
+      `console.error(${JSON.stringify(stderr)}); process.exit(${code});\n`
+    );
+    const client = ghClient({
+      cwd: tmp,
+      env: { ...env(), ESP_GH_CMD: JSON.stringify([process.execPath, fakeGh]) }
+    });
+    return () => client.rules("o/r", "main");
+  };
+
+  test("a 404 means no rulesets", () => {
+    assert.deepEqual(rulesWith("gh: Not Found (HTTP 404)", 1)(), []);
+  });
+
+  test("the free-plan 403 on a private repository means no rulesets", () => {
+    assert.deepEqual(
+      rulesWith(
+        "gh: Upgrade to GitHub Pro or make this repository public to enable this feature. (HTTP 403)",
+        1
+      )(),
+      []
+    );
+  });
+
+  test("any other 403 still fails", () => {
+    assert.throws(
+      rulesWith("gh: Resource not accessible by integration (HTTP 403)", 1),
+      MergeError
     );
   });
 });

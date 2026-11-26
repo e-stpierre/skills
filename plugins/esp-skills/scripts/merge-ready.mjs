@@ -239,7 +239,11 @@ export function ghClient({ cwd, env = process.env } = {}) {
         ".[] | {type, parameters}"
       ]);
       if (res.status !== 0) {
-        if (/HTTP 404|Not Found/i.test(`${res.stderr}${res.stdout}`)) return [];
+        const out = `${res.stderr}${res.stdout}`;
+        if (/HTTP 404|Not Found/i.test(out)) return [];
+        // A private repository on a free plan answers 403 "Upgrade to GitHub Pro": rulesets are not enforced there.
+        if (/HTTP 403/.test(out) && /Upgrade to GitHub Pro/i.test(out))
+          return [];
         throw new MergeError(
           `gh api rules failed: ${(res.stderr || res.stdout).trim()}`
         );
