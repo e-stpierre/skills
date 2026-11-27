@@ -11,7 +11,7 @@ The `skills` repository is a collection of modular extensions for AI coding agen
 - `plugins/<plugin-name>/`: one self-contained plugin
   - `.claude-plugin/plugin.json`: the plugin manifest. Its `skills` array lists every skill that ships
   - `agents/`: subagent prompts, each focused on one task
-  - `skills/<category>/<skill-name>/`: one skill per directory (e.g., `skills/git/esp-branch/`), with `SKILL.md` (required) and optional `references/`, `scripts/` and `assets/`. A skill missing from the `skills` array (e.g., work in progress under `skills/in-progress/`) stays in the repository but is not installed
+  - `skills/<category>/<skill-name>/`: one skill per directory (e.g., `skills/git/esp-branch/`), with `SKILL.md` (required) and optional `references/`, `scripts/`, `assets/` and `agents/openai.yaml` (Codex metadata). A skill missing from the `skills` array (e.g., work in progress under `skills/in-progress/`) stays in the repository but is not installed
   - `workflows/`: saved Workflow scripts (`<name>.js`), discovered by Claude Code with no manifest entry and listed as `esp-skills:<name>`. Test-only workflows live under `scripts/tests/fixtures/workflows/` so they never ship
   - `references/`: reference shared by several skills (decision policy, plan format, config schema, run directory)
   - `scripts/`: Node 22 ESM scripts shared by the skills, with no runtime dependencies, and their `node:test` tests in `scripts/tests/`
@@ -34,10 +34,22 @@ Use US English spelling in all code, comments, documentation, and UI strings (e.
 
 - `meta` comes first and is a pure literal (no variables, calls, spreads or template interpolation) with `name` and `description`; every `phase()` title appears in `meta.phases`
 - No `import`, `require`, `Date.now()`, `Math.random()` or argless `new Date()`: pass times and other inputs through `args`
-- **Agent Type Namespacing**: a workflow names a plugin agent with the full namespace, `agentType: 'esp-skills:esp-iterator'`, never the bare agent name. Built-in types (`general-purpose`, `Explore`, `Plan`) stay bare
+- **Agent Type Namespacing**: a workflow names a plugin agent with the full namespace, `agentType: 'esp-skills:esp-iterator'`, never the bare agent name. Built-in types (`general-purpose`, `Explore`, `Plan`) stay bare. This applies to workflows, a Claude Code-only component; skill prose names a subagent role portably (see Portability)
 - Test a workflow with the fake harness, `plugins/esp-skills/scripts/tests/helpers/fake-workflow.mjs`, which runs it with scripted agent replies and records every call
 
 `pnpm validate` checks these rules for every `plugins/<plugin>/workflows/*.js`.
+
+### Portability
+
+The plugin installs in Claude Code and in Codex from the same marketplace, so every skill and agent prompt runs in both:
+
+- **One source**: no per-harness copies of a skill. Claude Code features (workflows, named agent types, `context: fork`, string substitutions) are enhancements, each with a stated fallback or a `compatibility` line
+- **Harness-neutral prose**: the PORTABILITY rules of the skill template (`action-skill-template.md`) cover tool names, paths, arguments, skill chaining, questions, subagents, model tiers and headless runs
+- **Strict YAML frontmatter**: quote a value that holds a colon followed by a space, or a space followed by `#`, or that starts with a YAML indicator; a strict parser drops the skill otherwise
+- **Codex invocation policy**: a skill with `disable-model-invocation: true` has an `agents/openai.yaml` beside its `SKILL.md`, with `policy.allow_implicit_invocation: false`. A model-invoked skill never sets it to `false`
+- **Invocation syntax** belongs in human docs only: `/esp-skills:<skill>` in Claude Code, `$<skill>` in Codex
+
+`pnpm validate` checks the frontmatter and the invocation policy.
 
 ### Documentation Guidelines
 

@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.12.2
+
+- Portable skill authoring, so one skill source runs in Claude Code and Codex:
+  - The skill template gains PORTABILITY rules (actions instead of tool names, paths relative to the skill, bare skill names, the question and subagent wording, model tiers, a fallback for Claude Code-only features), strict YAML guidance, and an argument fallback line for harnesses that do not substitute `$ARGUMENTS`
+  - esp-create-skill writes skills to those rules, adds `agents/openai.yaml` for user-invoked skills, and reports the Claude Code and Codex invocation
+- esp-orchestrate: `agents/openai.yaml` keeps Codex from invoking it implicitly, matching `disable-model-invocation: true`
+- esp-iterator: the frontmatter description is quoted, so strict YAML parsers load the agent
+
 ## 0.12.1
 
 - esp-merge: `merge-ready.mjs` treats the rulesets API 403 "Upgrade to GitHub Pro" of a private repository on a free plan as no rulesets, as it does a 404, so the merge no longer stops there; any other 403 still fails

@@ -10,6 +10,8 @@ import {
   TEMPLATES,
   hintTokens,
   parseToken,
+  parseYaml,
+  readImplicitPolicy,
   scanLines,
   validate
 } from "../validate-prompts.mjs";
@@ -477,5 +479,182 @@ describe("validate", () => {
     };
     assert.equal(run(["--root", root]), 1);
     assert.equal(run(["--bogus"]), 2);
+  });
+});
+
+describe("strict frontmatter yaml", () => {
+  const yaml = (text) => parseYaml(text.split("\n"));
+  const messages = (text) => yaml(text).errors.map((e) => e.message);
+
+  test("parseYaml reads plain, quoted, flow, block and nested values", () => {
+    const { fields, errors } = yaml(
+      [
+        "name: esp-demo",
+        'hint: "[-t|--type <type>] say \\"hi\\""',
+        "single: 'it''s: fine'",
+        "tools: [Read, Grep]",
+        "description: >-",
+        "  Folded over",
+        "  two lines.",
+        "metadata:",
+        "  author: someone"
+      ].join("\n")
+    );
+    assert.deepEqual(errors, []);
+    assert.equal(fields.name.value, "esp-demo");
+    assert.equal(fields.hint.value, '[-t|--type <type>] say "hi"');
+    assert.equal(fields.single.value, "it's: fine");
+    assert.equal(fields.tools.value, "[Read, Grep]");
+    assert.equal(fields.description.value, "Folded over two lines.");
+    assert.equal(fields.description.line, 5);
+  });
+
+  test("parseYaml rejects what a strict parser rejects or reads differently", () => {
+    assert.match(messages("description: Runs a loop: picks one")[0], /: /);
+    assert.match(messages("description: Fix it now #later")[0], / #/);
+    assert.match(messages("description: *bold* start")[0], /indicator/);
+    assert.match(messages("description: - a list?")[0], /indicator/);
+    assert.match(messages('hint: "open')[0], /double-quoted/);
+    assert.match(messages("hint: 'it's'")[0], /single-quoted/);
+    assert.match(messages("tools: [Read, Grep")[0], /flow/);
+    assert.match(messages("name: a\n\tdescription: b")[0], /tab/);
+    assert.match(messages("name: a\nname: b")[0], /duplicate/);
+    assert.match(messages("  orphan: line")[0], /outside a block/);
+    assert.match(messages("not yaml at all")[0], /key: value/);
+    assert.deepEqual(messages("description: plain text, with commas"), []);
+  });
+
+  test("parseYaml checks nested mappings and sequences at any depth", () => {
+    assert.match(
+      messages("metadata:\n  author: Someone: invalid")[0],
+      /`author`: contains `: `/
+    );
+    assert.match(
+      messages("interface:\n  display_name: ESP: Demo")[0],
+      /`display_name`/
+    );
+    assert.match(messages("paths:\n  - *.md")[0], /item: .*indicator/);
+    assert.match(messages("a:\n    b: 1\n  c: 2")[0], /inconsistent/);
+    assert.match(messages("a:\n  b: 1\n  - c")[0], /mixed/);
+    const { fields, errors } = yaml(
+      [
+        "hooks:",
+        "  PreToolUse:",
+        '    - matcher: "Bash"',
+        "      hooks:",
+        "        - type: command",
+        "paths:",
+        '  - "src/**"',
+        "  - docs/*.md",
+        "policy:",
+        "  allow_implicit_invocation: false"
+      ].join("\n")
+    );
+    assert.deepEqual(errors, []);
+    assert.equal(
+      fields.hooks.children.PreToolUse.items[0].children.matcher.value,
+      "Bash"
+    );
+    assert.deepEqual(
+      fields.paths.items.map((i) => i.value),
+      ["src/**", "docs/*.md"]
+    );
+    assert.equal(fields.policy.children.allow_implicit_invocation.raw, "false");
+  });
+
+  test("a skill with an unquoted colon fails, and a folded description is measured", () => {
+    write(
+      SKILL_PATH,
+      SKILL.replace(
+        /description: .*/,
+        "description: Demo skill: use to test the validator."
+      )
+    );
+    assert.deepEqual(rules(), ["yaml"]);
+    write(
+      SKILL_PATH,
+      SKILL.replace(/description: .*/, `description: >-\n  ${"x".repeat(260)}`)
+    );
+    assert.ok(errors().some((i) => i.message.includes("truncates at 250")));
+  });
+
+  test("an agent frontmatter is checked too", () => {
+    write(
+      "plugins/esp-demo/agents/esp-helper.md",
+      AGENT.replace(
+        "description: Helps with one task",
+        "description: Helps: one task"
+      )
+    );
+    assert.deepEqual(rules(), ["yaml"]);
+  });
+});
+
+describe("codex metadata", () => {
+  const META = "plugins/esp-demo/skills/demo/esp-demo/agents/openai.yaml";
+  const userInvoked = () =>
+    write(
+      SKILL_PATH,
+      SKILL.replace("---\n\n#", "disable-model-invocation: true\n---\n\n#")
+    );
+  const codex = () => validate(root).issues.filter((i) => i.rule === "codex");
+  const policy = (value) =>
+    `interface:\n  display_name: "Demo"\npolicy:\n  allow_implicit_invocation: ${value}\n`;
+
+  test("readImplicitPolicy reads the policy key, nested or flow", () => {
+    assert.equal(readImplicitPolicy(policy("false")), "false");
+    assert.equal(
+      readImplicitPolicy("policy: {allow_implicit_invocation: false}\n"),
+      "false"
+    );
+    assert.equal(
+      readImplicitPolicy("other:\n  allow_implicit_invocation: false\n"),
+      undefined
+    );
+  });
+
+  test("a flow-mapping policy is held to the invocation mode", () => {
+    write(META, "policy: {allow_implicit_invocation: false}\n");
+    assert.match(codex()[0].message, /hides a model-invoked skill/);
+    userInvoked();
+    assert.deepEqual(codex(), []);
+  });
+
+  test("a nested metadata value with an unquoted colon fails", () => {
+    write(
+      META,
+      `interface:\n  display_name: ESP: Demo\n${policy("true").slice(32)}`
+    );
+    assert.ok(errors().some((i) => i.file === META && i.rule === "yaml"));
+  });
+
+  test("a user-invoked skill without the file warns", () => {
+    userInvoked();
+    assert.deepEqual(
+      codex().map((i) => i.level),
+      ["warn"]
+    );
+    assert.deepEqual(errors(), []);
+  });
+
+  test("the policy must match the invocation mode", () => {
+    userInvoked();
+    write(META, policy("false"));
+    assert.deepEqual(codex(), []);
+    write(META, policy("true"));
+    assert.match(
+      codex()[0].message,
+      /set policy.allow_implicit_invocation: false/
+    );
+    write(SKILL_PATH, SKILL);
+    write(META, policy("false"));
+    assert.match(codex()[0].message, /hides a model-invoked skill/);
+    write(META, policy("maybe"));
+    assert.match(codex()[0].message, /true or false/);
+  });
+
+  test("the metadata file parses strictly", () => {
+    write(META, 'interface:\n  display_name: "Demo"\n\tpolicy: x\n');
+    assert.ok(errors().some((i) => i.file === META && i.rule === "yaml"));
   });
 });
