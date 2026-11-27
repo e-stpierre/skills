@@ -440,7 +440,8 @@ It fills every slot it can from the source, `AGENTS.md`, `CLAUDE.md` and the pac
 
 - `task` (required): the task text, or the path of a prompt file
 - `max_iterations` (default `25`), `no_progress_limit` (default `2`), `run_dir`, `model`, `effort`
-- `allow_subagents` (default `false`): `true` runs `general-purpose` iterations, which may spawn subagents; `esp-iterator` cannot. It needs `plugin_root`, the plugin directory: each `general-purpose` iteration reads the loop rules from `<plugin_root>/agents/esp-iterator.md`
+- `plugin_root`: the absolute path of the plugin directory, which the skill always passes. Every iteration prompt carries it as `Plugin root: <path>`, so the iteration resolves `<plugin-root>/...` paths
+- `allow_subagents` (default `false`): `true` runs `general-purpose` iterations, which may spawn subagents; `esp-iterator` cannot. It requires `plugin_root`: each `general-purpose` iteration reads the loop rules from `<plugin_root>/agents/esp-iterator.md`
 
 Each iteration returns a structured status (`continue`, `complete` or `blocked`, its commits and a progress note) through the workflow `schema`, and the loop ends on `complete`, `blocked`, `max_iterations`, the no-progress limit or two failed iterations in a row. The skill then reports every iteration with its commits.
 
@@ -490,7 +491,7 @@ Every Codex call goes through `codex.mjs`, which `Bash(node *esp-skills*)` cover
 
 ### Shared References
 
-Workflow skills and agents share these references at the plugin root, reached through `${CLAUDE_PLUGIN_ROOT}`:
+Workflow skills and agents share these references at the plugin root. A skill names them, and the shared scripts, with paths relative to its own directory (`../../../references/decision-policy.md`) and resolves them to absolute paths before running a command. An agent has no skill directory: its caller passes the plugin root, and the agent names plugin files as `<plugin-root>/...`:
 
 - `references/decision-policy.md`: classes A-Fix, B-Decide, B-Scope, Reject and Halt, interactive and autonomous behavior, questions from headless sessions and subagents, `ship.halt_on` stop conditions, risk levels and decision logging
 - `references/summary-template.md`: frontmatter and sections of a run `summary.md`

@@ -1,5 +1,7 @@
 # Decision Policy
 
+Paths here are relative to this file's directory, the plugin's `references/`: resolve them to absolute paths before running a command.
+
 The single definition of how every esp-skills skill and agent handles a choice: a review finding, a review comment, an ambiguous plan step, a failing gate. Skills and agents point here instead of restating the classes, the stop conditions or the risk levels.
 
 ## Classes
@@ -78,7 +80,7 @@ Every decision carries a risk level. It feeds `max_risk` in `run.json` and in th
 Log a decision when it is made, not at the end of the task. Every B-Decide, B-Scope, Reject and Halt is logged. A-Fix items are logged when a review or comment triggered them, so the PR body can show how each comment was resolved.
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/runs.mjs" decision --run-dir <path> --json '{
+node "../scripts/runs.mjs" decision --run-dir <path> --json '{
   "phase": "fix-review",
   "source": "agent",
   "risk": "medium",

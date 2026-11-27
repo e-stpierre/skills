@@ -1,10 +1,12 @@
 # Model Selection
 
+Paths here are relative to this file's directory, the plugin's `references/`: resolve them to absolute paths before running a command.
+
 How a skill picks the model and effort of every subagent it spawns. This is the only place the precedence is defined: agents and skills link here instead of repeating it.
 
 ## Roles
 
-Each spawn site names a role. The role selects a key under `defaults.models` in the config (`node "${CLAUDE_PLUGIN_ROOT}/scripts/config.mjs" get defaults.models`).
+Each spawn site names a role. The role selects a key under `defaults.models` in the config (`node "../scripts/config.mjs" get defaults.models`).
 
 | Role         | Spawned by                                                | Agent                     | Default                  |
 | ------------ | --------------------------------------------------------- | ------------------------- | ------------------------ |

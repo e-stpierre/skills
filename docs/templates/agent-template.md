@@ -72,6 +72,7 @@ Instructions:
 Instructions:
 - Replace {{methodology}} with the approach and framework the agent follows
 - Sub-sections (### headings) are allowed for complex methodologies (e.g., "### Initial Assessment", "### Deep Analysis")
+- Plugin files: an agent has no skill directory, so name every plugin file as `<plugin-root>/...` (e.g., `<plugin-root>/scripts/runs.mjs`), never with a Claude variable. List the Plugin root input first in `### Inputs`: "**Plugin root**: the absolute path of the plugin directory, given by the caller; `<plugin-root>` stands for it below", followed by an "In Claude Code," note for an agent spawned without one
 - Suggested elements (include others as needed):
   - Analysis techniques and decision-making processes
   - How the agent breaks down complex problems

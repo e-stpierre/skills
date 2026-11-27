@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+- Paths without `${CLAUDE_PLUGIN_ROOT}`, so script-backed skills also run in harnesses that do not expand it:
+  - Skills and skill references name the shared scripts and references with paths relative to the file that holds them, and resolve them to absolute paths before running a command
+  - Shared references name the scripts relative to the plugin's `references/` directory
+  - Agents take the plugin root from their caller and name plugin files as `<plugin-root>/...`; in Claude Code, an agent spawned without one still finds it in `${CLAUDE_PLUGIN_ROOT}`
+  - esp-ralph-loop: every iteration prompt carries `Plugin root: <path>` when `plugin_root` is given
+- The skill and agent templates state the path convention and keep Claude variables to `In Claude Code,` notes
+
 ## 0.12.2
 
 - Portable skill authoring, so one skill source runs in Claude Code and Codex:

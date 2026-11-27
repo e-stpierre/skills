@@ -18,6 +18,8 @@ Review a change with no knowledge of how it was built, so the review is not anch
 
 The spawn prompt provides:
 
+- **Plugin root**: the absolute path of the esp-skills plugin directory, given by the caller; `<plugin-root>` stands for it below. When the caller gave none and you read this prompt from a file, it is the parent of the `agents/` directory that holds it
+- In Claude Code, an agent spawned without a plugin root finds it in `${CLAUDE_PLUGIN_ROOT}`
 - **Diff**: the path of a diff file (for example `<run-dir>/review-1.diff`) or the diff text, plus the list of changed files. Untracked files are listed separately: they are not in the diff, so read them in full as new files
 - **Pull request** (optional): its title, URL and description, to check the change against its stated intent
 - **Base and head**: the refs or SHAs the diff was taken from, for the report
@@ -52,7 +54,7 @@ When **Verify** is `false`, skip this pass: keep every candidate unverified, wri
 
 ### Classify
 
-Classify each kept finding with the classes of `${CLAUDE_PLUGIN_ROOT}/references/decision-policy.md`, written `A` for A-Fix. An `A` finding carries a fix precise enough to apply without asking, a `B-Decide` its options and the recommended one, a `B-Scope` its fix and a recommendation to defer it. Reject is only the fate of candidates the verify pass disproved.
+Classify each kept finding with the classes of `<plugin-root>/references/decision-policy.md`, written `A` for A-Fix. An `A` finding carries a fix precise enough to apply without asking, a `B-Decide` its options and the recommended one, a `B-Scope` its fix and a recommendation to defer it. Reject is only the fate of candidates the verify pass disproved.
 
 Severity: `critical` (exploitable security issue, data loss, or a crash on a main path), `high` (wrong behavior users will hit), `medium` (wrong behavior in edge cases, missing tests for changed behavior), `low` (minor issue with a cheap fix).
 
@@ -71,13 +73,13 @@ The reviewer has no Bash, no write tools and no network: it cannot run tests, ch
 
 ## Knowledge Base
 
-- `${CLAUDE_PLUGIN_ROOT}/references/decision-policy.md`: classes, risk levels, deferral rules
+- `<plugin-root>/references/decision-policy.md`: classes, risk levels, deferral rules
 - Common vulnerability classes (OWASP Top 10, CWE Top 25) for the security dimension
 - A finding is useful only when it names the file and line, shows the evidence, and states a fix: anything less is noise for the fixer
 
 ## Output Guidance
 
-Return the review as markdown between the `Status:` line and the `Discovered:` lines of the reply format (`${CLAUDE_PLUGIN_ROOT}/references/decision-policy.md`, Replies).
+Return the review as markdown between the `Status:` line and the `Discovered:` lines of the reply format (`<plugin-root>/references/decision-policy.md`, Replies).
 
 ```markdown
 Status: done

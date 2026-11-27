@@ -174,6 +174,16 @@ describe("esp-ralph-loop workflow", () => {
     );
   });
 
+  test("gives esp-iterator iterations the plugin root when given", async () => {
+    const run = await runWorkflow(LOOP, {
+      args: { task: "t", max_iterations: 1, plugin_root: "C:/p" },
+      respond: [step(1)]
+    });
+    assert.equal(run.calls[0].opts.agentType, "esp-skills:esp-iterator");
+    assert.match(run.calls[0].prompt, /^Plugin root: C:\/p$/m);
+    assert.doesNotMatch(run.calls[0].prompt, /esp-iterator\.md/);
+  });
+
   test("points general-purpose iterations at the iterator rules", async () => {
     const prompt = async (extra) =>
       (
@@ -187,8 +197,10 @@ describe("esp-ralph-loop workflow", () => {
       plugin_root: "C:/p"
     });
     assert.match(general, /read C:\/p\/agents\/esp-iterator\.md in full/);
-    assert.match(general, /\$\{CLAUDE_PLUGIN_ROOT\} is C:\/p/);
+    assert.match(general, /In it, <plugin-root> is C:\/p\./);
+    assert.match(general, /^Plugin root: C:\/p$/m);
     assert.doesNotMatch(await prompt({}), /esp-iterator\.md/);
+    assert.doesNotMatch(await prompt({}), /Plugin root:/);
     await assert.rejects(
       runWorkflow(LOOP, {
         args: { task: "t", allow_subagents: true },

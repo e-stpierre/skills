@@ -1,15 +1,17 @@
 # Plan Format
 
+Paths here are relative to this file's directory, the plugin's `references/`: resolve them to absolute paths before running a command.
+
 Plan format 1 is the machine-consumable plan that `esp-plan` writes and that `esp-ship` reads. A plan is a markdown file with flat YAML frontmatter and a fixed section and milestone layout, so `scripts/plan.mjs` can parse it into JSON without a model.
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/plan.mjs" parse <run-dir>/plan.md   # plan as JSON
-node "${CLAUDE_PLUGIN_ROOT}/scripts/plan.mjs" lint <run-dir>/plan.md    # plan-lint
-node "${CLAUDE_PLUGIN_ROOT}/scripts/plan.mjs" diff <previous> <next> --run-dir <run-dir>  # amendment check
-node "${CLAUDE_PLUGIN_ROOT}/scripts/plan.mjs" tasks <file>                              # task list as JSON
-node "${CLAUDE_PLUGIN_ROOT}/scripts/plan.mjs" import <file> --run-dir <run-dir>         # task list -> plan.md
-node "${CLAUDE_PLUGIN_ROOT}/scripts/plan.mjs" synthesize --run-dir <run-dir> --title <t> --goal <g> --validation <cmd>
-node "${CLAUDE_PLUGIN_ROOT}/scripts/plan.mjs" batches <run-dir>/plan.md                   # parallel batches
+node "../scripts/plan.mjs" parse <run-dir>/plan.md   # plan as JSON
+node "../scripts/plan.mjs" lint <run-dir>/plan.md    # plan-lint
+node "../scripts/plan.mjs" diff <previous> <next> --run-dir <run-dir>  # amendment check
+node "../scripts/plan.mjs" tasks <file>                              # task list as JSON
+node "../scripts/plan.mjs" import <file> --run-dir <run-dir>         # task list -> plan.md
+node "../scripts/plan.mjs" synthesize --run-dir <run-dir> --title <t> --goal <g> --validation <cmd>
+node "../scripts/plan.mjs" batches <run-dir>/plan.md                   # parallel batches
 ```
 
 ## Files and Versions
