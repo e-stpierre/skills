@@ -1,6 +1,6 @@
 ---
 name: esp-iterator
-description: Runs one iteration of a ralph loop: picks the next unit of a task, does it, commits, and returns its status
+description: "Runs one iteration of a ralph loop: picks the next unit of a task, does it, commits, and returns its status"
 tools: [Read, Write, Edit, Glob, Grep, Bash, Skill]
 model: inherit
 color: cyan

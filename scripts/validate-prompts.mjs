@@ -93,19 +93,102 @@ export function parseFrontmatter(text) {
   if (lines[0] !== "---") return null;
   const end = lines.indexOf("---", 1);
   if (end < 0) return null;
-  const fields = {};
   const blank = [];
-  for (let i = 1; i < end; i++) {
-    if (!lines[i].trim()) blank.push(i + 1);
-    const m = lines[i].match(/^([A-Za-z][\w-]*):\s?(.*)$/);
-    if (m) fields[m[1]] = { raw: m[2], line: i + 1 };
+  for (let i = 1; i < end; i++) if (!lines[i].trim()) blank.push(i + 1);
+  const { fields, errors } = parseYaml(lines.slice(1, end), 2);
+  return { fields, end: end + 1, blank, yamlErrors: errors };
+}
+
+/**
+ * Parse the strict YAML subset allowed in frontmatter and agent metadata:
+ * top-level `key: value` pairs with a plain, quoted or one-line flow value, a
+ * block scalar (`|`, `>`), or an indented nested block. Anything a strict
+ * YAML parser would reject or read differently is an error, so a harness
+ * that parses strictly never drops the file. `first` is the line number of
+ * lines[0]. Returns { fields: {key: {raw, value, line}}, errors: [{line, message}] }.
+ */
+export function parseYaml(lines, first = 1) {
+  const fields = {};
+  const errors = [];
+  let open = null; // the key whose block (nested or block scalar) is open
+  for (const [k, text] of lines.entries()) {
+    const line = first + k;
+    if (text.includes("\t")) {
+      errors.push({ line, message: "tab character; indent with spaces" });
+      continue;
+    }
+    if (!text.trim() || /^\s*#/.test(text)) continue;
+    if (/^\s/.test(text)) {
+      if (!open) {
+        errors.push({ line, message: "indented line outside a block" });
+      } else if (open.scalar) {
+        open.parts.push(text.trim());
+      }
+      continue;
+    }
+    const m = text.match(/^([A-Za-z][\w-]*):(?:\s+(.*?))?\s*$/);
+    if (!m) {
+      errors.push({ line, message: `not a \`key: value\` line: ${text}` });
+      open = null;
+      continue;
+    }
+    const [, key, raw = ""] = m;
+    if (fields[key]) errors.push({ line, message: `duplicate key \`${key}\`` });
+    const field = { raw, value: raw, line };
+    fields[key] = field;
+    open = null;
+    if (!raw) {
+      open = { field, scalar: false };
+      continue;
+    }
+    if (/^[|>][+-]?\d?$/.test(raw)) {
+      open = { field, scalar: true, folded: raw[0] === ">", parts: [] };
+      field.block = open;
+      continue;
+    }
+    const problem = yamlScalarProblem(raw);
+    if (problem) errors.push({ line, message: `\`${key}\`: ${problem}` });
+    else field.value = unquote(raw);
   }
-  return { fields, end: end + 1, blank };
+  for (const field of Object.values(fields)) {
+    if (field.block) {
+      field.value = field.block.parts.join(field.block.folded ? " " : "\n");
+      delete field.block;
+    }
+  }
+  return { fields, errors };
+}
+
+/** Why a one-line YAML value would fail or change meaning, or null. */
+function yamlScalarProblem(raw) {
+  if (raw.startsWith('"')) {
+    return /^"(?:[^"\\]|\\.)*"$/.test(raw)
+      ? null
+      : 'unbalanced or unescaped `"` in a double-quoted value';
+  }
+  if (raw.startsWith("'")) {
+    return /^'(?:[^']|'')*'$/.test(raw)
+      ? null
+      : "unbalanced `'` in a single-quoted value (escape it as `''`)";
+  }
+  if (raw.startsWith("[") || raw.startsWith("{")) {
+    const close = raw[0] === "[" ? "]" : "}";
+    return raw.endsWith(close) ? null : "flow value not closed on its line";
+  }
+  if (/^[&*!|>%@`]|^[-?:](\s|$)/.test(raw)) {
+    return `starts with a YAML indicator (${raw[0]}); quote the value`;
+  }
+  if (/:\s|:$/.test(raw)) return "contains `: `; quote the value";
+  if (/\s#/.test(raw))
+    return "contains ` #`, read as a comment; quote the value";
+  return null;
 }
 
 function unquote(value) {
-  const m = value.match(/^"(.*)"$|^'(.*)'$/);
-  return m ? (m[1] ?? m[2]) : value;
+  const d = value.match(/^"(.*)"$/);
+  if (d) return d[1].replace(/\\(.)/g, "$1");
+  const s = value.match(/^'(.*)'$/);
+  return s ? s[1].replace(/''/g, "'") : value;
 }
 
 /** Headings of one level, outside code fences. */
@@ -306,7 +389,7 @@ function checkSections(issues, file, found, template, required) {
 }
 
 function checkName(issues, file, fm, expected, prefix) {
-  const name = fm.fields.name ? unquote(fm.fields.name.raw) : "";
+  const name = fm.fields.name?.value ?? "";
   const line = fm.fields.name?.line ?? 1;
   if (!name) return issue(issues, file, 1, "frontmatter", "missing `name`");
   if (!KEBAB.test(name) || name.length > 64) {
@@ -340,10 +423,10 @@ function checkName(issues, file, fm, expected, prefix) {
 
 function checkDescription(issues, file, fm) {
   const d = fm.fields.description;
-  if (!d || !unquote(d.raw).trim()) {
+  if (!d || !d.value.trim()) {
     return issue(issues, file, 1, "frontmatter", "missing `description`");
   }
-  const len = unquote(d.raw).length;
+  const len = d.value.length;
   if (len > MAX_DESCRIPTION) {
     issue(
       issues,
@@ -565,6 +648,78 @@ function checkTables(issues, file, scanned) {
   }
 }
 
+/** `policy.allow_implicit_invocation` of an agents/openai.yaml, or undefined. */
+export function readImplicitPolicy(text) {
+  let top = null;
+  for (const line of text.split(/\r?\n/)) {
+    const key = line.match(/^([A-Za-z][\w-]*):/);
+    if (key) top = key[1];
+    const m = line.match(/^\s+allow_implicit_invocation:\s*(.*?)\s*$/);
+    if (m && top === "policy") return m[1];
+  }
+  return undefined;
+}
+
+/**
+ * The Codex metadata beside a skill (agents/openai.yaml) parses strictly and
+ * its invocation policy matches `disable-model-invocation`: a user-invoked
+ * skill sets `allow_implicit_invocation: false`, and a model-invoked skill
+ * never does, or Codex hides it.
+ */
+function checkCodexMetadata(issues, root, file, fm) {
+  const meta = join(dirname(file), "agents", "openai.yaml")
+    .split(sep)
+    .join("/");
+  const userInvoked = fm.fields["disable-model-invocation"]?.value === "true";
+  if (!existsSync(join(root, meta))) {
+    if (userInvoked) {
+      issue(
+        issues,
+        file,
+        fm.fields["disable-model-invocation"].line,
+        "codex",
+        "user-invoked skill without agents/openai.yaml; Codex will invoke it implicitly",
+        "warn"
+      );
+    }
+    return;
+  }
+  const text = readFileSync(join(root, meta), "utf8");
+  checkAscii(issues, meta, text, false);
+  for (const e of parseYaml(text.split(/\r?\n/)).errors) {
+    issue(issues, meta, e.line, "yaml", e.message);
+  }
+  const policy = readImplicitPolicy(text);
+  if (policy !== undefined && policy !== "true" && policy !== "false") {
+    issue(
+      issues,
+      meta,
+      1,
+      "codex",
+      `policy.allow_implicit_invocation must be true or false, not ${policy}`
+    );
+    return;
+  }
+  if (userInvoked && policy !== "false") {
+    issue(
+      issues,
+      meta,
+      1,
+      "codex",
+      "the skill sets disable-model-invocation: true; set policy.allow_implicit_invocation: false"
+    );
+  }
+  if (!userInvoked && policy === "false") {
+    issue(
+      issues,
+      meta,
+      1,
+      "codex",
+      "policy.allow_implicit_invocation: false hides a model-invoked skill from Codex"
+    );
+  }
+}
+
 export function validateSkill(root, file, template) {
   const issues = [];
   const text = readFileSync(join(root, file), "utf8");
@@ -578,9 +733,11 @@ export function validateSkill(root, file, template) {
   }
   for (const n of fm.blank)
     issue(issues, file, n, "frontmatter", "blank line inside the frontmatter");
+  for (const e of fm.yamlErrors) issue(issues, file, e.line, "yaml", e.message);
   const prefix = pluginSkill ? `${parts[1].split("-")[0]}-` : null;
   checkName(issues, file, fm, basename(dirname(file)), prefix);
   checkDescription(issues, file, fm);
+  checkCodexMetadata(issues, root, file, fm);
   checkArguments(issues, file, fm, scanned, pluginSkill);
   const found = headings(scanned, 2);
   const required = template.required.filter(
@@ -617,6 +774,7 @@ export function validateAgent(root, file, template) {
   }
   for (const n of fm.blank)
     issue(issues, file, n, "frontmatter", "blank line inside the frontmatter");
+  for (const e of fm.yamlErrors) issue(issues, file, e.line, "yaml", e.message);
   const plugin = file.split(/[\\/]/)[1];
   checkName(
     issues,

@@ -1,0 +1,5 @@
+interface:
+  display_name: "ESP Orchestrate"
+  short_description: "Take a change that spans several pull requests to merged code"
+policy:
+  allow_implicit_invocation: false

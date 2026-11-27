@@ -1,6 +1,6 @@
 ---
 name: esp-create-skill
-description: Create a new Claude Code skill from the action skill template. Use when asked to create or scaffold a skill.
+description: Create a new skill from the action skill template. Use when asked to create or scaffold a skill.
 argument-hint: "-s|--skill <name> [context]"
 ---
 
@@ -8,7 +8,7 @@ argument-hint: "-s|--skill <name> [context]"
 
 ## Overview
 
-Create a new Claude Code skill: a `SKILL.md` with YAML frontmatter and the sections of the skill template, in its own directory, registered in the plugin. Use it to add a reusable, invocable workflow to a plugin.
+Create a new skill that runs in Claude Code and Codex: a `SKILL.md` with YAML frontmatter and the sections of the skill template, in its own directory, registered in the plugin. Use it to add a reusable, invocable workflow to a plugin.
 
 ## Arguments
 
@@ -21,13 +21,16 @@ Create a new Claude Code skill: a `SKILL.md` with YAML frontmatter and the secti
 
 Arguments: $ARGUMENTS
 
+If the line above holds no arguments or an unreplaced placeholder, read them from the message that invoked this skill.
+
 ## Additional Resources
 
-- For the section structure, the directory structure, the size limit, the frontmatter fields (invocation controls included) and the string substitutions, see [action-skill-template.md](references/action-skill-template.md): read it in full before writing SKILL.md
+- For the section structure, the directory structure, the size limit, the frontmatter fields (invocation controls included), the string substitutions and the portability rules, see [action-skill-template.md](references/action-skill-template.md): read it in full before writing SKILL.md
 
 ## Core Principles
 
 - The template is the structure: its sections, in its order, with its exact names
+- Write for every harness: the skill follows the template's PORTABILITY rules, and a Claude Code feature (substitutions, workflows, agent types) is an enhancement with a stated fallback
 - Use US English spelling. Code files are ASCII only; markdown files may add minimal functional emojis
 - The description decides invocation: a user-invoked skill (`disable-model-invocation: true`) gets a one-line human summary; a model-invoked skill front-loads what it is, then one trigger per distinct case, no synonyms. The listing truncates it at 250 characters
 - Write steps that end on a checkable, exhaustive done-condition ("every file in scope checked"), and state each target behavior positively; keep a prohibition only for a hard guardrail, paired with what to do instead
@@ -78,7 +81,7 @@ Examples:
 
 ### Argument Access
 
-Read options by name from `Arguments: $ARGUMENTS` in the Values subsection. Positional substitutions (`$ARGUMENTS[N]`, `$N`) shift when an option is added or omitted, so options-based skills do not use them.
+Read options by name from `Arguments: $ARGUMENTS` in the Values subsection, and keep the fallback line below it for harnesses that do not substitute it. Positional substitutions (`$ARGUMENTS[N]`, `$N`) shift when an option is added or omitted, so options-based skills do not use them.
 
 ### Forked Context Skills
 
@@ -95,12 +98,13 @@ Keep a table only when the reader compares several attributes across many rows a
 1. **Validate the name**: kebab-case with the plugin prefix (`esp-` in esp-skills), at most 64 characters, no leading, trailing or doubled hyphen, describes the action, and unused: a search for `<skill-name>` across `plugins/*/skills/` finds no existing directory.
 2. **Create the directory** `plugins/<plugin-name>/skills/<category>/<skill-name>/` in the plugin the user names, else `esp-skills`, reusing an existing category when one fits. When the plugin's `.claude-plugin/plugin.json` has a `skills` array, add `./skills/<category>/<skill-name>` to it so the skill ships.
 3. **Read the template** [action-skill-template.md](references/action-skill-template.md) in full.
-4. **Write SKILL.md** from the template and `[context]`: frontmatter on line 1 with the fields that apply, every required section, the optional ones that apply, and every value defined as an option per [Argument Conventions](#argument-conventions). Supporting files go under `references/`, `scripts/` or `assets/`, each linked from SKILL.md.
-5. **Validate**: when the repository has `pnpm validate`, run it and fix every error it reports (it checks the mechanical rules: placeholders, name, sections, links, arguments and option letters, tables, size, ASCII). Then check what no script can, until every check passes:
+4. **Write SKILL.md** from the template and `[context]`: frontmatter on line 1 with the fields that apply, every required section, the optional ones that apply, and every value defined as an option per [Argument Conventions](#argument-conventions). Supporting files go under `references/`, `scripts/` or `assets/`, each linked from SKILL.md. When the skill sets `disable-model-invocation: true`, also write `agents/openai.yaml` with `policy.allow_implicit_invocation: false`, per the template's PORTABILITY rules.
+5. **Validate**: when the repository has `pnpm validate`, run it and fix every error it reports (it checks the mechanical rules: strict YAML frontmatter, placeholders, name, sections, links, arguments and option letters, tables, size, ASCII, the Codex invocation policy). Then check what no script can, until every check passes:
    - The `description` follows the invocation rule in Core Principles
    - Every step ends on a checkable done-condition, and any table left is a true grid
    - The options follow the order of [Argument Conventions](#argument-conventions), and the body reads each option by both names
    - The prose is US English, and each rule has one home
+   - The prose follows PORTABILITY: actions instead of tool names, other skills named bare, paths relative to the skill's directory, model tiers instead of model names
    - Without `pnpm validate`, check the template's structure and the Argument Conventions by hand as well
 
 ## Output Guidance
@@ -112,15 +116,15 @@ Provide a brief confirmation message:
 ```text
 Created skill: esp-review-code
 Location: plugins/esp-skills/skills/review/esp-review-code/SKILL.md
-Invocation: /esp-skills:esp-review-code
+Invocation: /esp-skills:esp-review-code (Claude Code), $esp-review-code (Codex)
 
 Files created:
 - SKILL.md
 - references/api-docs.md (if applicable)
 
 Next steps:
-- Test the skill with /esp-skills:esp-review-code
-- Verify Claude loads it appropriately
+- Test the skill with /esp-skills:esp-review-code in Claude Code and $esp-review-code in Codex
+- Verify each harness loads it appropriately
 - Add the skill to the plugin README, including its example section, and to CHANGELOG.md
 ```
 
