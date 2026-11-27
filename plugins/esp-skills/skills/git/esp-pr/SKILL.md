@@ -28,7 +28,7 @@ Arguments: $ARGUMENTS
 
 - The title conveys the primary change; the description gives the why and the context, since the diff already shows the what
 - One PR per branch: when the branch already has an open PR, update it instead of creating another, so a re-run after an interruption is safe
-- Paths are relative to this skill's directory (a reference file's paths are relative to that file). Resolve a path to an absolute one before running a command with it: commands run from the user's repository
+- Paths are relative to this skill's directory (a reference file's paths are relative to that file). Resolve a path to an absolute one before running a command with it: commands run from the user's repository. A bare script name (`config.mjs`) or `scripts/<name>` is the plugin's script, `../../../scripts/<name>` from this directory
 
 ## Skill-Specific Guidelines
 

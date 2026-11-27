@@ -40,7 +40,7 @@ Arguments: $ARGUMENTS
 - Read through `recap.mjs`. Open a run file directly only when its path came from the script output
 - Read-only: report from the runs and leave every run directory and the repository unchanged
 - Report what the runs say, not what the code does today. When the two may differ, say so and point to the commit
-- Paths are relative to this skill's directory (a reference file's paths are relative to that file). Resolve a path to an absolute one before running a command with it: commands run from the user's repository
+- Paths are relative to this skill's directory (a reference file's paths are relative to that file). Resolve a path to an absolute one before running a command with it: commands run from the user's repository. A bare script name (`recap.mjs`) or `scripts/<name>` is the plugin's script, `../../../scripts/<name>` from this directory
 
 ## Skill-Specific Guidelines
 

@@ -38,7 +38,7 @@ Arguments: $ARGUMENTS
 - Every read and write goes through `config.mjs`, which validates each write before saving it
 - Config files hold no secrets (tokens, passwords, API keys)
 - A failed `set` leaves the file unchanged; report the script's error verbatim, it names the key path and the expected type
-- Paths are relative to this skill's directory (a reference file's paths are relative to that file). Resolve a path to an absolute one before running a command with it: commands run from the user's repository
+- Paths are relative to this skill's directory (a reference file's paths are relative to that file). Resolve a path to an absolute one before running a command with it: commands run from the user's repository. A bare script name (`config.mjs`) or `scripts/<name>` is the plugin's script, `../../../scripts/<name>` from this directory
 
 ## Skill-Specific Guidelines
 

@@ -45,7 +45,7 @@ Arguments: $ARGUMENTS
 
 - This session schedules, it does not build. Every pull request unit runs through `/esp-skills:esp-ship`, in a background subagent or inline. This session keeps only unit replies and wait results; details stay in the run directory
 - `orchestrate.mjs next` decides the single next action. Every state change goes through `orchestrate.mjs` (the only writer of `orchestrate.json` and `graph.json`) and `runs.mjs` (`run.json`, `decisions.jsonl`, `notes.md`)
-- Run every script with Bash, with long option names. Paths are relative to this skill's directory (a reference file's paths are relative to that file). Resolve a path to an absolute one before running a command with it: commands run from the user's repository. Every `orchestrate.mjs` command takes `--run-dir <run-dir>`
+- Run every script with Bash, with long option names. Paths are relative to this skill's directory (a reference file's paths are relative to that file). Resolve a path to an absolute one before running a command with it: commands run from the user's repository. A bare script name (`orchestrate.mjs`) or `scripts/<name>` is the plugin's script, `../../../scripts/<name>` from this directory. Every `orchestrate.mjs` command takes `--run-dir <run-dir>`
 - Name each unit's repository explicitly in every prompt and command (`--project-dir`, `git -C <dir>`): a subagent starts in this session's directory, not in the unit's checkout
 - A stopped unit blocks its dependents only: independent units still finish, and the run ends `partial`. Never revert a merged unit
 - Never force-push, never delete a remote branch, and never touch a dirty checkout: housekeeping reports it and moves on

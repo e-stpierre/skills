@@ -387,7 +387,7 @@ function checkLinks(issues, root, file, scanned) {
   }
 }
 
-const CLAUDE_VARIABLE = /\$\{CLAUDE_(?:PLUGIN_ROOT|SKILL_DIR)\}/g;
+const CLAUDE_VARIABLE = /\$\{?CLAUDE_(?:PLUGIN_ROOT|SKILL_DIR)\b\}?/g;
 const CLAUDE_NOTE = /^\s*(?:(?:[-*>]|\d+\.)\s*)*In Claude Code,/;
 
 /**

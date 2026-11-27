@@ -31,7 +31,7 @@ Arguments: $ARGUMENTS
 - Pass the task to Codex word for word. Do the task through Codex or not at all: when Codex fails, report the failure and its fix, and let the user choose what comes next
 - Default to `read-only`. `--sandbox` sets the mode when given, then a `codex.sandbox` of `workspace-write`. Otherwise use `workspace-write` only when the user asked for it or the task cannot be done without writing (and say so in the report)
 - Codex's answer is a second source, not a verdict: report it as Codex's, and verify a claim before acting on it
-- Run every script with Bash, with long option names. Paths are relative to this skill's directory (a reference file's paths are relative to that file). Resolve a path to an absolute one before running a command with it: commands run from the user's repository
+- Run every script with Bash, with long option names. Paths are relative to this skill's directory (a reference file's paths are relative to that file). Resolve a path to an absolute one before running a command with it: commands run from the user's repository. A bare script name (`codex.mjs`) or `scripts/<name>` is the plugin's script, `../../../scripts/<name>` from this directory
 
 ## Skill-Specific Guidelines
 

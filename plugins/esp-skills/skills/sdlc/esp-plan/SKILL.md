@@ -36,7 +36,7 @@ Arguments: $ARGUMENTS
 - Explore the codebase before planning, and follow its existing patterns and conventions
 - Every milestone is one coherent, reviewable commit that changes code and can be verified by its validation commands
 - Write plans to the run directory only: they stay outside the repository and out of git
-- Run every script with Bash. Paths are relative to this skill's directory (a reference file's paths are relative to that file). Resolve a path to an absolute one before running a command with it: commands run from the user's repository. `run.json` and `decisions.jsonl` are written by `runs.mjs` only
+- Run every script with Bash. Paths are relative to this skill's directory (a reference file's paths are relative to that file). Resolve a path to an absolute one before running a command with it: commands run from the user's repository. A bare script name (`plan.mjs`) or `scripts/<name>` is the plugin's script, `../../../scripts/<name>` from this directory. `run.json` and `decisions.jsonl` are written by `runs.mjs` only
 - Plans size the work only as milestones and their complexity, with no time estimates or deadlines
 
 ## Skill-Specific Guidelines

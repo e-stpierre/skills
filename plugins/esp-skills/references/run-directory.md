@@ -1,6 +1,6 @@
 # Run Directory
 
-Paths here are relative to this file's directory, the plugin's `references/`: resolve them to absolute paths before running a command.
+Paths here are relative to this file's directory, the plugin's `references/`: resolve them to absolute paths before running a command. A script named `scripts/<name>` (or a bare `<name>.mjs`) is the plugin's script, `../scripts/<name>` from here.
 
 A run directory holds what one esp-skills run did: its status, its plan, the decisions it made and its outcome. `esp-recap`, resume and the pull request body read it back. Skills never write its JSON files by hand: they call `scripts/runs.mjs`, which checks the fields it needs before every write:
 

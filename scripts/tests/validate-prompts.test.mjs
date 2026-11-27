@@ -506,7 +506,10 @@ describe("claude variables and relative paths", () => {
         "- Run `${CLAUDE_PLUGIN_ROOT}/scripts/run.mjs`"
       )
     );
-    write(REF, "# Notes\n\n```bash\nnode ${CLAUDE_SKILL_DIR}/x.mjs\n```\n");
+    write(
+      REF,
+      "# Notes\n\n```bash\nnode ${CLAUDE_SKILL_DIR}/x.mjs\nnode $CLAUDE_PLUGIN_ROOT/scripts/run.mjs\n```\n"
+    );
     write(
       WORKFLOW_PATH,
       WORKFLOW.replace('"x"', '"Read ${CLAUDE_PLUGIN_ROOT}/agents/a.md"')
@@ -518,6 +521,7 @@ describe("claude variables and relative paths", () => {
     assert.deepEqual(found("claude-variable").sort(), [
       `${SKILL_PATH}:${skillLine}`,
       `${REF}:4`,
+      `${REF}:5`,
       `${WORKFLOW_PATH}:${flowLine}`
     ]);
   });

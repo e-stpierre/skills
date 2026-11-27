@@ -40,7 +40,7 @@ Arguments: $ARGUMENTS
 - The only force-push is `git push --force-with-lease` of the pull request's own head branch, right after a rebase. The base branch is never pushed
 - Re-run the gates after every rebase, and push only a rebase whose gates pass
 - The script waits, the session sleeps: wait for checks with the script in the background, never with polling or `sleep` loops in the session
-- Run every script with Bash. Paths are relative to this skill's directory (a reference file's paths are relative to that file). Resolve a path to an absolute one before running a command with it: commands run from the user's repository. The outcome always comes from the script
+- Run every script with Bash. Paths are relative to this skill's directory (a reference file's paths are relative to that file). Resolve a path to an absolute one before running a command with it: commands run from the user's repository. A bare script name (`merge-ready.mjs`) or `scripts/<name>` is the plugin's script, `../../../scripts/<name>` from this directory. The outcome always comes from the script
 
 ## Skill-Specific Guidelines
 

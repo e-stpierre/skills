@@ -43,7 +43,7 @@ Arguments: $ARGUMENTS
 - Ask only for what the source and the repository leave open
 - The prompt lives in the run directory (`<run-dir>/prompt.md`), outside the repository
 - The loop runs in the background. This session stays the user's channel to it: it records every correction in `notes.md` and reports the end
-- Run every script with Bash, with long option names. Paths are relative to this skill's directory (a reference file's paths are relative to that file). Resolve a path to an absolute one before running a command with it: commands run from the user's repository
+- Run every script with Bash, with long option names. Paths are relative to this skill's directory (a reference file's paths are relative to that file). Resolve a path to an absolute one before running a command with it: commands run from the user's repository. A bare script name (`runs.mjs`) or `scripts/<name>` is the plugin's script, `../../../scripts/<name>` from this directory
 - Log each decision this session makes with `runs.mjs decision`, when it is made
 
 ## Skill-Specific Guidelines

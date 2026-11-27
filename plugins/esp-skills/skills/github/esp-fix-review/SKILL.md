@@ -46,7 +46,7 @@ Arguments: $ARGUMENTS
 - Commit (internal mode) or push (pull request mode) only code that passes the full gates (see Committing Fixes)
 - Review fixes are new commits on top of the branch, pushed with a plain `git push`: no amend of a milestone commit, no force-push, no rewrite of pushed history
 - Record every resolution with `fix-review.mjs record` when it is made. A handled item is never processed again, and the round limit is never exceeded
-- Run every script with Bash. Paths are relative to this skill's directory (a reference file's paths are relative to that file). Resolve a path to an absolute one before running a command with it: commands run from the user's repository. Replies, thread resolutions and the outcome always go through `fix-review.mjs`
+- Run every script with Bash. Paths are relative to this skill's directory (a reference file's paths are relative to that file). Resolve a path to an absolute one before running a command with it: commands run from the user's repository. A bare script name (`fix-review.mjs`) or `scripts/<name>` is the plugin's script, `../../../scripts/<name>` from this directory. Replies, thread resolutions and the outcome always go through `fix-review.mjs`
 - In GitHub replies, name a finding `item 4` or `finding 4`: GitHub links `#<number>` to an issue
 
 ## Skill-Specific Guidelines

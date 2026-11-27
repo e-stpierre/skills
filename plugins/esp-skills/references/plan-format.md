@@ -1,6 +1,6 @@
 # Plan Format
 
-Paths here are relative to this file's directory, the plugin's `references/`: resolve them to absolute paths before running a command.
+Paths here are relative to this file's directory, the plugin's `references/`: resolve them to absolute paths before running a command. A script named `scripts/<name>` (or a bare `<name>.mjs`) is the plugin's script, `../scripts/<name>` from here.
 
 Plan format 1 is the machine-consumable plan that `esp-plan` writes and that `esp-ship` reads. A plan is a markdown file with flat YAML frontmatter and a fixed section and milestone layout, so `scripts/plan.mjs` can parse it into JSON without a model.
 

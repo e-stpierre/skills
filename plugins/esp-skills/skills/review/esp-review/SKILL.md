@@ -42,7 +42,7 @@ Arguments: $ARGUMENTS
 
 - The reviewer owns the review: `esp-reviewer.md` defines the method, the scope (only the diff), the finding format and the severity scale. This skill resolves the diff, runs the reviewer, and parses its reply
 - Read-only and routes nothing: the skill writes only into the run or temporary directory, and the caller decides where the review goes (terminal, PR comment, file, CI log)
-- Run every script with Bash. Paths are relative to this skill's directory (a reference file's paths are relative to that file). Resolve a path to an absolute one before running a command with it: commands run from the user's repository. Counts, the findings file and the outcome always come from `review.mjs`, never from a hand count
+- Run every script with Bash. Paths are relative to this skill's directory (a reference file's paths are relative to that file). Resolve a path to an absolute one before running a command with it: commands run from the user's repository. A bare script name (`review.mjs`) or `scripts/<name>` is the plugin's script, `../../../scripts/<name>` from this directory. Counts, the findings file and the outcome always come from `review.mjs`, never from a hand count
 
 ## Skill-Specific Guidelines
 
