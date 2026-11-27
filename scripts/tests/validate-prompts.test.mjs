@@ -482,6 +482,137 @@ describe("validate", () => {
   });
 });
 
+describe("claude variables and relative paths", () => {
+  const REF = "plugins/esp-demo/skills/demo/esp-demo/references/notes.md";
+  const SHARED = "plugins/esp-demo/references/policy.md";
+  const AGENT_PATH = "plugins/esp-demo/agents/esp-helper.md";
+  const STATEMENT =
+    "- Paths are relative to this skill's directory (a reference file's paths are relative to that file)";
+  const found = (rule) =>
+    errors()
+      .filter((i) => i.rule === rule)
+      .map((i) => `${i.file}:${i.line}`);
+
+  beforeEach(() => {
+    write("plugins/esp-demo/scripts/run.mjs", "\n");
+    write(SHARED, "# Policy\n\nRun `node ../scripts/run.mjs`.\n");
+  });
+
+  test("the variable in prose, in a fence and in a workflow is an error", () => {
+    write(
+      SKILL_PATH,
+      SKILL.replace(
+        "- Be clear",
+        "- Run `${CLAUDE_PLUGIN_ROOT}/scripts/run.mjs`"
+      )
+    );
+    write(REF, "# Notes\n\n```bash\nnode ${CLAUDE_SKILL_DIR}/x.mjs\n```\n");
+    write(
+      WORKFLOW_PATH,
+      WORKFLOW.replace('"x"', '"Read ${CLAUDE_PLUGIN_ROOT}/agents/a.md"')
+    );
+    const lines = SKILL.split("\n");
+    const skillLine = lines.indexOf("- Be clear") + 1;
+    const flowLine =
+      WORKFLOW.split("\n").findIndex((l) => l.includes('agent("x"')) + 1;
+    assert.deepEqual(found("claude-variable").sort(), [
+      `${SKILL_PATH}:${skillLine}`,
+      `${REF}:4`,
+      `${WORKFLOW_PATH}:${flowLine}`
+    ]);
+  });
+
+  test("the same text on an In Claude Code, line passes", () => {
+    write(
+      SKILL_PATH,
+      SKILL.replace(
+        "- Be clear",
+        "- In Claude Code, `${CLAUDE_PLUGIN_ROOT}` holds the plugin root"
+      )
+    );
+    write(
+      REF,
+      "# Notes\n\nIn Claude Code, ${CLAUDE_SKILL_DIR} is this directory.\n\n> **In Claude Code,** ${CLAUDE_PLUGIN_ROOT} works.\n\n1. In Claude Code, ${CLAUDE_PLUGIN_ROOT} too.\n"
+    );
+    assert.deepEqual(found("claude-variable"), []);
+  });
+
+  test("a relative path that does not resolve reports the file and line", () => {
+    write(
+      REF,
+      "# Notes\n\nRun `node ../../../../scripts/run.mjs` first.\n\n```bash\nnode ../../../../scripts/missing.mjs\n```\n"
+    );
+    write(
+      AGENT_PATH,
+      AGENT.replace(
+        "## Methodology\n\nx",
+        "## Methodology\n\nRun <plugin-root>/scripts/run.mjs, then <plugin-root>/scripts/gone.mjs."
+      )
+    );
+    write(SHARED, "# Policy\n\nSee ../references/missing.md here.\n");
+    assert.deepEqual(found("path").sort(), [
+      `${AGENT_PATH}:17`,
+      `${SHARED}:3`,
+      `${REF}:6`
+    ]);
+    const messages = errors().map((i) => i.message);
+    assert.ok(
+      messages.includes("path not found: <plugin-root>/scripts/gone.mjs")
+    );
+    assert.ok(messages.includes("path not found: ../references/missing.md"));
+  });
+
+  test("a broken link in a skill reference is an error", () => {
+    write(REF, "# Notes\n\nSee [the guide](guide.md).\n");
+    assert.deepEqual(found("link"), [`${REF}:3`]);
+  });
+
+  test("ellipsis, anchor, placeholder and option-value tokens are skipped", () => {
+    write(
+      REF,
+      [
+        "# Notes",
+        "",
+        "Cite `.../<run>/summary.md` and `.../notes.md`.",
+        "See ../../../../scripts/run.mjs#usage for details.",
+        "Read `../../../../references/<name>.md` or `../*.md` or `./{a,b}.md`.",
+        "Run `housekeep.mjs run --repo-dir ../lib` or `rm -rf ./data`.",
+        ""
+      ].join("\n")
+    );
+    assert.deepEqual(found("path"), []);
+  });
+
+  test("a skill with a relative path must state the convention", () => {
+    const withPath = SKILL.replace(
+      "- Be clear",
+      "- Run `node ../../../scripts/run.mjs`"
+    );
+    write(SKILL_PATH, withPath);
+    assert.deepEqual(found("paths-note"), [`${SKILL_PATH}:1`]);
+    write(
+      SKILL_PATH,
+      withPath.replace(
+        "## Core Principles\n",
+        `## Core Principles\n\n${STATEMENT}`
+      )
+    );
+    assert.deepEqual(found("paths-note"), []);
+    assert.deepEqual(found("path"), []);
+  });
+
+  test("the README checks plugin-root paths only", () => {
+    write(
+      "plugins/esp-demo/README.md",
+      README.replace(
+        "## Agents\n\nx",
+        "## Agents\n\nRun `--project-dir ../api`, see `../../../x.md` and <plugin-root>/scripts/none.mjs."
+      )
+    );
+    assert.deepEqual(found("path"), ["plugins/esp-demo/README.md:9"]);
+  });
+});
+
 describe("strict frontmatter yaml", () => {
   const yaml = (text) => parseYaml(text.split("\n"));
   const messages = (text) => yaml(text).errors.map((e) => e.message);
