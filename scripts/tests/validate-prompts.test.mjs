@@ -524,6 +524,44 @@ describe("strict frontmatter yaml", () => {
     assert.deepEqual(messages("description: plain text, with commas"), []);
   });
 
+  test("parseYaml checks nested mappings and sequences at any depth", () => {
+    assert.match(
+      messages("metadata:\n  author: Someone: invalid")[0],
+      /`author`: contains `: `/
+    );
+    assert.match(
+      messages("interface:\n  display_name: ESP: Demo")[0],
+      /`display_name`/
+    );
+    assert.match(messages("paths:\n  - *.md")[0], /item: .*indicator/);
+    assert.match(messages("a:\n    b: 1\n  c: 2")[0], /inconsistent/);
+    assert.match(messages("a:\n  b: 1\n  - c")[0], /mixed/);
+    const { fields, errors } = yaml(
+      [
+        "hooks:",
+        "  PreToolUse:",
+        '    - matcher: "Bash"',
+        "      hooks:",
+        "        - type: command",
+        "paths:",
+        '  - "src/**"',
+        "  - docs/*.md",
+        "policy:",
+        "  allow_implicit_invocation: false"
+      ].join("\n")
+    );
+    assert.deepEqual(errors, []);
+    assert.equal(
+      fields.hooks.children.PreToolUse.items[0].children.matcher.value,
+      "Bash"
+    );
+    assert.deepEqual(
+      fields.paths.items.map((i) => i.value),
+      ["src/**", "docs/*.md"]
+    );
+    assert.equal(fields.policy.children.allow_implicit_invocation.raw, "false");
+  });
+
   test("a skill with an unquoted colon fails, and a folded description is measured", () => {
     write(
       SKILL_PATH,
@@ -563,12 +601,31 @@ describe("codex metadata", () => {
   const policy = (value) =>
     `interface:\n  display_name: "Demo"\npolicy:\n  allow_implicit_invocation: ${value}\n`;
 
-  test("readImplicitPolicy reads the nested policy key only", () => {
+  test("readImplicitPolicy reads the policy key, nested or flow", () => {
     assert.equal(readImplicitPolicy(policy("false")), "false");
+    assert.equal(
+      readImplicitPolicy("policy: {allow_implicit_invocation: false}\n"),
+      "false"
+    );
     assert.equal(
       readImplicitPolicy("other:\n  allow_implicit_invocation: false\n"),
       undefined
     );
+  });
+
+  test("a flow-mapping policy is held to the invocation mode", () => {
+    write(META, "policy: {allow_implicit_invocation: false}\n");
+    assert.match(codex()[0].message, /hides a model-invoked skill/);
+    userInvoked();
+    assert.deepEqual(codex(), []);
+  });
+
+  test("a nested metadata value with an unquoted colon fails", () => {
+    write(
+      META,
+      `interface:\n  display_name: ESP: Demo\n${policy("true").slice(32)}`
+    );
+    assert.ok(errors().some((i) => i.file === META && i.rule === "yaml"));
   });
 
   test("a user-invoked skill without the file warns", () => {

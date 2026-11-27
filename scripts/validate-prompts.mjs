@@ -99,18 +99,31 @@ export function parseFrontmatter(text) {
   return { fields, end: end + 1, blank, yamlErrors: errors };
 }
 
+/** A YAML `key: value` line: the key, then the raw value (empty for a block). */
+const KEY_LINE = /^([A-Za-z][\w-]*):(?:\s+(.*?))?\s*$/;
+
 /**
  * Parse the strict YAML subset allowed in frontmatter and agent metadata:
- * top-level `key: value` pairs with a plain, quoted or one-line flow value, a
- * block scalar (`|`, `>`), or an indented nested block. Anything a strict
- * YAML parser would reject or read differently is an error, so a harness
- * that parses strictly never drops the file. `first` is the line number of
- * lines[0]. Returns { fields: {key: {raw, value, line}}, errors: [{line, message}] }.
+ * `key: value` pairs with a plain, quoted or one-line flow value, a block
+ * scalar (`|`, `>`), a nested mapping or a `- item` sequence, at any depth.
+ * Every nested entry is checked like a top-level one. Anything a strict YAML
+ * parser would reject or read differently is an error, so a harness that
+ * parses strictly never drops the file. `first` is the line number of
+ * lines[0]. Returns { fields, errors }: fields maps each top-level key to
+ * { raw, value, line }, plus `children` (a nested mapping, same shape) or
+ * `items` (a sequence of { raw, value, line }).
  */
 export function parseYaml(lines, first = 1) {
   const fields = {};
   const errors = [];
-  let open = null; // the key whose block (nested or block scalar) is open
+  const stack = [{ indent: 0, map: fields, kind: null }];
+  let pending = null; // a key with an empty value: its block may follow
+  let scalar = null; // an open block scalar
+  const closeScalar = () => {
+    if (!scalar) return;
+    scalar.field.value = scalar.parts.join(scalar.folded ? " " : "\n");
+    scalar = null;
+  };
   for (const [k, text] of lines.entries()) {
     const line = first + k;
     if (text.includes("\t")) {
@@ -118,45 +131,102 @@ export function parseYaml(lines, first = 1) {
       continue;
     }
     if (!text.trim() || /^\s*#/.test(text)) continue;
-    if (/^\s/.test(text)) {
-      if (!open) {
-        errors.push({ line, message: "indented line outside a block" });
-      } else if (open.scalar) {
-        open.parts.push(text.trim());
-      }
+    const indent = text.length - text.trimStart().length;
+    const content = text.trim();
+    if (scalar && indent > scalar.indent) {
+      scalar.parts.push(content);
       continue;
     }
-    const m = text.match(/^([A-Za-z][\w-]*):(?:\s+(.*?))?\s*$/);
-    if (!m) {
-      errors.push({ line, message: `not a \`key: value\` line: ${text}` });
-      open = null;
+    closeScalar();
+    if (pending && indent > pending.indent) {
+      stack.push({ indent, map: null, kind: null, field: pending.field });
+    }
+    pending = null;
+    let closed = false;
+    while (stack.length > 1 && indent < stack[stack.length - 1].indent) {
+      stack.pop();
+      closed = true;
+    }
+    const ctx = stack[stack.length - 1];
+    if (indent !== ctx.indent) {
+      const message =
+        stack.length === 1 && !closed
+          ? "indented line outside a block"
+          : "inconsistent indentation";
+      errors.push({ line, message });
       continue;
+    }
+    const item = content.match(/^-(?:\s+(.*))?$/);
+    const kind = item ? "seq" : "map";
+    if (ctx.kind && ctx.kind !== kind) {
+      errors.push({ line, message: "mapping and sequence entries mixed" });
+      continue;
+    }
+    if (!ctx.kind && ctx.field) {
+      if (kind === "seq") ctx.field.items = [];
+      else ctx.map = ctx.field.children = {};
+    }
+    if (!ctx.kind && !ctx.field && kind === "seq") {
+      errors.push({ line, message: "sequence item outside a key" });
+      continue;
+    }
+    ctx.kind = kind;
+    if (!item) {
+      keyLine(ctx, content, indent, line);
+      continue;
+    }
+    const raw = item[1] ?? "";
+    const entry = { raw, value: unquote(raw), line };
+    ctx.field.items.push(entry);
+    if (KEY_LINE.test(raw)) {
+      // `- key: value` opens a mapping inside the sequence, at the key column
+      const col = indent + content.length - raw.length;
+      const sub = { indent: col, map: {}, kind: "map", field: entry };
+      entry.children = sub.map;
+      stack.push(sub);
+      keyLine(sub, raw, col, line);
+      continue;
+    }
+    const problem = raw ? yamlScalarProblem(raw) : "empty sequence item";
+    if (problem) errors.push({ line, message: `item: ${problem}` });
+  }
+  /** One `key: value` entry of the mapping `ctx`, its key at column `col`. */
+  function keyLine(ctx, content, col, line) {
+    const m = content.match(KEY_LINE);
+    if (!m) {
+      errors.push({ line, message: `not a \`key: value\` line: ${content}` });
+      return;
     }
     const [, key, raw = ""] = m;
-    if (fields[key]) errors.push({ line, message: `duplicate key \`${key}\`` });
+    if (ctx.map[key]) {
+      errors.push({ line, message: `duplicate key \`${key}\`` });
+    }
     const field = { raw, value: raw, line };
-    fields[key] = field;
-    open = null;
+    ctx.map[key] = field;
     if (!raw) {
-      open = { field, scalar: false };
-      continue;
-    }
-    if (/^[|>][+-]?\d?$/.test(raw)) {
-      open = { field, scalar: true, folded: raw[0] === ">", parts: [] };
-      field.block = open;
-      continue;
-    }
-    const problem = yamlScalarProblem(raw);
-    if (problem) errors.push({ line, message: `\`${key}\`: ${problem}` });
-    else field.value = unquote(raw);
-  }
-  for (const field of Object.values(fields)) {
-    if (field.block) {
-      field.value = field.block.parts.join(field.block.folded ? " " : "\n");
-      delete field.block;
+      pending = { field, indent: col };
+    } else if (/^[|>][+-]?\d?$/.test(raw)) {
+      scalar = { field, indent: col, folded: raw[0] === ">", parts: [] };
+    } else {
+      const problem = yamlScalarProblem(raw);
+      if (problem) errors.push({ line, message: `\`${key}\`: ${problem}` });
+      else field.value = unquote(raw);
     }
   }
+  closeScalar();
   return { fields, errors };
+}
+
+/** The `key: value` pairs of a one-line flow mapping (`{a: 1, b: 2}`), or null. */
+export function flowMapping(raw) {
+  const m = raw.match(/^\{(.*)\}$/);
+  if (!m) return null;
+  const out = {};
+  for (const part of m[1].split(",")) {
+    const kv = part.trim().match(/^([A-Za-z][\w-]*)\s*:\s*(.*)$/);
+    if (kv) out[kv[1]] = { raw: kv[2].trim(), value: unquote(kv[2].trim()) };
+  }
+  return out;
 }
 
 /** Why a one-line YAML value would fail or change meaning, or null. */
@@ -648,16 +718,15 @@ function checkTables(issues, file, scanned) {
   }
 }
 
-/** `policy.allow_implicit_invocation` of an agents/openai.yaml, or undefined. */
+/**
+ * The raw `policy.allow_implicit_invocation` of an agents/openai.yaml, read
+ * from a nested block or a flow mapping (`policy: {...}`), or undefined.
+ */
 export function readImplicitPolicy(text) {
-  let top = null;
-  for (const line of text.split(/\r?\n/)) {
-    const key = line.match(/^([A-Za-z][\w-]*):/);
-    if (key) top = key[1];
-    const m = line.match(/^\s+allow_implicit_invocation:\s*(.*?)\s*$/);
-    if (m && top === "policy") return m[1];
-  }
-  return undefined;
+  const policy = parseYaml(text.split(/\r?\n/)).fields.policy;
+  if (!policy) return undefined;
+  const entries = policy.children ?? flowMapping(policy.raw) ?? {};
+  return entries.allow_implicit_invocation?.raw;
 }
 
 /**
