@@ -28,6 +28,7 @@ Arguments: $ARGUMENTS
 
 - The title conveys the primary change; the description gives the why and the context, since the diff already shows the what
 - One PR per branch: when the branch already has an open PR, update it instead of creating another, so a re-run after an interruption is safe
+- Paths are relative to this skill's directory (a reference file's paths are relative to that file). Resolve a path to an absolute one before running a command with it: commands run from the user's repository
 
 ## Skill-Specific Guidelines
 
@@ -36,9 +37,9 @@ Arguments: $ARGUMENTS
 Read the `pr` section, the commit style and the shared language once at the start:
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/config.mjs" get pr
-node "${CLAUDE_PLUGIN_ROOT}/scripts/config.mjs" get commit.style
-node "${CLAUDE_PLUGIN_ROOT}/scripts/config.mjs" get defaults.language
+node "../../../scripts/config.mjs" get pr
+node "../../../scripts/config.mjs" get commit.style
+node "../../../scripts/config.mjs" get defaults.language
 ```
 
 With `--run-dir`, add `--run-dir <path>` to each `config.mjs get`: it reads the run's frozen config snapshot (an esp-ship run) in place of the user and project layers, and the live config when the run has none.
@@ -90,13 +91,13 @@ gh pr create --title "<title>" --body "## Summary
 5. Write the title and body in `defaults.language`. The title follows `commit.style` (with `conventional`, the subject below becomes `type(scope): subject`):
    - **Title from the run** (with `--run-dir`): the plan title, the `title` frontmatter key of the plan that `runs.mjs plan --run-dir <path>` names, else the run title (`title` in `<path>/run.json`)
    - **Title from the diff** (otherwise): the primary change across the commits of step 4
-   - **From the run** (with `--run-dir` and `pr.body_from_run`): write a 1-2 sentence summary of why the change exists, then render the body with `node "${CLAUDE_PLUGIN_ROOT}/scripts/runs.mjs" pr-body --run-dir <path> --summary "<summary>" --out <path>/pr-body.md`. It applies `pr.body_sections` and `pr.attribution`.
+   - **From the run** (with `--run-dir` and `pr.body_from_run`): write a 1-2 sentence summary of why the change exists, then render the body with `node "../../../scripts/runs.mjs" pr-body --run-dir <path> --summary "<summary>" --out <path>/pr-body.md`. It applies `pr.body_sections` and `pr.attribution`.
    - **From the diff** (otherwise): pick the size category from the stat and write the body per Size Categories, ending with the attribution line unless `pr.attribution` is `false`.
 6. Look for an open PR on the current branch: `gh pr view --json url,state,isDraft`. A PR with `state` `OPEN` is the existing PR; a non-zero exit (no PR), or a closed or merged PR, means none.
 7. Create or update the PR:
    - **No open PR**: `gh pr create --base <base> --title "<title>"`, plus `--body-file <path>/pr-body.md` for a body from the run or `--body "<body>"` otherwise, plus `--draft` when `-D` or `--draft` is present or `pr.draft` is `true`. Done when `gh` prints the PR URL
    - **Open PR**: `gh pr edit <url> --base <base> --title "<title>"` with the same `--body-file` or `--body`, and leave its draft state as is. Done when `gh` prints the PR URL
-8. With `--run-dir`, record the URL: `node "${CLAUDE_PLUGIN_ROOT}/scripts/runs.mjs" update --run-dir <path> --pr <url>`.
+8. With `--run-dir`, record the URL: `node "../../../scripts/runs.mjs" update --run-dir <path> --pr <url>`.
 9. Report the PR URL and title, as `PR created` or `PR updated`.
 
 ## Output Guidance
@@ -118,7 +119,7 @@ When the branch already had an open PR, the first line is `PR updated: <url>`.
 Failed to create PR: <error message from gh CLI>
 ```
 
-**Called by another skill** (`esp-ship`): end with the reply of `${CLAUDE_PLUGIN_ROOT}/references/decision-policy.md` (Replies):
+**Called by another skill** (`esp-ship`): end with the reply of `../../../references/decision-policy.md` (Replies):
 
 ```markdown
 Status: done

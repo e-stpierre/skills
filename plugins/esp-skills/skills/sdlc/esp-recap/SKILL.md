@@ -40,6 +40,7 @@ Arguments: $ARGUMENTS
 - Read through `recap.mjs`. Open a run file directly only when its path came from the script output
 - Read-only: report from the runs and leave every run directory and the repository unchanged
 - Report what the runs say, not what the code does today. When the two may differ, say so and point to the commit
+- Paths are relative to this skill's directory (a reference file's paths are relative to that file). Resolve a path to an absolute one before running a command with it: commands run from the user's repository
 
 ## Skill-Specific Guidelines
 
@@ -48,7 +49,7 @@ Arguments: $ARGUMENTS
 Read the section once at the start:
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/config.mjs" get recap
+node "../../../scripts/config.mjs" get recap
 ```
 
 If the command exits with code 1 (invalid config), report its error and stop. If `node` is missing, say the skill needs Node 22 and stop.
@@ -59,7 +60,7 @@ If the command exits with code 1 (invalid config), report its error and stop. If
 
 ### Script
 
-For the commands and options, run `node "${CLAUDE_PLUGIN_ROOT}/scripts/recap.mjs" --help`. What the help does not say:
+For the commands and options, run `node "../../../scripts/recap.mjs" --help`. What the help does not say:
 
 - The script takes long option names only: pass `-s 2026-11-01` as `--since 2026-11-01`, and `--run-risk` as `--risk`
 - Every item it returns carries a `source` path
@@ -72,7 +73,7 @@ A digest's `workflow` comes from `summary.md`, and `run_workflow` keeps the `run
 
 ### Fan-Out
 
-When `collect` returns `fan_out: true`, spawn one subagent per entry of `batches`, in parallel, with the Agent tool (`general-purpose`). Each prompt gives the run paths of the batch, the user's question or "recap", and asks the subagent to run `node "<plugin root>/scripts/recap.mjs" show <path>` for each run, read only the files it lists, and return at most 5 lines per run: title, status, what was delivered, the decisions and findings worth attention with their sources. Replace `<plugin root>` with the resolved `${CLAUDE_PLUGIN_ROOT}`. Keep only the returned digests. Without a subagent tool, process the batches one after the other in this session.
+When `collect` returns `fan_out: true`, spawn one subagent per entry of `batches`, in parallel, with the Agent tool (`general-purpose`). Each prompt gives the run paths of the batch, the user's question or "recap", and asks the subagent to run `node "<plugin root>/scripts/recap.mjs" show <path>` for each run, read only the files it lists, and return at most 5 lines per run: title, status, what was delivered, the decisions and findings worth attention with their sources. Replace `<plugin root>` with this skill's `../../..` resolved to an absolute path. Keep only the returned digests. Without a subagent tool, process the batches one after the other in this session.
 
 ## Instructions
 

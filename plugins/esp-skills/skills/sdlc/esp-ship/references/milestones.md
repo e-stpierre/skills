@@ -1,12 +1,12 @@
 # Milestone Loop
 
-The `build` phase of the orchestrated track. `ship.mjs next` returns `phase: build` with `milestone_loop: true`, `plan_path` and `build_resume`. This session runs the loop itself: for each milestone it spawns an `esp-skills:esp-builder` that implements it and commits, then an `esp-skills:esp-verifier` that re-runs the gates and checks the acceptance criteria independently. A failed verification retries the builder, which amends the milestone commit. Exhausted retries halt the build. Every command below is `node "${CLAUDE_PLUGIN_ROOT}/scripts/ship.mjs" milestone <cmd> --run-dir <run-dir>`.
+The `build` phase of the orchestrated track. `ship.mjs next` returns `phase: build` with `milestone_loop: true`, `plan_path` and `build_resume`. This session runs the loop itself: for each milestone it spawns an `esp-skills:esp-builder` that implements it and commits, then an `esp-skills:esp-verifier` that re-runs the gates and checks the acceptance criteria independently. A failed verification retries the builder, which amends the milestone commit. Exhausted retries halt the build. Every command below is `node "../../../../scripts/ship.mjs" milestone <cmd> --run-dir <run-dir>`.
 
 ## Setup
 
 1. `phase build --status started`.
 2. `milestone init --base <git rev-parse HEAD>` (in the working directory `cwd` from `next`). It creates `state.json` from the plan, or syncs it with an amended plan and keeps the done milestones. It is safe to repeat, so a resume runs it too. Its `parallel` output (`mode`, `enabled`, `reason`, `max_parallel`, `worktrees_root`, `batches`) says whether `next` returns parallel batches (`ship.parallel`, see the `-l` argument). Log it once as a low-risk `policy` decision (`Build in parallel batches` or `Build one milestone at a time`, with the reason).
-3. Parse the plan once with `node "${CLAUDE_PLUGIN_ROOT}/scripts/plan.mjs" parse <plan_path>` and keep the milestone blocks.
+3. Parse the plan once with `node "../../../../scripts/plan.mjs" parse <plan_path>` and keep the milestone blocks.
 4. `milestone gates --project-dir <cwd>` once for the full gates, then `milestone gates --milestone <id> --project-dir <cwd>` for each milestone: its `commands` are the scoped checks of its builder and verifier (see gates.md).
 
 ## Loop
@@ -33,8 +33,8 @@ An attempt interrupted while `in-progress` comes back from `next` as a `retry` a
 
 Verifiers are always fresh. Spawn each subagent with the Agent tool, with the `model` and `effort` from `milestone models <id>` (they override the agent frontmatter), in the foreground. Keep each prompt self-contained, and keep only each reply (see Replies in the decision policy). A subagent whose reply has no `Status:` line is a failed attempt with reason `no status line`.
 
-- **Builder** (`esp-skills:esp-builder`): the milestone block from `plan.mjs parse` (ID, title, goal, tasks, files, acceptance criteria, validation), `--run-dir <run-dir>`, step `build-<id>`, the scoped gate commands of the milestone (`commands` from `milestone gates --milestone <id>`), and the working directory. On a retry, add the commit to amend (`next.amend`) and the verifier failures (`failures` and `last_failure` from `milestone next`)
-- **Verifier** (`esp-skills:esp-verifier`): the milestone ID, the acceptance criteria and the validation commands, the expected commit (the `Commit:` line of the builder's reply), the base (from `milestone start`), the expected commit count (`1`), and the gate commands (the scoped commands of the milestone, or the fallback commands the builder named in its `Summary:`)
+- **Builder** (`esp-skills:esp-builder`): the plugin root (`<plugin-root>`, see Phase Subagents in SKILL.md), the milestone block from `plan.mjs parse` (ID, title, goal, tasks, files, acceptance criteria, validation), `--run-dir <run-dir>`, step `build-<id>`, the scoped gate commands of the milestone (`commands` from `milestone gates --milestone <id>`), and the working directory. On a retry, add the commit to amend (`next.amend`) and the verifier failures (`failures` and `last_failure` from `milestone next`)
+- **Verifier** (`esp-skills:esp-verifier`): the plugin root, the milestone ID, the acceptance criteria and the validation commands, the expected commit (the `Commit:` line of the builder's reply), the base (from `milestone start`), the expected commit count (`1`), and the gate commands (the scoped commands of the milestone, or the fallback commands the builder named in its `Summary:`)
 
 The builder also records its reply as step `build-<id>` in `ship.json` (`ship.mjs record`), and a retry replaces that record. The verifier records nothing: this session reads its reply.
 

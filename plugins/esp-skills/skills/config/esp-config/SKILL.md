@@ -38,6 +38,7 @@ Arguments: $ARGUMENTS
 - Every read and write goes through `config.mjs`, which validates each write before saving it
 - Config files hold no secrets (tokens, passwords, API keys)
 - A failed `set` leaves the file unchanged; report the script's error verbatim, it names the key path and the expected type
+- Paths are relative to this skill's directory (a reference file's paths are relative to that file). Resolve a path to an absolute one before running a command with it: commands run from the user's repository
 
 ## Skill-Specific Guidelines
 
@@ -45,7 +46,7 @@ Arguments: $ARGUMENTS
 
 The script merges these layers, lowest to highest precedence:
 
-1. Built-in defaults: `${CLAUDE_PLUGIN_ROOT}/references/config-defaults.json`
+1. Built-in defaults: `../../../references/config-defaults.json`
 2. User config: `~/.esp-skills/config.json` (the `ESP_SKILLS_HOME` environment variable overrides `~/.esp-skills`)
 3. Project config: `<repo>/.esp-skills/config.json`, where `<repo>` is the nearest git root
 4. Frozen snapshot (esp-ship runs): esp-ship freezes the merged config in its run directory on the first call (`config.snapshot.json`, recorded in `ship.json`), so a resumed run keeps the config it started with. `config.mjs --run-dir <path>` reads it: the snapshot replaces the user and project layers, and defaults still fill missing keys. The phase skills esp-ship runs (esp-plan, esp-review, esp-fix-review, esp-pr, esp-merge) pass their `--run-dir` to `config.mjs get`, and the run's scripts (`merge-ready.mjs`, `fix-review.mjs`, `wait-for-review.mjs`, `gates.mjs`) read it from their own `--run-dir`, so the whole run uses the frozen config. A `set` during a run changes only later runs
@@ -54,7 +55,7 @@ Skill arguments override the resolved values in the skill that receives them. Ob
 
 ### Schema
 
-Files are validated against `${CLAUDE_PLUGIN_ROOT}/references/config.schema.json`. Add `"$schema": "https://raw.githubusercontent.com/e-stpierre/skills/main/plugins/esp-skills/references/config.schema.json"` to a config file for editor completion; `init` adds it. Keys marked "Reserved" in the schema belong to skills that are not shipped yet.
+Files are validated against `../../../references/config.schema.json`. Add `"$schema": "https://raw.githubusercontent.com/e-stpierre/skills/main/plugins/esp-skills/references/config.schema.json"` to a config file for editor completion; `init` adds it. Keys marked "Reserved" in the schema belong to skills that are not shipped yet.
 
 ## Instructions
 
@@ -62,7 +63,7 @@ Files are validated against `${CLAUDE_PLUGIN_ROOT}/references/config.schema.json
 2. Build the command; the script takes the key and the value as positionals:
 
    ```bash
-   node "${CLAUDE_PLUGIN_ROOT}/scripts/config.mjs" <action> [key] [value] [--project] [--force] [--file <path>] [--run-dir <path>]
+   node "../../../scripts/config.mjs" <action> [key] [value] [--project] [--force] [--file <path>] [--run-dir <path>]
    ```
 
    - Pass `-P|--project` as `--project`, `-f|--force` as `--force`, `-F|--file` as `--file` and `-d|--run-dir` as `--run-dir`; the script takes long names only

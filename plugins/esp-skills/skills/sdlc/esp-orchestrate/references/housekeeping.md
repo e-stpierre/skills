@@ -54,7 +54,7 @@ The state file keeps the deadline: a wait that is interrupted (the shell killed 
 After a unit merges, `next` returns `housekeep` for it once no other unit runs in that checkout, unless the run has `--no-housekeeping`. The action carries `repo_dir`, `base` and `branch` from the unit's `ship.json`, `pr`, `rebase` (the branches of later `build` units of the same checkout that have not started) and `command`, the full `housekeep.mjs run` line:
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/housekeep.mjs" run --repo-dir <repo_dir> --base <base> --branch <branch> --pr <url> --worktree <path> --rebase <branch>
+node "../../../../scripts/housekeep.mjs" run --repo-dir <repo_dir> --base <base> --branch <branch> --pr <url> --worktree <path> --rebase <branch>
 ```
 
 Run the `command` in the foreground (it only runs git and one `gh pr view`), with its output saved to `<run-dir>/housekeep/<id>.json` (create the directory first), then `orchestrate.mjs housekeep --unit <id> --result <run-dir>/housekeep/<id>.json`. With `skip` in the action (no base known, `args: null`), run nothing and record `--result '{"status": "skipped", "summary": "<skip>"}'`. When the script prints no JSON (a usage error), record `{"status": "failed", "summary": "<the error line>"}`.

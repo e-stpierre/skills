@@ -43,7 +43,7 @@ Arguments: $ARGUMENTS
 - Ask only for what the source and the repository leave open
 - The prompt lives in the run directory (`<run-dir>/prompt.md`), outside the repository
 - The loop runs in the background. This session stays the user's channel to it: it records every correction in `notes.md` and reports the end
-- Run every script with Bash, with the literal `"${CLAUDE_PLUGIN_ROOT}/scripts/..."` path and long option names
+- Run every script with Bash, with long option names. Paths are relative to this skill's directory (a reference file's paths are relative to that file). Resolve a path to an absolute one before running a command with it: commands run from the user's repository
 - Log each decision this session makes with `runs.mjs decision`, when it is made
 
 ## Skill-Specific Guidelines
@@ -53,7 +53,7 @@ Arguments: $ARGUMENTS
 Read the section once at the start:
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/config.mjs" get ralph
+node "../../../scripts/config.mjs" get ralph
 ```
 
 If the command exits with code 1 (invalid config), report its error and stop. If `node` is missing, say the skill needs Node 22 and stop.
@@ -64,7 +64,7 @@ If the command exits with code 1 (invalid config), report its error and stop. If
 
 ### Presets
 
-- **`plan`**: `node "${CLAUDE_PLUGIN_ROOT}/scripts/plan.mjs" parse <source>` exits `0`. The unit is one milestone, picked as the first one not done whose Depends are done, and verified by its Validation lines
+- **`plan`**: `node "../../../scripts/plan.mjs" parse <source>` exits `0`. The unit is one milestone, picked as the first one not done whose Depends are done, and verified by its Validation lines
   - **Tracker**: `Done: M<n>` run notes (esp-plan writes no checklist), with `Started: M<n>`, milestone notes and the pull request URL in the run notes too, so the plan stays unchanged and `plan.mjs parse` keeps passing
   - **Variant**: a plan with its own `## Progress Tracking` checklist (a context section) marks done milestones by checking their boxes instead
   - **Completion**: every milestone done (plus the pull request, when the plan ends with one)
@@ -86,8 +86,8 @@ A path that does not exist is an error, not free text: report it and stop.
 
 While the loop runs, treat every message from the user that is about the loop as a correction for the next iteration:
 
-1. Find the run: the run directory this session launched, or `node "${CLAUDE_PLUGIN_ROOT}/scripts/runs.mjs" index --status running --workflow esp-ralph` when it is not known.
-2. Record the message, in the user's words: `node "${CLAUDE_PLUGIN_ROOT}/scripts/runs.mjs" notes --append "<message>" --from operator --run-dir <run-dir>`.
+1. Find the run: the run directory this session launched, or `node "../../../scripts/runs.mjs" index --status running --workflow esp-ralph` when it is not known.
+2. Record the message, in the user's words: `node "../../../scripts/runs.mjs" notes --append "<message>" --from operator --run-dir <run-dir>`.
 3. Confirm in one line that the next iteration applies it. The iteration running now does not see it.
 
 A request to stop, pause or cancel is recorded the same way (`Stop the loop: <reason>`): the next iteration ends the loop with `status: blocked`. To stop at once instead, stop the workflow task itself.
@@ -102,14 +102,14 @@ A request to stop, pause or cancel is recorded the same way (`Stop the loop: <re
    - Otherwise continue with step 4. Done when the task file is known, or the build is next.
 4. **Detect and build**: pick the preset (see Presets), read the template, the example of the preset, `esp-iterator.md`, the source in full, `AGENTS.md`, `CLAUDE.md` and the package scripts. Fill every slot (see Slot Sources), following the filling rules at the top of the template. For each slot still empty, ask with `AskUserQuestion`: at most four questions in one call, each with a recommended default first. Headless, use the slot's template default, or your best reading of the source when it has none, and keep each choice to log as a decision in step 5.1. Done when every slot has content and nothing in the draft repeats a rule of `esp-iterator.md`.
 5. **Review**:
-   1. Create the run, or reuse `--run-dir`: `node "${CLAUDE_PLUGIN_ROOT}/scripts/runs.mjs" create <slug> --workflow esp-ralph --title "<title>" --repo <repo> --branch <branch>` (it prints `run_dir`). Log the headless choices of step 4 as decisions.
+   1. Create the run, or reuse `--run-dir`: `node "../../../scripts/runs.mjs" create <slug> --workflow esp-ralph --title "<title>" --repo <repo> --branch <branch>` (it prints `run_dir`). Log the headless choices of step 4 as decisions.
    2. Write the prompt to `<run-dir>/prompt.md` with the Write tool. Check that it holds no `{{`, no `<!--` and no `ralph_complete`, `ralph_failed` or `promise` block.
    3. Without `--yes` and in an interactive session, show the path and the summary (see Templates), then ask with `AskUserQuestion`: **Launch** (recommended), **Edit** or **Cancel**. On Edit, apply the user's change to `prompt.md` (or wait for them to edit it), show the summary again and ask again. On Cancel, run `runs.mjs update --status canceled --run-dir <run-dir>`, log the decision, and stop.
    4. Done when the user chose Launch, or `--yes` or a headless session skipped the question.
 6. **Launch**:
    1. With a reused run, set it running again: `runs.mjs update --status running --run-dir <run-dir>`. With `--prompt` and no run, create one as in step 5.1, taking the title and the repository from the prompt's `# Ralph Task:` and `**Repository**:` lines (else the file name and the current repository), then copy the prompt file unchanged to `<run-dir>/prompt.md` and take that copy as the task file, so `--run-dir` can resume the run.
    2. Log the launch as a decision (`phase: launch`, the preset, `max_iterations`, the agent type, `refs`: the prompt path).
-   3. Call the Workflow tool with `name: "esp-skills:esp-ralph-loop"` and `args: { task: "<prompt path>", run_dir: "<run-dir>", max_iterations: <n>, no_progress_limit: <n>, allow_subagents: <bool> }`, adding `plugin_root: "${CLAUDE_PLUGIN_ROOT}"` (the expanded absolute path) with `allow_subagents`, and `model` and `effort` only when set. It returns at once; the loop runs in the background.
+   3. Call the Workflow tool with `name: "esp-skills:esp-ralph-loop"` and `args: { task: "<prompt path>", run_dir: "<run-dir>", max_iterations: <n>, no_progress_limit: <n>, allow_subagents: <bool>, plugin_root: "<plugin-root>" }`, where `<plugin-root>` is this skill's `../../..` resolved to an absolute path, adding `model` and `effort` only when set. It returns at once; the loop runs in the background.
    4. Tell the user it started, with the run directory and how to steer and stop it (see Output Guidance). Done when the Workflow call returned a task ID.
 7. **Steer**: until the workflow ends, record each user message about the loop (see Steering).
 8. **Report**: when the workflow's notification arrives, read its return value (`reason`, `blocker`, `run_dir`, `iterations`, `commits`):

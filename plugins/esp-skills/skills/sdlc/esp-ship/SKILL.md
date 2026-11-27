@@ -62,7 +62,7 @@ Arguments: $ARGUMENTS
 
 - This session orchestrates. It runs the inline phases itself and spawns every other phase in a fresh subagent, keeping only each short reply. Details stay in the run directory
 - `ship.mjs next` decides the phase, the model and the loop. Every state change goes through `ship.mjs` and `runs.mjs`, the only writers of `ship.json` (with its step records), `state.json`, `run.json` and `decisions.jsonl`
-- Run every script with Bash, with the literal `"${CLAUDE_PLUGIN_ROOT}/scripts/..."` path. The scripts take long option names only, and `--reviewers` as one comma-separated value
+- Run every script with Bash. Paths are relative to this skill's directory (a reference file's paths are relative to that file). Resolve a path to an absolute one before running a command with it: commands run from the user's repository. The scripts take long option names only, and `--reviewers` as one comma-separated value
 - The inline track makes one implementation commit. The orchestrated track makes one verified commit per milestone. Review fixes are separate review-fix commits, titled per `commit.style` (`plain`: `Fix review findings: <summary>`, `conventional`: `fix(review): <summary>`)
 - A milestone is done only when an independent `esp-verifier` passes it: the builder's own report never counts
 - A halted task stays unmerged. Push only the task branch, force-push only after a rebase of the task branch, and respect branch protection
@@ -75,10 +75,10 @@ Arguments: $ARGUMENTS
 Read the sections once at the start, from the repository the task ships in: pass `--project-dir <repo-root>` to each command (`--project-dir` when given, else the git root of the current directory), so the project layer is the one of that repository. When the run directory already exists (`--resume`, or `--run-dir` naming a run started by esp-plan), add `--run-dir <run-dir>` to each command, so a resumed run reads its frozen config:
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/config.mjs" get ship --project-dir <repo-root>
-node "${CLAUDE_PLUGIN_ROOT}/scripts/config.mjs" get fix-review --project-dir <repo-root>
-node "${CLAUDE_PLUGIN_ROOT}/scripts/config.mjs" get pr --project-dir <repo-root>
-node "${CLAUDE_PLUGIN_ROOT}/scripts/config.mjs" get defaults --project-dir <repo-root>
+node "../../../scripts/config.mjs" get ship --project-dir <repo-root>
+node "../../../scripts/config.mjs" get fix-review --project-dir <repo-root>
+node "../../../scripts/config.mjs" get pr --project-dir <repo-root>
+node "../../../scripts/config.mjs" get defaults --project-dir <repo-root>
 ```
 
 If a command exits with code 1 (invalid config), report its error and stop. If it cannot run at all (no `node`), stop: the dispatch needs the scripts. `ship.mjs` applies most `ship.*` keys itself (phases, budgets, inline limits) and `pr.draft`; the reference file of each phase names the keys it reads. This session reads directly:
@@ -92,7 +92,7 @@ If a command exits with code 1 (invalid config), report its error and stop. If i
 
 ### Task State
 
-`scripts/ship.mjs` owns `<run-dir>/ship.json`, and `ship.mjs milestone <cmd>` owns `<run-dir>/state.json`. Every command takes `--run-dir <path>`. `node "${CLAUDE_PLUGIN_ROOT}/scripts/ship.mjs" --help` lists every command with its options. The ones with rules of their own:
+`scripts/ship.mjs` owns `<run-dir>/ship.json`, and `ship.mjs milestone <cmd>` owns `<run-dir>/state.json`. Every command takes `--run-dir <path>`. `node "../../../scripts/ship.mjs" --help` lists every command with its options. The ones with rules of their own:
 
 - **`budget`**, **`scope`**, **`gate-failure`**, **`switch-track`**: the inline limits and the move to the orchestrated track (see inline.md)
 - **`workspace`**, **`worktree`**: see workspace.md
@@ -128,14 +128,14 @@ Spawn each subagent phase with the Agent tool, `subagent_type: general-purpose`,
 
 ```markdown
 You run one phase of an esp-ship task. Read <plugin-root>/skills/<path>/SKILL.md and follow its Instructions as if
-invoked with: <arguments>. In that file, ${CLAUDE_PLUGIN_ROOT} means <plugin-root>.
+invoked with: <arguments>. Paths in that file are relative to its directory.
 Work in <cwd>. You are a subagent: return any question in your reply (interactive mode off); wait in the foreground, at most
 10 minutes per command, when the skill says to wait in the background.
 <extra context>
 End with the reply that file's Output Guidance describes (Status, Summary, ... lines), and nothing after it.
 ```
 
-`<plugin-root>` is the value of `${CLAUDE_PLUGIN_ROOT}` in this session (`echo "${CLAUDE_PLUGIN_ROOT}"`). `<arguments>` uses long option names. Every phase skill that takes it also gets `--run-dir <run-dir>`. User messages received since the last phase go in `<extra context>` (see User Messages).
+`<plugin-root>` is this skill's `../../..` resolved to an absolute path. `<arguments>` uses long option names. Every phase skill that takes it also gets `--run-dir <run-dir>`. User messages received since the last phase go in `<extra context>` (see User Messages).
 
 Before spawning a phase, record `phase <name> --status started`. After it returns, act on the `Status:` line of its reply: `done` records `phase <name> --status done`. `halted` runs `ship.mjs stop --status halted --reason <summary>` (the phase logged its Halt decision). `needs-decision` runs `ship.mjs stop --status awaiting-human` with the question as the reason, and `failed` runs `ship.mjs stop --status failed`, unless Waiting and Open Items says otherwise. A subagent whose reply has no `Status:` line counts as `failed` with reason `no status line`. The facts a later step needs (findings, open items, the merge) are in the step the phase skill recorded with `ship.mjs record`, not in the reply.
 

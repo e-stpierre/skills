@@ -27,6 +27,7 @@ Arguments: $ARGUMENTS
 - The title names the main task completed: 50 characters ideal, 120 at most
 - The description is 1-5 bullets on the key aspects of a substantial change; a small change has none
 - Never commit on the repository default branch or on a detached HEAD, unless the user explicitly asked in this conversation to commit on the default branch
+- Paths are relative to this skill's directory (a reference file's paths are relative to that file). Resolve a path to an absolute one before running a command with it: commands run from the user's repository
 
 ## Skill-Specific Guidelines
 
@@ -35,8 +36,8 @@ Arguments: $ARGUMENTS
 Read the `commit` section and the shared language once at the start:
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/config.mjs" get commit
-node "${CLAUDE_PLUGIN_ROOT}/scripts/config.mjs" get defaults.language
+node "../../../scripts/config.mjs" get commit
+node "../../../scripts/config.mjs" get defaults.language
 ```
 
 If a command exits with code 1 (invalid config), report its error and stop. If it cannot run at all (no `node`), continue with the defaults.
