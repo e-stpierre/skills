@@ -1,7 +1,7 @@
 ---
 name: esp-ship
 description: Ship a task to a merged pull request, inline or as verified milestones. Use to take a task, an issue or a plan to a merged PR, to adopt an open PR through its review fixes and merge, or to ship one unit of a multi-PR change.
-argument-hint: "[-u|--resume] [-w|--worktree] [-b|--branch <name>] [-P|--no-pr] [-M|--no-merge] [-D|--draft] [-l|--parallel] [-t|--track <track>] [-L|--plan-mode <mode>] [-R|--review <mode>] [-a|--model <alias>] [-m|--max-rounds <n>] [-r|--reviewers <name>...] [-i|--interactive <mode>] [-d|--run-dir <path>] [-p|--pr <url>] [-g|--merge-policy <policy>] [-c|--checks <mode>] [-T|--parent-run <path>] [-C|--project-dir <path>] [context]"
+argument-hint: "[-u|--resume] [-w|--worktree] [-b|--branch <name>] [-P|--no-pr] [-M|--no-merge] [-D|--draft] [-l|--parallel] [-t|--track <track>] [-L|--plan-mode <mode>] [-R|--review <mode>] [-a|--model <model>] [-m|--max-rounds <n>] [-r|--reviewers <name>...] [-i|--interactive <mode>] [-d|--run-dir <path>] [-p|--pr <url>] [-g|--merge-policy <policy>] [-c|--checks <mode>] [-T|--parent-run <path>] [-C|--project-dir <path>] [context]"
 ---
 
 # ESP Ship
@@ -22,14 +22,14 @@ Take any task (a one-line fix, a feature prompt, a GitHub issue, a plan from `es
 - **`[-P|--no-pr]`** (optional): Stop after the last commit and the internal review: no push, no pull request.
 - **`[-M|--no-merge]`** (optional): Stop after the pull request review fixes, with the pull request left open.
 - **`[-D|--draft]`** (optional): Open the pull request as a draft. Defaults to `pr.draft` (`false`). The pull request stays as opened: esp-ship never marks it ready, so a draft ends the task before the merge (esp-merge never merges a draft), with `awaiting-human` and the pull request left open.
-- **`[-l|--parallel]`** (optional): Build milestones whose dependencies are done and whose files do not overlap at the same time, each in its own worktree, even when `ship.parallel` would not. Without it, `ship.parallel` decides (`auto`: on when the plan has a batch of two or more such milestones and `worktrees.root` is usable). Recorded in `ship.json`, so a resume keeps it.
+- **`[-l|--parallel]`** (optional): Build milestones whose dependencies are done and whose files do not overlap at the same time, each in its own worktree, even when `ship.parallel` would not. Without the flag, `ship.parallel` decides (`auto`: on when the plan has a batch of two or more such milestones and `worktrees.root` is usable). Recorded in `ship.json`, so a resume keeps it. In a harness without parallel subagents, the milestones of a batch are built one after another in the main tree, with the same gates (see [milestones.md](references/milestones.md)).
 - **`[-t|--track <track>]`** (optional): `inline` or `orchestrated`. Pins the track instead of letting triage pick it.
 - **`[-L|--plan-mode <mode>]`** (optional): `auto`, `skip` or `always`. `skip` uses no planning model: a plan file is reused, a task list imported, a small request runs inline, and a larger one gets a synthesized one-milestone plan. `always` generates a plan even for a small prompt. Defaults to `ship.plan_mode` (`auto`).
 - **`[-R|--review <mode>]`** (optional): `auto`, `internal`, `pr`, `both` or `none`. `internal` keeps only the internal review, `pr` only the bot review rounds, `none` drops both (the merge still needs green checks). `auto` keeps the bot review and decides the internal review after the build from the real diff (see review.md). Defaults to `ship.review_mode` (`auto`).
-- **`[-a|--model <alias>]`** (optional): Builder model for every milestone: `opus`, `sonnet`, `haiku` or `fable`. Overrides the complexity-based choice. The verifier keeps its role model. Recorded in `ship.json`, so a resume keeps it.
+- **`[-a|--model <model>]`** (optional): Builder model for every milestone: a tier (`low`, `medium` or `high`, resolved through `defaults.models.builder.<tier>`), a Claude Code alias (`opus`, `sonnet`, `haiku` or `fable`) or a harness model name (`gpt-5.5-codex`), see [model-selection.md](../../../references/model-selection.md). Overrides the complexity-based choice. The verifier keeps its role model. Recorded in `ship.json`, so a resume keeps it.
 - **`[-m|--max-rounds <n>]`** (optional): Pull request fix rounds. Defaults to `fix-review.max_rounds` (`3`).
 - **`[-r|--reviewers <name>...]`** (optional): Reviewer names from `fix-review.wait.reviewers` (`claude`, `codex`) or GitHub logins, repeated (`-r claude -r codex`) or comma-separated. Defaults to `fix-review.wait.default_reviewers`.
-- **`[-i|--interactive <mode>]`** (optional): `off`, `plan` or `all`. `plan` approves the plan (or the inline approach), then runs on its own. `all` also stops at the internal review findings, before and after each pull request fix round, and before the merge. Defaults to `defaults.interactive` (`off`). Headless sessions and subagents always use `off`.
+- **`[-i|--interactive <mode>]`** (optional): `off`, `plan` or `all`. `plan` approves the plan (or the inline approach), then runs on its own. `all` also stops at the internal review findings, before and after each pull request fix round, and before the merge. Defaults to `defaults.interactive` (`off`). Non-interactive sessions and subagents always use `off`.
 - **`[-d|--run-dir <path>]`** (optional): Run directory to use or to resume. Without it, the skill creates its run under `runs.root`. The config is frozen in `ship.json` on the first call.
 - **`[-p|--pr <url>]`** (optional): Adopt an open pull request (`https://<host>/<owner>/<repo>/pull/<n>`) instead of starting from a task: no triage, the inline track, its head branch checked out, then the review wait, the fix rounds and the merge. Context, implement and the pull request phase are skipped. Cannot be combined with `--no-pr` or `--track orchestrated`.
 - **`[-g|--merge-policy <policy>]`** (optional): Who merges the pull request: `auto` (esp-merge merges it), `human` (wait for a person to merge it, up to `merge.human_wait_minutes`) or `none` (skip the merge phase, with the pull request left open). Defaults to `ship.merge_policy` (`auto`).
@@ -41,6 +41,8 @@ Take any task (a one-line fix, a feature prompt, a GitHub issue, a plan from `es
 ### Values
 
 Arguments: $ARGUMENTS
+
+If the line above holds no arguments or an unreplaced placeholder, read them from the message that invoked this skill.
 
 ## Additional Resources
 
@@ -60,9 +62,9 @@ Arguments: $ARGUMENTS
 
 ## Core Principles
 
-- This session orchestrates. It runs the inline phases itself and spawns every other phase in a fresh subagent, keeping only each short reply. Details stay in the run directory
+- This session orchestrates. It runs the inline phases itself and delegates every other phase to a subagent with a fresh context window, keeping only each short reply (without subagents, it runs them in this session, with the same gates, approvals and saved state). Details stay in the run directory
 - `ship.mjs next` decides the phase, the model and the loop. Every state change goes through `ship.mjs` and `runs.mjs`, the only writers of `ship.json` (with its step records), `state.json`, `run.json` and `decisions.jsonl`
-- Run every script with Bash. Paths are relative to this skill's directory (a reference file's paths are relative to that file). Resolve a path to an absolute one before running a command with it: commands run from the user's repository. A bare script name (`ship.mjs`) or `scripts/<name>` is the plugin's script, `../../../scripts/<name>` from this directory. The scripts take long option names only, and `--reviewers` as one comma-separated value
+- Run every script with a shell. Paths are relative to this skill's directory (a reference file's paths are relative to that file). Resolve a path to an absolute one before running a command with it: commands run from the user's repository. A bare script name (`ship.mjs`) or `scripts/<name>` is the plugin's script, `../../../scripts/<name>` from this directory. The scripts take long option names only, and `--reviewers` as one comma-separated value
 - The inline track makes one implementation commit. The orchestrated track makes one verified commit per milestone. Review fixes are separate review-fix commits, titled per `commit.style` (`plain`: `Fix review findings: <summary>`, `conventional`: `fix(review): <summary>`)
 - A milestone is done only when an independent `esp-verifier` passes it: the builder's own report never counts
 - A halted task stays unmerged. Push only the task branch, force-push only after a rebase of the task branch, and respect branch protection
@@ -124,7 +126,12 @@ If a command exits with code 1 (invalid config), report its error and stop. If i
 
 ### Phase Subagents
 
-Spawn each subagent phase with the Agent tool, `subagent_type: general-purpose`, with the `model` and `effort` from `next` (omit `model` when it is `inherit`). Record it with `runs.mjs update --model <role>=<model>[:<effort>]`. Run it in the foreground. The prompt is self-contained:
+Delegate each subagent phase to a subagent with a fresh context window, briefed with the phase prompt below, with the `model` and `effort` from `next` (pass no model when it is `inherit`; model-selection.md maps a value to the harness). Record it with `runs.mjs update --model <role>=<model>[:<effort>]`. Run it in the foreground and wait for its reply.
+
+- In Claude Code, use the `general-purpose` agent type, with its `model` and `effort` parameters.
+- Without subagents, follow the phase prompt in this session: read the phase skill and run its Instructions with the same arguments and interactive mode off, then act on its reply exactly as on a subagent reply. The gates, the checkpoints and the step records stay the same.
+
+The prompt is self-contained:
 
 ```markdown
 You run one phase of an esp-ship task. Read <plugin-root>/skills/<path>/SKILL.md and follow its Instructions as if
@@ -139,7 +146,9 @@ End with the reply that file's Output Guidance describes (Status, Summary, ... l
 
 Before spawning a phase, record `phase <name> --status started`. After it returns, act on the `Status:` line of its reply: `done` records `phase <name> --status done`. `halted` runs `ship.mjs stop --status halted --reason <summary>` (the phase logged its Halt decision). `needs-decision` runs `ship.mjs stop --status awaiting-human` with the question as the reason, and `failed` runs `ship.mjs stop --status failed`, unless Waiting and Open Items says otherwise. A subagent whose reply has no `Status:` line counts as `failed` with reason `no status line`. The facts a later step needs (findings, open items, the merge) are in the step the phase skill recorded with `ship.mjs record`, not in the reply.
 
-The milestone builders and verifiers are not phase subagents: this session spawns them as `esp-skills:esp-builder` and `esp-skills:esp-verifier` (see milestones.md).
+The milestone builders and verifiers are not phase subagents: this session briefs them with [esp-builder.md](../../../agents/esp-builder.md) and [esp-verifier.md](../../../agents/esp-verifier.md) (see milestones.md).
+
+In Claude Code, they are the `esp-skills:esp-builder` and `esp-skills:esp-verifier` agent types.
 
 ### Waiting and Open Items
 
@@ -148,7 +157,7 @@ The milestone builders and verifiers are not phase subagents: this session spawn
 
 ### Interactive Checkpoints
 
-Only in `plan` or `all` mode (step 1 resolves the mode to `off` when headless or in a subagent). This session does the asking, logs each answer with `runs.mjs decision` (`source: operator`), and passes it to the next subagent in its prompt:
+Only in `plan` or `all` mode (step 1 resolves the mode to `off` in a non-interactive session or in a subagent). This session does the asking: it asks the user, with the session's question tool if it has one, otherwise in plain text, one question at a time with the recommended answer first. It logs each answer with `runs.mjs decision` (`source: operator`), and passes it to the next subagent in its prompt:
 
 - **After the plan, or after the inline context phase** (`plan`, `all`): approve the plan (title, milestones, risks, open questions) or the approach and the files, or give feedback. Feedback runs the plan again with `--amend`
 - **Before each internal fix** (`all`): the findings by class (`outputs.by_class` of the `review-<N>` step in `ship.json`, details in its `outputs.findings_path`). Fix as recommended, or choose for the B items
@@ -162,7 +171,7 @@ A message the user sends while the task runs is read at the next phase or milest
 
 ## Instructions
 
-1. **Parse arguments**: read each option by its short or long name (`-w` or `--worktree`, `-m 2` or `--max-rounds 2`, `--track=inline` too), and the trailing `[context]`. Collect every `-r`/`--reviewers` value into one comma-separated list. Resolve the interactive mode: `-i`/`--interactive`, else `defaults.interactive`, `off` when headless or in a subagent. No `[context]` on a new run is fine when `--run-dir` names a run whose plan exists (`runs.mjs plan --run-dir <path>` prints `version` above `0`): the run ships that plan. `--pr` needs no `[context]`. `--resume` without `--run-dir`, `--resume` on a run without `ship.json`, an unknown `--track`, `--plan-mode`, `--review`, `--model`, `--merge-policy` or `--checks` value, `--pr` that is not a pull request URL or that comes with `--no-pr` or `--track orchestrated`, or no `[context]` on a new run without a plan (and without `--pr`) is a usage error: report it and stop.
+1. **Parse arguments**: read each option by its short or long name (`-w` or `--worktree`, `-m 2` or `--max-rounds 2`, `--track=inline` too), and the trailing `[context]`. Collect every `-r`/`--reviewers` value into one comma-separated list. Resolve the interactive mode: `-i`/`--interactive`, else `defaults.interactive`, `off` in a non-interactive session or in a subagent. No `[context]` on a new run is fine when `--run-dir` names a run whose plan exists (`runs.mjs plan --run-dir <path>` prints `version` above `0`): the run ships that plan. `--pr` needs no `[context]`. `--resume` without `--run-dir`, `--resume` on a run without `ship.json`, an unknown `--track`, `--plan-mode`, `--review`, `--model`, `--merge-policy` or `--checks` value, `--pr` that is not a pull request URL or that comes with `--no-pr` or `--track orchestrated`, or no `[context]` on a new run without a plan (and without `--pr`) is a usage error: report it and stop.
 2. **Load configuration** (see Configuration). Done when the four sections are read.
 3. **Preflight**: on the repository the task ships in (`<repo-root>`: `--project-dir`, else the git root of the current directory), a git repository, and `gh auth status` succeeds unless `--no-pr`. With `--pr`, `gh pr view <url> --json state` reports it `OPEN`. A dirty working tree is fine (the branch phase moves the task to a worktree, see [workspace.md](references/workspace.md)), except with `--branch` naming the current branch, or with `ship.dirty_tree: fail`. Otherwise report it and stop with `status: failed`.
 4. **Resolve the run**: with `--run-dir`, use it (`runs.mjs create --run-dir <path>` is a no-op on an existing run). Otherwise `runs.mjs create <slug> --title <task title> --workflow esp-ship --repo <owner/name or repo path> --project-dir <repo-root>`, adding `--parent <parent-run>` with `--parent-run`, so the parent lists the run from the start. Resolve the base: with `--pr`, its base branch (`gh pr view <url> --json baseRefName`), else `pr.base`, else the default branch of `<repo-root>`. Done when the run directory exists and the base is named.
@@ -207,4 +216,4 @@ Inline track:
 - **Summary**: ~/.esp-skills/runs/2026-11-10-status-json/summary.md
 ```
 
-For a track switch, name the trigger and the reason. For a halt or `awaiting-human`, name the phase, the blocker, the pull request (left open), and what would unblock it: the next command is `/esp-skills:esp-ship --resume --run-dir <run-dir>`.
+For a track switch, name the trigger and the reason. For a halt or `awaiting-human`, name the phase, the blocker, the pull request (left open), and what would unblock it: the next step is to run the esp-ship skill with `--resume --run-dir <run-dir>`.
