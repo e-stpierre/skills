@@ -56,7 +56,7 @@ If the line above holds no arguments or an unreplaced placeholder, read them fro
   - For the branch, the worktree and the preflight of the tree, see [workspace.md](references/workspace.md)
   - For the gate commands, the scoped checks and the final gates, see [gates.md](references/gates.md)
 - For the classes, the stop conditions, asking outside an interactive session and the reply every subagent ends with (Replies), see [decision-policy.md](../../../references/decision-policy.md): read it before asking, halting, or acting on the first subagent reply
-- For the subagent models, see [model-selection.md](../../../references/model-selection.md): read it when `next` gives no model
+- For the subagent models, see [model-selection.md](../../../references/model-selection.md): read it when `next` gives no model, or a model that is not an alias of the harness
 - For `summary.md`, see [summary-template.md](../../../references/summary-template.md): read it in step 9
 - For the run directory commands, see [run-directory.md](../../../references/run-directory.md): read it when a `runs.mjs` call fails
 

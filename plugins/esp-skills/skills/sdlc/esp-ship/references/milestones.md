@@ -22,6 +22,7 @@ For one milestone:
 
 1. **Operator notes**: record each user message received since the last milestone (see User Messages in SKILL.md). The builder reads it from `notes.md`.
 2. **Start**: `milestone start <id> --base <git rev-parse HEAD>` (a retry keeps and prints the base of the first attempt), then `milestone models <id>` (it applies the `--model` recorded in `ship.json`). Record the models with `runs.mjs update --model builder=<model>[:<effort>] --model verifier=<model>`.
+   - In Claude Code, a model that is not an alias follows the Rules of [model-selection.md](../../../../references/model-selection.md): spawn that role with no model, record `<role>=inherit`, and log the low-risk `policy` decision.
 3. **Build**: `milestone reuse <id>` decides whether the last builder continues (see Builder Reuse). On `reuse`, continue that builder. On `fresh`, spawn a new one (see Spawning). Then, when the harness returns an agent ID for the subagent, record the builder with `milestone agent <id> --agent-id <agent-id> --tokens <tokens>`, the tokens as the subagent result reports them (leave `--tokens` out when it reports none). Without an agent ID, skip this record: the next `reuse` returns `fresh`. A continued builder does not reread `notes.md`: pass it the operator lines recorded in step 1.
 4. **Builder outcome**: read the `Status:` line of its reply. `halted` or `needs-decision` follows Halting. `failed` with no commit runs `milestone finish <id> --status failed --reason <first blocker>`, then loop.
 5. **Verify**: spawn the verifier with the builder's commit.

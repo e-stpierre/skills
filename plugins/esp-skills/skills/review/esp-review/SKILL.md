@@ -38,7 +38,7 @@ If the line above holds no arguments or an unreplaced placeholder, read them fro
 - For the reviewer's method, finding format and severity scale, see [esp-reviewer.md](../../../agents/esp-reviewer.md): read it in step 7 when the reviewer runs inline
 - For `codex.mjs` and Codex failures, see [esp-codex](../../runtime/esp-codex/SKILL.md): read it when the Codex second opinion fails with an unknown cause
 - For the finding classes and the reply format (Replies), see [decision-policy.md](../../../references/decision-policy.md): read it before the interactive review or the report
-- For the reviewer model and effort, see [model-selection.md](../../../references/model-selection.md): read it when `defaults.models.reviewer` is not set
+- For the reviewer model and effort, see [model-selection.md](../../../references/model-selection.md): read it when `defaults.models.reviewer` is not set or its model is not an alias of the harness
 
 ## Core Principles
 
@@ -101,6 +101,7 @@ Then run it in a fresh context. The choice depends only on the harness, never on
 
 - **Subagent available** (the session can delegate and is not itself a subagent): delegate to a subagent with a fresh context window, briefed with `../../../agents/esp-reviewer.md` and the prompt above, with the model and effort of the `reviewer` role (`defaults.models.reviewer`), and wait for its reply in the foreground before the next step. With `--run-dir`, record the model with `runs.mjs update --model reviewer=<model>[:<effort>]` before delegating.
   - In Claude Code, use the `esp-skills:esp-reviewer` agent type.
+  - In Claude Code, a model that is not an alias follows the Rules of [model-selection.md](../../../references/model-selection.md): spawn the reviewer with no model, record `reviewer=inherit`, and log the low-risk `policy` decision.
 - **Otherwise** (a harness without subagents, or already inside a subagent): read `../../../agents/esp-reviewer.md` and follow its Methodology and Output Guidance in this session, read-only, with the plugin root above standing in for `<plugin-root>`.
 
 Keep only the reviewer's reply. Save it verbatim to `review_path`.
