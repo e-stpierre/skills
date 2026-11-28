@@ -46,7 +46,7 @@ Arguments: $ARGUMENTS
 - Commit (internal mode) or push (pull request mode) only code that passes the full gates (see Committing Fixes)
 - Review fixes are new commits on top of the branch, pushed with a plain `git push`: no amend of a milestone commit, no force-push, no rewrite of pushed history
 - Record every resolution with `fix-review.mjs record` when it is made. A handled item is never processed again, and the round limit is never exceeded
-- Run every script with Bash, with the literal `"${CLAUDE_PLUGIN_ROOT}/scripts/..."` path. Replies, thread resolutions and the outcome always go through `fix-review.mjs`
+- Run every script with Bash. Paths are relative to this skill's directory (a reference file's paths are relative to that file). Resolve a path to an absolute one before running a command with it: commands run from the user's repository. A bare script name (`fix-review.mjs`) or `scripts/<name>` is the plugin's script, `../../../scripts/<name>` from this directory. Replies, thread resolutions and the outcome always go through `fix-review.mjs`
 - In GitHub replies, name a finding `item 4` or `finding 4`: GitHub links `#<number>` to an issue
 
 ## Skill-Specific Guidelines
@@ -56,10 +56,10 @@ Arguments: $ARGUMENTS
 Read the sections once at the start:
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/config.mjs" get fix-review
-node "${CLAUDE_PLUGIN_ROOT}/scripts/config.mjs" get commit
-node "${CLAUDE_PLUGIN_ROOT}/scripts/config.mjs" get defaults
-node "${CLAUDE_PLUGIN_ROOT}/scripts/config.mjs" get ship
+node "../../../scripts/config.mjs" get fix-review
+node "../../../scripts/config.mjs" get commit
+node "../../../scripts/config.mjs" get defaults
+node "../../../scripts/config.mjs" get ship
 ```
 
 With `--run-dir`, add `--run-dir <path>` to each `config.mjs get`: it reads the run's frozen config snapshot (an esp-ship run) in place of the user and project layers, and the live config when the run has none.
@@ -73,7 +73,7 @@ If a command exits with code 1 (invalid config), report its error and stop. If i
 - **`fix-review.wait.reviewers`** (`claude` as `claude[bot]`, `codex` as `chatgpt-codex-connector[bot]` with trigger `@codex review`): reviewer names, GitHub logins and trigger comments
 - **`fix-review.wait.default_reviewers`** (`["claude"]`): reviewers waited for when `--reviewers` is not given
 - **`fix-review.wait.timeout_minutes`** (`30`): time limit of each wait when `--timeout` is not given
-- **`fix-review.wait.*`** (the other keys): read by `wait-for-review.mjs` itself (polling, trigger comments, checks grace), see `${CLAUDE_PLUGIN_ROOT}/references/config.schema.json`
+- **`fix-review.wait.*`** (the other keys): read by `wait-for-review.mjs` itself (polling, trigger comments, checks grace), see `../../../references/config.schema.json`
 - **`commit.style`** (`plain`) and **`commit.co_author`** (`true`): the title format and the attribution trailer of the fix commits (see Committing Fixes)
 - **`ship.halt_on`** (every key): with `budget`, rounds exhausted with items left halt the task. With `critical-security`, an unfixable critical item halts
 - **`defaults.interactive`** (`off`): interactive mode when `--interactive` is not given
@@ -126,7 +126,7 @@ With `--run-dir`, `record` logs the decision (`phase: fix-review`, `x-esp-class`
 The wait command:
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/wait-for-review.mjs" <pr> --reviewers <a,b> --checks [--timeout-minutes <n>] --state <state-file> [--run-dir <path>]
+node "../../../scripts/wait-for-review.mjs" <pr> --reviewers <a,b> --checks [--timeout-minutes <n>] --state <state-file> [--run-dir <path>]
 ```
 
 - `--reviewers`: the reviewer names joined with commas. Leave it out to wait for `fix-review.wait.default_reviewers`. For a checks-only wait, pass `--reviewers ""`: `--checks` still waits for the checks. `--timeout-minutes`: the `--timeout` value, left out without it.
@@ -162,7 +162,7 @@ A critical security or data-loss item that you cannot fix with high confidence i
 - Group the fixes of a round by size. Small, local fixes go together in one commit, whose body lists each fix with its item URL or finding ID. A large or structurally separate fix gets its own commit. A fix that answers both a comment and a failing check is one commit that names both.
 - Titles follow `commit.style`: `plain` gives `Fix review findings: <summary>` and `Fix CI: <summary>`, `conventional` gives `fix(review): <summary>` and `fix(ci): <summary>`.
 - Commit with git directly, with the message in `defaults.language`. Every other title and trailer rule (the `commit.co_author` trailer included) follows [esp-commit](../../git/esp-commit/SKILL.md).
-- While fixing, run the scoped checks of the files you touched: `node "${CLAUDE_PLUGIN_ROOT}/scripts/gates.mjs" resolve --project-dir <repo> --files <a,b>`, plus `--run-dir <path>` when given (the run's plan and frozen config), returns them as `commands`; without a plan it returns the full gates, so run only the ones that cover those files. Then run the full gates once (`gates.mjs resolve --project-dir <repo>`: `ship.gates`, else detected from the project files) before the commit in internal mode, or before the push in pull request mode. If they fail and you cannot fix them, revert that fix, record the item as `open` with the failure, and continue with the others.
+- While fixing, run the scoped checks of the files you touched: `node "../../../scripts/gates.mjs" resolve --project-dir <repo> --files <a,b>`, plus `--run-dir <path>` when given (the run's plan and frozen config), returns them as `commands`; without a plan it returns the full gates, so run only the ones that cover those files. Then run the full gates once (`gates.mjs resolve --project-dir <repo>`: `ship.gates`, else detected from the project files) before the commit in internal mode, or before the push in pull request mode. If they fail and you cannot fix them, revert that fix, record the item as `open` with the failure, and continue with the others.
 
 ### CI Checks
 
@@ -209,7 +209,7 @@ Record each answer with `source: operator`. In every other mode, apply the Auton
 
 ## Output Guidance
 
-A short report per category, then the reply of `${CLAUDE_PLUGIN_ROOT}/references/decision-policy.md` (Replies), built from the outcome:
+A short report per category, then the reply of `../../../references/decision-policy.md` (Replies), built from the outcome:
 
 ```markdown
 ### Fix-review: PR 42, 2 rounds

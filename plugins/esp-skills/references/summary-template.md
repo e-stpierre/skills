@@ -1,5 +1,7 @@
 # Summary Template
 
+Paths here are relative to this file's directory, the plugin's `references/`: resolve them to absolute paths before running a command.
+
 The format of `summary.md`, written once per run by the skill that owns the run (`esp-ship`, `esp-orchestrate`) when the run ends, halts, or escalates. `esp-recap` and the PR body read it. Summaries live in the run dir only and are never committed.
 
 ## Writing Rules
@@ -8,7 +10,7 @@ The format of `summary.md`, written once per run by the skill that owns the run 
 - Keep every section. When a section has nothing to report, write `None.` so readers know it was checked.
 - Reference decisions by ID (`D003`), milestones by ID (`M2`), and plan amendments by version (`plan.v2.md`).
 - The summary answers "what happened and what should I look at", not "how the work was done".
-- Check after writing: `node "${CLAUDE_PLUGIN_ROOT}/scripts/runs.mjs" check <run-dir>/summary.md`.
+- Check after writing: `node "../scripts/runs.mjs" check <run-dir>/summary.md`.
 
 ## Frontmatter
 

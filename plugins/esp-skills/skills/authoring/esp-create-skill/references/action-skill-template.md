@@ -76,15 +76,23 @@ do not, so a skill never depends on them (see PORTABILITY):
 DYNAMIC CONTEXT INJECTION (Claude Code only; give the skill a fallback step that runs the command):
 - Use `!`command`` syntax to run shell commands before skill content is sent to Claude.
 - The command output replaces the placeholder. Example: `!`git status`` inserts current git status.
-- Use ${CLAUDE_SKILL_DIR} to reference scripts bundled with the skill.
+- In Claude Code, ${CLAUDE_SKILL_DIR} names the skill's directory in such a command.
 
 PORTABILITY:
 The skill runs unchanged in Claude Code and Codex. Write for any harness with a shell, Node 22,
 git and gh, and treat Claude Code features as optional enhancements with a stated fallback.
 - Actions, not tools: "read the file", "run the command", "search the code". Name a harness tool
   only in a sentence that says it applies to that harness ("In Claude Code, ...").
-- Paths: relative to this skill's directory, stated once in the skill. Never rely on
-  ${CLAUDE_PLUGIN_ROOT} or ${CLAUDE_SKILL_DIR}: other harnesses leave them unexpanded.
+- Paths: a relative path resolves against the directory of the file that holds it: the skill's
+  directory for SKILL.md (../../../scripts/config.mjs reaches the shared scripts), one level
+  deeper for a file in references/. Commands keep the literal relative path, and the model
+  resolves it to an absolute path before running the command: commands run from the user's
+  repository. State it once, in Core Principles, with this exact sentence: "Paths are relative to
+  this skill's directory (a reference file's paths are relative to that file). Resolve a path to
+  an absolute one before running a command with it: commands run from the user's repository".
+- Claude variables: ${CLAUDE_PLUGIN_ROOT} and ${CLAUDE_SKILL_DIR} appear only on a line that
+  starts with "In Claude Code," (after a list, blockquote or bold marker): other harnesses leave
+  them unexpanded, so such a line is an enhancement, never the only way to a file.
 - Arguments: keep the Values subsection as the template shows, including its fallback line, so a
   harness that does not substitute the placeholder still gets the arguments from the message.
 - Other skills: name them bare ("invoke the esp-ship skill"), never as a slash command or with the
@@ -198,7 +206,7 @@ Instructions:
 - Format: - For <purpose>, see [filename.md](filename.md)
 - State when to read each file (e.g., "read it before creating a new file"), so the pointer fires on the right branch
 - Use for reference docs, examples, or scripts in the skill directory
-- Write paths relative to this skill's directory, and say so once (see PORTABILITY)
+- Write paths relative to the directory of the file that holds them (this skill's directory for SKILL.md), never with a Claude variable, and state the convention once in Core Principles (see PORTABILITY)
 - Omit this section if skill has no supporting files
 -->
 

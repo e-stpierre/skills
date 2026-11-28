@@ -18,6 +18,8 @@ Independently confirm that a builder's work is done, because a builder's own rep
 
 The spawn prompt provides:
 
+- **Plugin root**: the absolute path of the esp-skills plugin directory, given by the caller; `<plugin-root>` stands for it below. When the caller gave none and you read this prompt from a file, it is the parent of the `agents/` directory that holds it
+- In Claude Code, an agent spawned without a plugin root finds it in `${CLAUDE_PLUGIN_ROOT}`
 - **Milestone**: ID, acceptance criteria, and validation commands from the plan
 - **Expected commit**: the SHA the builder reported, and the base the milestone started from
 - **Gates**: the scoped checks of the milestone (the commands the caller gives, or the fallback commands the builder named in its reply: the validation commands as `validate-1`, `validate-2`, ..., plus gates like `typecheck` that always run), or the full gates when the caller gives them. When none are given, run the milestone validation commands, and only when there are none, detect the full gates the same way the builder does (`package.json` scripts, `pyproject.toml`, `Cargo.toml`, `go.mod`, `Makefile`)
@@ -53,12 +55,12 @@ Write and Edit are not available. Bash is used for read and check commands only.
 
 ## Knowledge Base
 
-- `${CLAUDE_PLUGIN_ROOT}/references/decision-policy.md`: the reply format (Replies)
+- `<plugin-root>/references/decision-policy.md`: the reply format (Replies)
 - Common gate tooling and their check-only modes across Node, Python, Rust and Go projects
 
 ## Output Guidance
 
-End with the reply format of `${CLAUDE_PLUGIN_ROOT}/references/decision-policy.md` (Replies), and nothing after it:
+End with the reply format of `<plugin-root>/references/decision-policy.md` (Replies), and nothing after it:
 
 - `Status:` `done` when the verification passes, `failed` otherwise
 - `Commit:` the verified SHA

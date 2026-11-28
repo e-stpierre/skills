@@ -36,7 +36,7 @@ Arguments: $ARGUMENTS
 - Explore the codebase before planning, and follow its existing patterns and conventions
 - Every milestone is one coherent, reviewable commit that changes code and can be verified by its validation commands
 - Write plans to the run directory only: they stay outside the repository and out of git
-- Run every script with Bash, with the literal `"${CLAUDE_PLUGIN_ROOT}/scripts/..."` path. `run.json` and `decisions.jsonl` are written by `runs.mjs` only
+- Run every script with Bash. Paths are relative to this skill's directory (a reference file's paths are relative to that file). Resolve a path to an absolute one before running a command with it: commands run from the user's repository. A bare script name (`plan.mjs`) or `scripts/<name>` is the plugin's script, `../../../scripts/<name>` from this directory. `run.json` and `decisions.jsonl` are written by `runs.mjs` only
 - Plans size the work only as milestones and their complexity, with no time estimates or deadlines
 
 ## Skill-Specific Guidelines
@@ -46,9 +46,9 @@ Arguments: $ARGUMENTS
 Read the `plan` section and the shared defaults once at the start:
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/config.mjs" get plan
-node "${CLAUDE_PLUGIN_ROOT}/scripts/config.mjs" get defaults
-node "${CLAUDE_PLUGIN_ROOT}/scripts/config.mjs" get ship.budgets.orchestrated.max_milestones
+node "../../../scripts/config.mjs" get plan
+node "../../../scripts/config.mjs" get defaults
+node "../../../scripts/config.mjs" get ship.budgets.orchestrated.max_milestones
 ```
 
 With `--run-dir`, add `--run-dir <path>` to each `config.mjs get`: it reads the run's frozen config snapshot (an esp-ship run) in place of the user and project layers, and the live config when the run has none.
@@ -64,7 +64,7 @@ If a command exits with code 1 (invalid config), report its error and stop. If i
 
 ### Run Directory
 
-The list abbreviates `node "${CLAUDE_PLUGIN_ROOT}/scripts/runs.mjs"` as `runs.mjs` (same for `plan.mjs`). Every `runs.mjs` call except `create` takes `--run-dir <path>`:
+The list abbreviates `node "../../../scripts/runs.mjs"` as `runs.mjs` (same for `plan.mjs`). Every `runs.mjs` call except `create` takes `--run-dir <path>`:
 
 - **Own run (no `--run-dir`)**: `runs.mjs create <slug> --title <title> --workflow esp-plan --repo <repo-root>` (prints `run_dir`)
 - **Latest plan**: `runs.mjs plan` (`{ path, version }`, version 0 when there is none)
@@ -110,7 +110,7 @@ Classify every open choice with the decision policy:
 
 ## Output Guidance
 
-A short summary, then the reply of `${CLAUDE_PLUGIN_ROOT}/references/decision-policy.md` (Replies):
+A short summary, then the reply of `../../../references/decision-policy.md` (Replies):
 
 ```text
 Plan written to <run-dir>/plan.md (version 1, feature)

@@ -40,7 +40,7 @@ Arguments: $ARGUMENTS
 - The only force-push is `git push --force-with-lease` of the pull request's own head branch, right after a rebase. The base branch is never pushed
 - Re-run the gates after every rebase, and push only a rebase whose gates pass
 - The script waits, the session sleeps: wait for checks with the script in the background, never with polling or `sleep` loops in the session
-- Run every script with Bash, with the literal `"${CLAUDE_PLUGIN_ROOT}/scripts/..."` path. The outcome always comes from the script
+- Run every script with Bash. Paths are relative to this skill's directory (a reference file's paths are relative to that file). Resolve a path to an absolute one before running a command with it: commands run from the user's repository. A bare script name (`merge-ready.mjs`) or `scripts/<name>` is the plugin's script, `../../../scripts/<name>` from this directory. The outcome always comes from the script
 
 ## Skill-Specific Guidelines
 
@@ -49,9 +49,9 @@ Arguments: $ARGUMENTS
 Read the sections once at the start:
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/config.mjs" get merge
-node "${CLAUDE_PLUGIN_ROOT}/scripts/config.mjs" get worktrees
-node "${CLAUDE_PLUGIN_ROOT}/scripts/config.mjs" get defaults
+node "../../../scripts/config.mjs" get merge
+node "../../../scripts/config.mjs" get worktrees
+node "../../../scripts/config.mjs" get defaults
 ```
 
 With `--run-dir`, add `--run-dir <path>` to each `config.mjs get`: it reads the run's frozen config snapshot (an esp-ship run) in place of the user and project layers, and the live config when the run has none.
@@ -134,7 +134,7 @@ After `outputs.merged` is `true`:
 
 ## Output Guidance
 
-A short status with each condition, then the reply of `${CLAUDE_PLUGIN_ROOT}/references/decision-policy.md` (Replies), built from the outcome:
+A short status with each condition, then the reply of `../../../references/decision-policy.md` (Replies), built from the outcome:
 
 ```markdown
 ### Merge: PR 42

@@ -36,6 +36,7 @@ Arguments: $ARGUMENTS
 - A finding is real only after you checked that the project's patterns, framework conventions, an intentional design choice, or code elsewhere do not already handle or explain it
 - Treat test-specific patterns and legitimate, handled edge cases as intended behavior
 - When nothing is found, the report still exists, with zero counts
+- Paths are relative to this skill's directory (a reference file's paths are relative to that file). Resolve a path to an absolute one before running a command with it: commands run from the user's repository
 
 ## Skill-Specific Guidelines
 
@@ -44,7 +45,7 @@ Arguments: $ARGUMENTS
 Read the `analyze` section once at the start:
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/config.mjs" get analyze
+node "../../../scripts/config.mjs" get analyze
 ```
 
 If the command exits with code 1 (invalid config), report its error and stop. If it cannot run at all (no `node`), continue with the defaults.

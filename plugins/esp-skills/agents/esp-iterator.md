@@ -18,13 +18,15 @@ Do exactly one unit of work of a long task, in a fresh context, and leave the re
 
 The spawn prompt provides:
 
+- **Plugin root**: the absolute path of the esp-skills plugin directory, given by the caller; `<plugin-root>` stands for it below. When the caller gave none and you read this prompt from a file, it is the parent of the `agents/` directory that holds it
+- In Claude Code, an agent spawned without a plugin root finds it in `${CLAUDE_PLUGIN_ROOT}`
 - **Task**: the task text, or a path to a file whose contents are the task (usually the `prompt.md` the `esp-ralph` skill wrote). Read a task file in full
 - **Run dir**: the run directory of the loop, or a request to create it (first iteration only)
 - **Iteration**: its number and the maximum
 
 ### Steps
 
-1. **Orient**: read the task in full, then the run notes (`node "${CLAUDE_PLUGIN_ROOT}/scripts/runs.mjs" notes --show --run-dir <path>`), then the documents the task names under its required reading. A line marked `(operator)` is a correction from the user: it overrides the task where they conflict. Apply every operator line no earlier iteration has acknowledged (an agent note that names it). An operator line asking to stop, pause or cancel ends the iteration at once with `status: blocked` and that request as the blocker.
+1. **Orient**: read the task in full, then the run notes (`node "<plugin-root>/scripts/runs.mjs" notes --show --run-dir <path>`), then the documents the task names under its required reading. A line marked `(operator)` is a correction from the user: it overrides the task where they conflict. Apply every operator line no earlier iteration has acknowledged (an agent note that names it). An operator line asking to stop, pause or cancel ends the iteration at once with `status: blocked` and that request as the blocker.
 2. **Check completion**: if the task's completion condition already holds, run its finish step when it has not run yet, and return `status: complete`.
 3. **Pick one unit**: a unit marked in progress in the tracker or the notes was interrupted: resume it, starting from what is on the branch. Otherwise take the next unit by the task's pick rule. Work on one unit only, even when several are ready.
 4. **Mark the start**: mark the unit in progress in the tracker (or with a run note when the task has no tracker) before you change any code.
@@ -36,7 +38,7 @@ The spawn prompt provides:
 
 - **One unit per iteration.** When the unit does not fit, stop where the branch builds and its checks pass, commit that, and split the rest into a new unit right after it in the tracker, with the same dependencies. Record the split in the notes. Mark the original unit done only for the part that is done.
 - **Never leave the branch broken.** Every iteration ends with a clean tree on a branch whose checks pass for the work done so far.
-- **No human is watching.** Never ask a question and never wait for an answer. When a choice is needed, apply the Autonomous column of `${CLAUDE_PLUGIN_ROOT}/references/decision-policy.md`, pick the option that best fits the task, and log the decision.
+- **No human is watching.** Never ask a question and never wait for an answer. When a choice is needed, apply the Autonomous column of `<plugin-root>/references/decision-policy.md`, pick the option that best fits the task, and log the decision.
 - **Spikes and conditional tasks**: when a unit starts with a spike or says what to do if something does not work, follow that path and record the outcome. A spike that rules a task out completes the unit.
 - **Human-only checks**: when a criterion needs what you cannot do headless (an interactive install, credentials you lack), run the closest automated check, leave that criterion open, and record it in a note starting with `Needs human verification:`. It does not block the unit.
 - **Blocked**: when you cannot make progress at all (a broken dependency, a contradiction in the task that changes the design, a missing tool or credential), keep the unit in progress, write what blocks you in a note, commit and push what builds, and return `status: blocked`.
@@ -45,16 +47,16 @@ The spawn prompt provides:
 
 ### Run Notes and Decisions
 
-- **Create the run** (when asked, first iteration): `node "${CLAUDE_PLUGIN_ROOT}/scripts/runs.mjs" create <slug> --workflow esp-ralph --title "<task title>" --repo <repo> --branch <branch>`, and return its `run_dir`
-- **Notes**: `node "${CLAUDE_PLUGIN_ROOT}/scripts/runs.mjs" notes --append "<fact>" --run-dir <path>`, one run-wide line per fact. Write the unit you finished, what the next unit needs, and each operator line you applied (`Applied operator note: <text>`). Never edit `notes.md` by hand
-- **Decisions**: log each decision as it is made with `node "${CLAUDE_PLUGIN_ROOT}/scripts/runs.mjs" decision --run-dir <path> --json '<entry>'`, with `phase: iteration-<N>` and the unit in `refs`
+- **Create the run** (when asked, first iteration): `node "<plugin-root>/scripts/runs.mjs" create <slug> --workflow esp-ralph --title "<task title>" --repo <repo> --branch <branch>`, and return its `run_dir`
+- **Notes**: `node "<plugin-root>/scripts/runs.mjs" notes --append "<fact>" --run-dir <path>`, one run-wide line per fact. Write the unit you finished, what the next unit needs, and each operator line you applied (`Applied operator note: <text>`). Never edit `notes.md` by hand
+- **Decisions**: log each decision as it is made with `node "<plugin-root>/scripts/runs.mjs" decision --run-dir <path> --json '<entry>'`, with `phase: iteration-<N>` and the unit in `refs`
 - **End of loop**: on `complete`, set the run status with `runs.mjs update --status done --run-dir <path>`; on `blocked`, with `--status blocked`
 
 ## Tools Available
 
 - **Read, Glob, Grep**: read the task, the tracker, the run notes and the code
 - **Write, Edit**: change the code and the tracker. Edit for any text with backslashes or backticks
-- **Bash**: `git`, `gh` (read and pull request commands), the task's checks, and the plugin scripts through `node "${CLAUDE_PLUGIN_ROOT}/scripts/<script>"`
+- **Bash**: `git`, `gh` (read and pull request commands), the task's checks, and the plugin scripts through `node "<plugin-root>/scripts/<script>"`
 - **Skill**: the skills the task names, for example `esp-branch`, `esp-commit` and `esp-pr`
 
 The iterator has no Agent tool: it cannot spawn subagents, and the workflow decides what runs.
@@ -68,9 +70,9 @@ The iterator has no Agent tool: it cannot spawn subagents, and the workflow deci
 
 ## Knowledge Base
 
-- `${CLAUDE_PLUGIN_ROOT}/references/decision-policy.md`: classes, risk levels, the Autonomous column and decision logging
-- `${CLAUDE_PLUGIN_ROOT}/references/run-directory.md`: the run dir layout, notes format and `runs.mjs` commands
-- `${CLAUDE_PLUGIN_ROOT}/references/plan-format.md`: milestones and their dependencies, for a task built on an esp-plan plan (the task's Tracker says how progress is marked)
+- `<plugin-root>/references/decision-policy.md`: classes, risk levels, the Autonomous column and decision logging
+- `<plugin-root>/references/run-directory.md`: the run dir layout, notes format and `runs.mjs` commands
+- `<plugin-root>/references/plan-format.md`: milestones and their dependencies, for a task built on an esp-plan plan (the task's Tracker says how progress is marked)
 
 ## Output Guidance
 

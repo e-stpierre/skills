@@ -3,8 +3,11 @@
 // skills, agents, plugin READMEs, plugin workflow scripts, plugin skill
 // registration and marketplace order. Section names, order and required
 // sections are read from the templates; the argument conventions mirror
-// esp-create-skill. Judgment checks (description quality, done-conditions)
-// stay with the /normalize skill.
+// esp-create-skill. Skill and shared reference files are scanned for links,
+// and every plugin prompt file for Claude Code variables outside an
+// "In Claude Code," line and for relative paths that do not resolve.
+// Judgment checks (description quality, done-conditions) stay with the
+// /normalize skill.
 //
 // Usage: node scripts/validate-prompts.mjs [--root <dir>] [--json]
 // Exit codes: 0 no error (warnings allowed), 1 errors found, 2 usage error.
@@ -20,6 +23,8 @@ export const TEMPLATES = {
   agent: "docs/templates/agent-template.md",
   readme: "docs/templates/readme-template.md"
 };
+
+const TEMPLATE_FILES = new Set(Object.values(TEMPLATES));
 
 const RESERVED = {
   h: ["help"],
@@ -380,6 +385,78 @@ function checkLinks(issues, root, file, scanned) {
       }
     }
   }
+}
+
+const CLAUDE_VARIABLE = /\$\{?CLAUDE_(?:PLUGIN_ROOT|SKILL_DIR)\b\}?/g;
+const CLAUDE_NOTE = /^\s*(?:(?:[-*>]|\d+\.)\s*)*In Claude Code,/;
+
+/**
+ * Claude Code variables outside a Claude-layer note: a line whose text, after
+ * optional list, blockquote or bold markers, starts with `In Claude Code,`.
+ * Every line counts, code fences included.
+ */
+function checkClaudeVariables(issues, file, scanned) {
+  for (const l of scanned) {
+    if (CLAUDE_NOTE.test(l.text)) continue;
+    for (const m of l.text.matchAll(CLAUDE_VARIABLE)) {
+      issue(
+        issues,
+        file,
+        l.n,
+        "claude-variable",
+        `${m[0]} only expands in Claude Code: use a relative path, or move it to an "In Claude Code," line`
+      );
+    }
+  }
+}
+
+const PATH_TOKEN = /(?<![\w./-])(\.\.?\/|<plugin-root>\/)([^\s"'`)]*)/g;
+const OPTION_BEFORE = /(?:^|[\s`"'(])--?[A-Za-z][\w-]*[\s=]+$/;
+
+/**
+ * Relative paths (`./`, `../`, `<plugin-root>/`) that do not resolve, in
+ * prose, inline code and fences. A `./` or `../` path resolves against the
+ * directory of the file, a `<plugin-root>/` path against the plugin
+ * directory. A `#anchor` is stripped; a token holding a placeholder or glob
+ * (`<`, `*`, `{`, `$`) after the prefix is skipped, and `.../` never matches.
+ * The value of a command option (`--repo-dir ../lib`, `rm -rf ./data`) names
+ * a file of the user's repository and is skipped too. Only plugin files are
+ * checked: repository skills run from the repository root. With `relative`
+ * off (the plugin README, whose `./` and `../` paths illustrate the user's
+ * repository or a skill's view), only `<plugin-root>/` paths are checked.
+ * Returns the number of paths checked.
+ */
+function checkPaths(issues, root, file, scanned, pluginDir, relative = true) {
+  let checked = 0;
+  if (!pluginDir) return checked;
+  for (const l of scanned) {
+    for (const m of l.text.matchAll(PATH_TOKEN)) {
+      const [, prefix, rest] = m;
+      if (/[<*{$]/.test(rest)) continue;
+      if (OPTION_BEFORE.test(l.text.slice(0, m.index))) continue;
+      const target = rest.split("#")[0].replace(/[.,;:]+$/, "");
+      let base;
+      if (prefix === "<plugin-root>/") {
+        base = join(root, pluginDir);
+      } else {
+        if (!relative) continue;
+        base = resolve(dirname(join(root, file)), prefix);
+      }
+      checked++;
+      if (!existsSync(resolve(base, target))) {
+        issue(issues, file, l.n, "path", `path not found: ${prefix}${target}`);
+      }
+    }
+  }
+  return checked;
+}
+
+/** The plugin directory (`plugins/<name>`) that holds a file, or null. */
+function pluginDirOf(file) {
+  const parts = file.split(/[\\/]/);
+  return parts[0] === "plugins" && parts.length > 2
+    ? `plugins/${parts[1]}`
+    : null;
 }
 
 /** Template placeholders and instruction comments left in the file. */
@@ -818,6 +895,17 @@ export function validateSkill(root, file, template) {
   checkTables(issues, file, scanned);
   checkLeftovers(issues, file, scanned);
   checkLinks(issues, root, file, scanned);
+  checkClaudeVariables(issues, file, scanned);
+  const paths = checkPaths(issues, root, file, scanned, pluginDirOf(file));
+  if (paths && !text.includes("relative to this skill's directory")) {
+    issue(
+      issues,
+      file,
+      1,
+      "paths-note",
+      "the skill uses relative paths: state that they are relative to this skill's directory"
+    );
+  }
   checkAscii(issues, file, text, true);
   const count = text.split(/\r?\n/).length;
   if (count > MAX_SKILL_LINES) {
@@ -886,7 +974,19 @@ export function validateAgent(root, file, template) {
   );
   checkLeftovers(issues, file, scanned);
   checkLinks(issues, root, file, scanned);
+  checkClaudeVariables(issues, file, scanned);
+  checkPaths(issues, root, file, scanned, pluginDirOf(file));
   checkAscii(issues, file, text, true);
+  return issues;
+}
+
+/** A skill or shared reference file: links, Claude variables and paths. */
+export function validateReference(root, file) {
+  const issues = [];
+  const scanned = scanLines(readFileSync(join(root, file), "utf8"));
+  checkLinks(issues, root, file, scanned);
+  checkClaudeVariables(issues, file, scanned);
+  checkPaths(issues, root, file, scanned, pluginDirOf(file));
   return issues;
 }
 
@@ -937,6 +1037,8 @@ export function validateReadme(root, file, template, plugin) {
     }
   }
   checkLinks(issues, root, file, scanned);
+  checkClaudeVariables(issues, file, scanned);
+  checkPaths(issues, root, file, scanned, plugin.dir, false);
   checkAscii(issues, file, text, true);
   return issues;
 }
@@ -1218,6 +1320,16 @@ export function validateWorkflow(root, file, plugin) {
     issue(issues, file, 1, "workflow", "import statements are not available");
   }
 
+  for (const m of text.matchAll(CLAUDE_VARIABLE)) {
+    issue(
+      issues,
+      file,
+      lineAt(text, m.index),
+      "claude-variable",
+      `${m[0]} only expands in Claude Code: pass the plugin root in args`
+    );
+  }
+
   const agents = new Set(plugin.agents.map((a) => basename(a, ".md")));
   for (const m of masked.matchAll(/\bagentType\s*:\s*(["'])/g)) {
     const offset = m.index + m[0].length - 1;
@@ -1274,16 +1386,26 @@ export function discover(root) {
                 f.endsWith(".js") &&
                 f.split("/").length === dir.split("/").length + 2
             ),
+            references: files.filter(
+              (f) =>
+                f.endsWith(".md") &&
+                !TEMPLATE_FILES.has(f) &&
+                (/^plugins\/[^/]+\/references\/[^/]+\.md$/.test(f) ||
+                  (f.startsWith(`${dir}/skills/`) &&
+                    f.includes("/references/")))
+            ),
             readme: existsSync(join(root, dir, "README.md"))
               ? `${dir}/README.md`
               : null
           };
         })
     : [];
-  const repoSkills = walk(root, ".claude/skills").filter((f) =>
-    f.endsWith("/SKILL.md")
+  const repoFiles = walk(root, ".claude/skills");
+  const repoSkills = repoFiles.filter((f) => f.endsWith("/SKILL.md"));
+  const repoReferences = repoFiles.filter(
+    (f) => f.endsWith(".md") && f.includes("/references/")
   );
-  return { plugins, repoSkills };
+  return { plugins, repoSkills, repoReferences };
 }
 
 export function validate(root) {
@@ -1293,16 +1415,18 @@ export function validate(root) {
       parseTemplate(readFileSync(join(root, path), "utf8"))
     ])
   );
-  const { plugins, repoSkills } = discover(root);
+  const { plugins, repoSkills, repoReferences } = discover(root);
   const issues = [];
   const counts = {
     skills: repoSkills.length,
     agents: 0,
     workflows: 0,
-    readmes: 0
+    readmes: 0,
+    references: repoReferences.length
   };
   for (const f of repoSkills)
     issues.push(...validateSkill(root, f, templates.skill));
+  for (const f of repoReferences) issues.push(...validateReference(root, f));
   for (const p of plugins) {
     counts.skills += p.skills.length;
     counts.agents += p.agents.length;
@@ -1310,6 +1434,8 @@ export function validate(root) {
       issues.push(...validateSkill(root, f, templates.skill));
     for (const f of p.agents)
       issues.push(...validateAgent(root, f, templates.agent));
+    counts.references += p.references.length;
+    for (const f of p.references) issues.push(...validateReference(root, f));
     counts.workflows += p.workflows.length;
     for (const f of p.workflows) issues.push(...validateWorkflow(root, f, p));
     if (p.readme) {
@@ -1348,7 +1474,7 @@ function main(argv) {
       );
     }
     process.stdout.write(
-      `Checked ${counts.skills} skills, ${counts.agents} agents, ${counts.workflows} workflows and ${counts.readmes} READMEs: ${errors} errors, ${issues.length - errors} warnings\n`
+      `Checked ${counts.skills} skills, ${counts.agents} agents, ${counts.workflows} workflows, ${counts.readmes} READMEs and ${counts.references} references: ${errors} errors, ${issues.length - errors} warnings\n`
     );
   }
   return errors ? 1 : 0;

@@ -48,8 +48,10 @@ The plugin installs in Claude Code and in Codex from the same marketplace, so ev
 - **Strict YAML frontmatter**: quote a value that holds a colon followed by a space, or a space followed by `#`, or that starts with a YAML indicator; a strict parser drops the skill otherwise
 - **Codex invocation policy**: a skill with `disable-model-invocation: true` has an `agents/openai.yaml` beside its `SKILL.md`, with `policy.allow_implicit_invocation: false`. A model-invoked skill never sets it to `false`
 - **Invocation syntax** belongs in human docs only: `/esp-skills:<skill>` in Claude Code, `$<skill>` in Codex
+- **Relative paths**: a skill names plugin files with paths relative to the file that holds them (`../../../scripts/config.mjs` from a `SKILL.md`) and states once that its paths are relative to this skill's directory. An agent names them as `<plugin-root>/...`, with the plugin root passed by its caller
+- **Claude variables**: `${CLAUDE_PLUGIN_ROOT}` and `${CLAUDE_SKILL_DIR}` only expand in Claude Code. They appear only on a Claude-layer note, a line whose text (after an optional `-`, `*`, `1.`, `>` or `**`) starts with `In Claude Code,`, and never in a workflow script
 
-`pnpm validate` checks the frontmatter and the invocation policy.
+`pnpm validate` checks the frontmatter and the invocation policy. In the plugin's skills, agents, skill and shared references and README, it also rejects a Claude variable outside an `In Claude Code,` line (`claude-variable`, fences included), a `./`, `../` or `<plugin-root>/` path that does not resolve (`path`; `.../`, a `#anchor`, placeholder tokens and command option values are skipped, and the README checks `<plugin-root>/` paths only), a skill with relative paths that does not state their base (`paths-note`), and a broken link in a reference file (`link`).
 
 ### Documentation Guidelines
 

@@ -28,6 +28,7 @@ Arguments: $ARGUMENTS
 ## Core Principles
 
 - Run without prompting: every missing value comes from the conversation or the defaults
+- Paths are relative to this skill's directory (a reference file's paths are relative to that file). Resolve a path to an absolute one before running a command with it: commands run from the user's repository
 
 ## Skill-Specific Guidelines
 
@@ -36,7 +37,7 @@ Arguments: $ARGUMENTS
 Read the `branch` section once at the start:
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/config.mjs" get branch
+node "../../../scripts/config.mjs" get branch
 ```
 
 If the command exits with code 1 (invalid config), report its error and stop. If it cannot run at all (no `node`), continue with the defaults.

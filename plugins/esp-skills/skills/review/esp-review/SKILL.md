@@ -42,7 +42,7 @@ Arguments: $ARGUMENTS
 
 - The reviewer owns the review: `esp-reviewer.md` defines the method, the scope (only the diff), the finding format and the severity scale. This skill resolves the diff, runs the reviewer, and parses its reply
 - Read-only and routes nothing: the skill writes only into the run or temporary directory, and the caller decides where the review goes (terminal, PR comment, file, CI log)
-- Run every script with Bash, with the literal `"${CLAUDE_PLUGIN_ROOT}/scripts/..."` path. Counts, the findings file and the outcome always come from `review.mjs`, never from a hand count
+- Run every script with Bash. Paths are relative to this skill's directory (a reference file's paths are relative to that file). Resolve a path to an absolute one before running a command with it: commands run from the user's repository. A bare script name (`review.mjs`) or `scripts/<name>` is the plugin's script, `../../../scripts/<name>` from this directory. Counts, the findings file and the outcome always come from `review.mjs`, never from a hand count
 
 ## Skill-Specific Guidelines
 
@@ -51,8 +51,8 @@ Arguments: $ARGUMENTS
 Read the `review` section and the shared defaults once at the start:
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/config.mjs" get review
-node "${CLAUDE_PLUGIN_ROOT}/scripts/config.mjs" get defaults
+node "../../../scripts/config.mjs" get review
+node "../../../scripts/config.mjs" get defaults
 ```
 
 With `--run-dir`, add `--run-dir <path>` to each `config.mjs get`: it reads the run's frozen config snapshot (an esp-ship run) in place of the user and project layers, and the live config when the run has none.
@@ -87,6 +87,7 @@ The available dimensions are `correctness`, `security`, `plan-conformance`, `tes
 
 Build one self-contained prompt for the reviewer:
 
+- The plugin root: this skill's `../../..` resolved to an absolute path
 - The diff file (`diff_path`), base and head, the changed files, and the untracked files, which are not in the diff and must be read in full
 - For a pull request: its title, URL and description (`gh pr view <n> --json title,body`)
 - The dimensions, the focus text, the minimum severity, and whether to verify
@@ -97,7 +98,7 @@ Build one self-contained prompt for the reviewer:
 Then run it in a fresh context. The choice depends only on the runtime, never on the size of the diff: a small diff still goes to the subagent, because the fresh context keeps the review from being anchored on this session.
 
 - **Subagent available** (the session has a subagent tool and is not itself a subagent): spawn `esp-skills:esp-reviewer` in the foreground with the `model` and `effort` from `defaults.models.reviewer`, and wait for its reply before the next step. With `--run-dir`, record the model with `runs.mjs update --model reviewer=<alias>[:<effort>]` before spawning.
-- **Otherwise** (a runtime without subagents, or already inside a subagent): read `agents/esp-reviewer.md` in the plugin root and follow its Methodology and Output Guidance in this session, read-only.
+- **Otherwise** (a runtime without subagents, or already inside a subagent): read `../../../agents/esp-reviewer.md` and follow its Methodology and Output Guidance in this session, read-only, with the plugin root above standing in for `<plugin-root>`.
 
 Keep only the reviewer's reply. Save it verbatim to `review_path`.
 
@@ -137,7 +138,7 @@ In every other mode the review settles nothing: the fixer applies the classes wi
 
 ## Output Guidance
 
-The review markdown, then the reply of `${CLAUDE_PLUGIN_ROOT}/references/decision-policy.md` (Replies), built from the `outcome` of `parse`:
+The review markdown, then the reply of `../../../references/decision-policy.md` (Replies), built from the `outcome` of `parse`:
 
 ```markdown
 ### Review: 3f2a1c0..9b8e7d6

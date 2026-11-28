@@ -45,7 +45,7 @@ Arguments: $ARGUMENTS
 
 - This session schedules, it does not build. Every pull request unit runs through `/esp-skills:esp-ship`, in a background subagent or inline. This session keeps only unit replies and wait results; details stay in the run directory
 - `orchestrate.mjs next` decides the single next action. Every state change goes through `orchestrate.mjs` (the only writer of `orchestrate.json` and `graph.json`) and `runs.mjs` (`run.json`, `decisions.jsonl`, `notes.md`)
-- Run every script with Bash, with the literal `"${CLAUDE_PLUGIN_ROOT}/scripts/..."` path and long option names. Every `orchestrate.mjs` command takes `--run-dir <run-dir>`
+- Run every script with Bash, with long option names. Paths are relative to this skill's directory (a reference file's paths are relative to that file). Resolve a path to an absolute one before running a command with it: commands run from the user's repository. A bare script name (`orchestrate.mjs`) or `scripts/<name>` is the plugin's script, `../../../scripts/<name>` from this directory. Every `orchestrate.mjs` command takes `--run-dir <run-dir>`
 - Name each unit's repository explicitly in every prompt and command (`--project-dir`, `git -C <dir>`): a subagent starts in this session's directory, not in the unit's checkout
 - A stopped unit blocks its dependents only: independent units still finish, and the run ends `partial`. Never revert a merged unit
 - Never force-push, never delete a remote branch, and never touch a dirty checkout: housekeeping reports it and moves on
@@ -58,16 +58,16 @@ Arguments: $ARGUMENTS
 Read the sections once at the start, from the repository the request starts in (`<repo-root>`: the git root of the current directory). On a resume, or once `init` has run, add `--run-dir <run-dir>` so the frozen snapshot is read:
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/config.mjs" get orchestrate --project-dir <repo-root>
-node "${CLAUDE_PLUGIN_ROOT}/scripts/config.mjs" get defaults --project-dir <repo-root>
-node "${CLAUDE_PLUGIN_ROOT}/scripts/config.mjs" get worktrees --project-dir <repo-root>
+node "../../../scripts/config.mjs" get orchestrate --project-dir <repo-root>
+node "../../../scripts/config.mjs" get defaults --project-dir <repo-root>
+node "../../../scripts/config.mjs" get worktrees --project-dir <repo-root>
 ```
 
 If a command exits with code 1 (invalid config), report its error and stop. `orchestrate.mjs init` applies the `orchestrate` keys itself (`unit_mode`, `max_parallel`, `housekeeping`, `write_back`, `wait`), and the unit defaults from `ship.merge_policy` and `fix-review.max_rounds`. This session reads directly `orchestrate.repos` (known checkouts), `defaults.interactive` and `worktrees.root` (where a missing repository is cloned). `init` freezes the config to `<run-dir>/config.snapshot.json`: every unit's esp-ship run starts from it (`--parent-run`), with the project config of the unit's repository over it.
 
 ### Run State
 
-`scripts/orchestrate.mjs` owns `<run-dir>/orchestrate.json` (settings, phase, approval, one entry per unit, the waits) and `<run-dir>/graph.json` (the units, written once by intake). `node "${CLAUDE_PLUGIN_ROOT}/scripts/orchestrate.mjs" --help` lists every command and option:
+`scripts/orchestrate.mjs` owns `<run-dir>/orchestrate.json` (settings, phase, approval, one entry per unit, the waits) and `<run-dir>/graph.json` (the units, written once by intake). `node "../../../scripts/orchestrate.mjs" --help` lists every command and option:
 
 - **`init`**, **`show`**: create the state, print it with the graph
 - **`intake --graph <file> [--record]`**: validate the graph and resolve the repositories; `--record` writes `graph.json` (see intake.md)
