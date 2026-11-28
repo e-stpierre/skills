@@ -63,7 +63,7 @@ Commands:
                        not housekept: the housekeep.mjs run arguments, with --rebase for the
                        branches of later unstarted build units of the checkout), spawn-unit or
                        run-unit-inline (a unit to resume, then a ready build, adopt, or
-                       await-pr that found its pull request: the /esp-skills:esp-ship
+                       await-pr that found its pull request: the esp-ship skill
                        arguments), start-wait (a wait to restart, then a ready check or
                        await-pr: the wait-for.mjs arguments), idle (units or waits running)
                        or finish (every unit terminal). A unit is ready when its dependencies

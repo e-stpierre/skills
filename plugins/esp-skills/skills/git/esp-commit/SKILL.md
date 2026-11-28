@@ -22,6 +22,8 @@ Read each option by its short or its long name (`-m "..."`, `--message "..."` or
 
 Arguments: $ARGUMENTS
 
+If the line above holds no arguments or an unreplaced placeholder, read them from the message that invoked this skill.
+
 ## Core Principles
 
 - The title names the main task completed: 50 characters ideal, 120 at most
@@ -109,5 +111,5 @@ Failed to commit: <error message from git>
 **On the default branch or a detached HEAD:**
 
 ```text
-Not committed: main is the default branch. Create a branch first (/esp-skills:esp-branch).
+Not committed: main is the default branch. Create a branch first (esp-branch skill).
 ```

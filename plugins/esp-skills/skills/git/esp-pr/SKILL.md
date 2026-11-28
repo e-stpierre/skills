@@ -24,6 +24,8 @@ Read each option by its short or its long name (`-b main`, `--base main` or `--b
 
 Arguments: $ARGUMENTS
 
+If the line above holds no arguments or an unreplaced placeholder, read them from the message that invoked this skill.
+
 ## Core Principles
 
 - The title conveys the primary change; the description gives the why and the context, since the diff already shows the what

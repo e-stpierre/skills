@@ -102,8 +102,9 @@ git and gh, and treat Claude Code features as optional enhancements with a state
 - Subagents: "delegate to a subagent with a fresh context window, briefed with agents/<role>.md;
   in Claude Code, use the esp-skills:<role> agent type; without subagents, follow agents/<role>.md
   in this session". State "fresh context": some harnesses fork the conversation by default.
-- Background and parallel work: "when the harness supports it; otherwise one after another". The
-  result must be the same either way.
+- Background work: "in the background when the harness supports it; otherwise wait in the
+  foreground". Parallel work: "in parallel when the harness supports it; otherwise one after
+  another". The result must be the same either way.
 - Models: name a tier from the configuration (models.<role>), never a model name or alias.
 - Headless: "a non-interactive session", never one harness's command.
 - Claude Code-only features (workflows, context: fork, hooks, dynamic context injection): give a

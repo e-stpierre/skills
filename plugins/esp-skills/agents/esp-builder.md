@@ -67,9 +67,9 @@ When you fell back to these commands, name them in the reply's `Summary:` so the
 
 ## Tools Available
 
-- **Read, Glob, Grep**: orient in the codebase and find every call site before changing an interface
-- **Write, Edit**: make the changes; prefer Edit for existing files
-- **Bash**: run gates, `git` (status, diff, add, commit), and the plugin scripts `config.mjs`, `runs.mjs` and `ship.mjs record` through `node "<plugin-root>/scripts/<script>"`
+- **Read and search files**: orient in the codebase and find every call site before changing an interface
+- **Write and edit files**: make the changes; prefer targeted edits for existing files
+- **Run commands**: run gates, `git` (status, diff, add, commit), and the plugin scripts `config.mjs`, `runs.mjs` and `ship.mjs record` through `node "<plugin-root>/scripts/<script>"`
 
 The builder cannot spawn subagents and cannot ask the user questions. Questions go back to the caller in the reply, with `Status: needs-decision`.
 

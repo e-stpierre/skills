@@ -123,14 +123,14 @@ Commands:
     start <id>         Begin an attempt of a milestone
     finish <id>        End the attempt: --status done|failed|halted [--commit <sha>] [--reason <text>]
                        [--failures <json>] (the verifier's failures, returned by next on the retry)
-    models <id>        Builder and verifier { model, effort } (--model <alias> [--effort <level>];
+    models <id>        Builder and verifier { model, effort } (--model <model> [--effort <level>];
                        --model defaults to the one recorded by init)
     reuse <id>         Continue the last builder with a milestone or spawn a fresh one:
                        { decision: reuse|fresh, agent_id, reason, used, cost, limit }; logs a
                        policy decision (--agent-id <id> held by this session, --parallel,
                        --model, --effort)
     agent <id>         Record the builder agent of the current attempt (--agent-id <id>
-                       [--tokens <n> reported by the Agent result] [--worktree]
+                       [--tokens <n> reported by the subagent result] [--worktree]
                        [--model <m>] [--effort <e>] as given to milestone models)
     gates              Gate commands: configured, else detected from --project-dir, and the
                        checks of a scope: --milestone <id> (its validation commands plus
@@ -151,7 +151,9 @@ Options:
   --review-mode <mode>      init: auto, internal, pr, both or none (default: ship.review_mode)
   --no-pr, --no-merge       init: stop before the pull request, or before the merge
   --draft                   init: open the pull request as a draft (default: pr.draft)
-  --model <alias>           init: builder model of every milestone (opus, sonnet, haiku, fable)
+  --model <model>           init: builder model of every milestone: a Claude Code alias (opus,
+                            sonnet, haiku, fable), a tier (low, medium, high: the
+                            defaults.models.builder entry) or a harness model name (gpt-5.5-codex)
   --parallel                init: build milestone batches even when ship.parallel would not
   --resume                  init: resume the run (see init)
   --worktree                init: work in a task worktree (default: ship.worktree)

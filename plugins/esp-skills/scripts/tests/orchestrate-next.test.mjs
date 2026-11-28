@@ -277,7 +277,7 @@ describe("end to end", () => {
     assert.equal(argOf(adopt.args, "--max-rounds"), "3");
     assert.equal(adopt.args.includes("--plan-mode"), false);
     assert.equal(adopt.args.includes("--branch"), false);
-    assert.match(adopt.invoke, /^\/esp-skills:esp-ship --run-dir /);
+    assert.match(adopt.invoke, /^esp-ship --run-dir /);
     const started = ok("unit", "start", "lib-presets", "--mode", "subagent");
     assert.equal(started.status, "running");
     assert.equal(unitState("lib-presets").run_dir, adopt.run_dir);
@@ -508,10 +508,7 @@ describe("end to end", () => {
     assert.deepEqual(outcome.dirty, [
       { unit: "tasks-doc", repo_dir: app, files: [" M notes.txt"] }
     ]);
-    assert.match(
-      outcome.resume,
-      /^\/esp-skills:esp-orchestrate --resume --run-dir /
-    );
+    assert.match(outcome.resume, /^esp-orchestrate --resume --run-dir /);
     assert.equal(state().phase, "done");
   });
 

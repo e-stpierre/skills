@@ -20,7 +20,8 @@ import { gatesForOptions } from "./gates.mjs";
 import {
   configOf,
   freezeConfig,
-  MODEL_ALIASES,
+  MODEL_TIERS,
+  modelOption,
   parseJsonOption,
   readJson,
   runDirOf,
@@ -532,14 +533,32 @@ function choice(entry) {
 }
 
 /**
+ * The builder choice of a --model flag. A tier (low, medium, high) resolves
+ * through defaults.models.builder.<tier>, with --effort over the tier's effort;
+ * an alias or a harness model name is used as given.
+ */
+function flagChoice(models, flags) {
+  if (!flags.model) return null;
+  const effort = flags.effort ? { effort: flags.effort } : {};
+  if (MODEL_TIERS.has(flags.model)) {
+    const tier = choice(models.builder?.[flags.model]);
+    if (!tier)
+      throw new ShipError(
+        `--model ${flags.model}: the config has no defaults.models.builder.${flags.model} entry`,
+        2
+      );
+    return { ...tier, ...effort };
+  }
+  return { model: flags.model, ...effort };
+}
+
+/**
  * Resolve the builder and verifier models. Precedence:
  * --model flag -> milestone complexity -> config role -> agent frontmatter.
  */
 export function resolveModels(config, complexity = "medium", flags = {}) {
   const models = config.defaults?.models ?? {};
-  const fromFlag = flags.model
-    ? { model: flags.model, ...(flags.effort ? { effort: flags.effort } : {}) }
-    : null;
+  const fromFlag = flagChoice(models, flags);
   const builder = fromFlag ??
     choice(models.builder?.[complexity]) ??
     choice(models.builder?.medium) ?? { model: "opus", source: "frontmatter" };
@@ -557,12 +576,7 @@ export function resolveModels(config, complexity = "medium", flags = {}) {
 function pinnedModel(dir, options) {
   const model = stringOption(options.model) ?? shipJson(dir)?.builder_model;
   if (!model) return null;
-  if (!MODEL_ALIASES.has(model))
-    throw new ShipError(
-      `--model must be one of ${[...MODEL_ALIASES].join(", ")}`,
-      2
-    );
-  return model;
+  return modelOption(model);
 }
 
 export function cmdModels(id, options) {
@@ -603,7 +617,7 @@ const sameModel = (a, b) =>
   a.model === b.model && (a.effort ?? null) === (b.effort ?? null);
 
 /**
- * Estimated context of a builder: the real usage when an Agent result
+ * Estimated context of a builder: the real usage when a subagent result
  * reported it, else the sum of the complexity costs of the work it ran.
  */
 export function builderUsed(builder, cost) {
@@ -771,7 +785,7 @@ export function cmdReuse(id, options, env = process.env) {
 /**
  * Record the builder agent that ran (an attempt of) milestone `id`: the same
  * agent ID as the last builder continues it, any other starts a new one.
- * `--tokens` is the usage the Agent result reported, which replaces the
+ * `--tokens` is the usage the subagent result reported, which replaces the
  * estimate. `--worktree` marks a builder of a parallel batch: it never
  * continues.
  */

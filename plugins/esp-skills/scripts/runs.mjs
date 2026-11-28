@@ -350,6 +350,18 @@ function parsePairs(values, what) {
   return out;
 }
 
+const EFFORTS = ["minimal", "low", "medium", "high", "xhigh", "max"];
+
+// "<model>[:<effort>]": only a known effort after the last colon is an effort,
+// so a harness model name with a colon ("qwen3:32b") stays whole.
+function splitModelSpec(spec) {
+  const at = spec.lastIndexOf(":");
+  const effort = spec.slice(at + 1);
+  if (at > 0 && EFFORTS.includes(effort))
+    return { model: spec.slice(0, at), effort };
+  return { model: spec, effort: undefined };
+}
+
 export function cmdUpdate(options, env = process.env) {
   const dir = requireRunDir(options);
   if (options.parent !== undefined)
@@ -371,7 +383,7 @@ export function cmdUpdate(options, env = process.env) {
     for (const [role, spec] of Object.entries(
       parsePairs(options.model, "--model")
     )) {
-      const [model, effort] = spec.split(":");
+      const { model, effort } = splitModelSpec(spec);
       next.models = {
         ...next.models,
         [role]: effort ? { model, effort } : { model }

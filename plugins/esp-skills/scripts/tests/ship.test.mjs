@@ -33,7 +33,7 @@ import {
   resolvePhases
 } from "../lib/ship/phases.mjs";
 import { reviewLoop } from "../lib/ship/review-loop.mjs";
-import { ShipError, shipSettings } from "../lib/ship/state.mjs";
+import { isModelChoice, ShipError, shipSettings } from "../lib/ship/state.mjs";
 import { prLoopAction, prOptions } from "../lib/ship/tail.mjs";
 import { completedFromState } from "../plan.mjs";
 
@@ -2732,6 +2732,50 @@ describe("milestone models", () => {
       { model: "opus", effort: "low" }
     );
     assert.equal(ship("milestone", "models", "M1", "--model", "gpt").code, 2);
+  });
+
+  test("--model takes an alias, a tier or a harness model name", () => {
+    for (const ok of ["opus", "sonnet", "haiku", "fable", "low", "medium"])
+      assert.equal(isModelChoice(ok), true, ok);
+    for (const ok of ["gpt-5.5-codex", "o3", "claude-opus-4-5", "org/m:1_2"])
+      assert.equal(isModelChoice(ok), true, ok);
+    for (const bad of ["gpt", "opuss", "gpt 5", "gpt-5;rm", "-5", "$(x)1", ""])
+      assert.equal(isModelChoice(bad), false, bad);
+    const { config } = loadConfig({
+      snapshot: undefined,
+      projectDir: undefined,
+      env: { ESP_SKILLS_HOME: "/nonexistent-esp" }
+    });
+    // A tier resolves through defaults.models.builder.<tier>, --effort over it.
+    assert.deepEqual(resolveModels(config, "low", { model: "high" }).builder, {
+      model: "opus",
+      effort: "high"
+    });
+    assert.deepEqual(
+      resolveModels(config, "high", { model: "low", effort: "max" }).builder,
+      { model: "sonnet", effort: "max" }
+    );
+    assert.deepEqual(
+      resolveModels(config, "low", { model: "gpt-5.5-codex" }).builder,
+      { model: "gpt-5.5-codex" }
+    );
+    writeFileSync(join(runDir, "plan.md"), planText(1, [milestone("M1")]));
+    init("--model", "high");
+    assert.equal(state().builder_model, "high");
+    ship("milestone", "init", "--base", SHA1);
+    assert.deepEqual(ship("milestone", "models", "M1").json().builder, {
+      model: "opus",
+      effort: "high"
+    });
+    assert.deepEqual(
+      ship("milestone", "models", "M1", "--model", "gpt-5.5-codex").json()
+        .builder,
+      { model: "gpt-5.5-codex" }
+    );
+    const bad = ship("milestone", "models", "M1", "--model", "gpt 5");
+    assert.equal(bad.code, 2);
+    assert.match(bad.stderr, /--model must be a model alias .* got: gpt 5/);
+    assert.equal(ship("init", "--resume", "--model", "op$us").code, 2);
   });
 
   test("the --model recorded by init pins the builder of models, reuse and agent", () => {

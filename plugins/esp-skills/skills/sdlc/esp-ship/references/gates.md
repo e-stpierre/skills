@@ -29,7 +29,8 @@ The `final-gates` phase of the orchestrated track runs after `build` and before 
 2. Run every command of `commands`.
 3. Record the run with `ship.mjs final-gates --result pass|fail --gates '{"test":"pass","lint":"fail"}' [--reason "<gate>: <first error>"]` and act on `action`:
    - **`continue`**: every gate passes. The phase is done; go on with `ship.mjs next`
-   - **`fix`**: spawn one `esp-skills:esp-builder` as the `fixer` role (`role`, `model` and `effort` from the output), with the plugin root (`<plugin-root>`, see Phase Subagents in SKILL.md), the failing gates and their output, step `final-gates-fix-<round>`, and the commit title `commit_title` from the output, per `commit.style` (`plain`: `Fix gate failures: <what changed>`, `conventional`: `fix(gates): <what changed>`). Then run `ship.mjs next`: it returns `final-gates` again, so the full gates run once more
+   - **`fix`**: delegate to one builder subagent with a fresh context window, briefed with [esp-builder.md](../../../../agents/esp-builder.md) as the `fixer` role (`role`, `model` and `effort` from the output; without subagents, follow it in this session), with the plugin root (`<plugin-root>`, see Phase Subagents in SKILL.md), the failing gates and their output, step `final-gates-fix-<round>`, and the commit title `commit_title` from the output, per `commit.style` (`plain`: `Fix gate failures: <what changed>`, `conventional`: `fix(gates): <what changed>`). Then run `ship.mjs next`: it returns `final-gates` again, so the full gates run once more
+     - In Claude Code, the fixer is the `esp-skills:esp-builder` agent type
    - **`halt`**: the gates still fail after the fixer round. Run `ship.mjs halt --key gates-exhausted --reason "<reason>"`
    - **`continue-failing`**: `gates-exhausted` is not in `ship.halt_on`. The phase is recorded `failed` with a decision, and the run goes on
 

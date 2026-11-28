@@ -85,7 +85,7 @@ Read options by name from `Arguments: $ARGUMENTS` in the Values subsection, and 
 
 ### Forked Context Skills
 
-Add `context: fork` when a skill should run in isolation without conversation history: its content becomes the subagent's prompt, so reserve it for skills with explicit task instructions.
+In Claude Code, `context: fork` runs a skill in isolation without conversation history: its content becomes the subagent's prompt, so reserve it for skills with explicit task instructions. Other harnesses run the skill in the current session, so its instructions must also work there.
 
 ### Lists Over Tables
 

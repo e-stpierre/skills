@@ -29,8 +29,9 @@ export const SCRIPTS_DIR = resolve(
   "..",
   ".."
 );
-export const SHIP_SKILL = "/esp-skills:esp-ship";
-export const ORCHESTRATE_SKILL = "/esp-skills:esp-orchestrate";
+/** Bare skill names: the per-harness invocation syntax belongs in the README. */
+export const SHIP_SKILL = "esp-ship";
+export const ORCHESTRATE_SKILL = "esp-orchestrate";
 /** Unit statuses that count as landed. */
 export const LANDED = new Set(["merged", "done"]);
 /** Unit statuses that stop the unit and block its dependents. */
@@ -187,7 +188,7 @@ const shipStateOf = (unitDir) => {
   }
 };
 
-/** The /esp-skills:esp-ship arguments of a unit. */
+/** The esp-ship arguments of a unit. */
 export function shipArgs(unit, entry, { runDir, interactive, resume }) {
   const args = resume ? ["--resume"] : [];
   args.push(

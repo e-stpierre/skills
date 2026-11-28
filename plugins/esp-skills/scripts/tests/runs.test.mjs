@@ -314,6 +314,27 @@ describe("update", () => {
     assert.deepEqual(readdirSync(dir), ["run.json"]);
   });
 
+  test("splits a model spec only on a known effort after the last colon", () => {
+    const dir = createRun();
+    const out = cli([
+      "update",
+      "--run-dir",
+      dir,
+      "--model",
+      "builder=qwen3:32b",
+      "--model",
+      "verifier=qwen3:32b:high",
+      "--model",
+      "reviewer=opus:max"
+    ]);
+    assert.equal(out.code, 0, out.stderr);
+    assert.deepEqual(out.json().models, {
+      builder: { model: "qwen3:32b" },
+      verifier: { model: "qwen3:32b", effort: "high" },
+      reviewer: { model: "opus", effort: "max" }
+    });
+  });
+
   test("rejects an invalid status and leaves run.json untouched", () => {
     const dir = createRun();
     const before = readFileSync(join(dir, "run.json"), "utf8");

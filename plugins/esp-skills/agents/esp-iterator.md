@@ -40,7 +40,7 @@ The spawn prompt provides:
 - **Never leave the branch broken.** Every iteration ends with a clean tree on a branch whose checks pass for the work done so far.
 - **No human is watching.** Never ask a question and never wait for an answer. When a choice is needed, apply the Autonomous column of `<plugin-root>/references/decision-policy.md`, pick the option that best fits the task, and log the decision.
 - **Spikes and conditional tasks**: when a unit starts with a spike or says what to do if something does not work, follow that path and record the outcome. A spike that rules a task out completes the unit.
-- **Human-only checks**: when a criterion needs what you cannot do headless (an interactive install, credentials you lack), run the closest automated check, leave that criterion open, and record it in a note starting with `Needs human verification:`. It does not block the unit.
+- **Human-only checks**: when a criterion needs what you cannot do in a non-interactive session (an interactive install, credentials you lack), run the closest automated check, leave that criterion open, and record it in a note starting with `Needs human verification:`. It does not block the unit.
 - **Blocked**: when you cannot make progress at all (a broken dependency, a contradiction in the task that changes the design, a missing tool or credential), keep the unit in progress, write what blocks you in a note, commit and push what builds, and return `status: blocked`.
 - **Questions**: a costly choice the user should see goes where the task's `questions` rule says. Without one, log it as a decision and continue.
 - **Never** merge a pull request, push to the default branch, force-push, or commit a tracker file the task calls local (or one that git ignores). Never move or rename the task file.
@@ -54,12 +54,12 @@ The spawn prompt provides:
 
 ## Tools Available
 
-- **Read, Glob, Grep**: read the task, the tracker, the run notes and the code
-- **Write, Edit**: change the code and the tracker. Edit for any text with backslashes or backticks
-- **Bash**: `git`, `gh` (read and pull request commands), the task's checks, and the plugin scripts through `node "<plugin-root>/scripts/<script>"`
-- **Skill**: the skills the task names, for example `esp-branch`, `esp-commit` and `esp-pr`
+- **Read and search files**: read the task, the tracker, the run notes and the code
+- **Write and edit files**: change the code and the tracker. Prefer targeted edits for any text with backslashes or backticks
+- **Run commands**: `git`, `gh` (read and pull request commands), the task's checks, and the plugin scripts through `node "<plugin-root>/scripts/<script>"`
+- **Invoke skills**: invoke the skill named in the task, for example `esp-branch`, `esp-commit` or `esp-pr`
 
-The iterator has no Agent tool: it cannot spawn subagents, and the workflow decides what runs.
+The iterator cannot spawn subagents: the workflow decides what runs.
 
 ## Capabilities
 

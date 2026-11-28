@@ -33,6 +33,8 @@ Manage the esp-skills configuration through the plugin's `config.mjs` script: cr
 
 Arguments: $ARGUMENTS
 
+If the line above holds no arguments or an unreplaced placeholder, read them from the message that invoked this skill.
+
 ## Core Principles
 
 - Every read and write goes through `config.mjs`, which validates each write before saving it

@@ -7,7 +7,7 @@ The orchestrated track always ends its plan phase with a plan file in plan forma
 Each source ends with `phase plan --status done`, which takes `latest_plan` unless `--plan <path>` is given:
 
 - **`reuse`**: no model. With a plan file from the request, record `phase plan --status done --plan <path>`. With a plan already in the run directory, record `phase plan --status done`
-- **`import`**: spawn the `planner` phase subagent with the model from `next` (`sonnet`) on `skills/sdlc/esp-plan/SKILL.md` with `--import <path> --interactive off`, where `<path>` is the triage `path`. The planner writes the plan into the run directory. Then record `phase plan --status done`
+- **`import`**: spawn the `planner` phase subagent with the model from `next` on `skills/sdlc/esp-plan/SKILL.md` with `--import <path> --interactive off`, where `<path>` is the triage `path`. The planner writes the plan into the run directory. Then record `phase plan --status done`
 - **`synthesize`** (`--plan-mode skip`): no model. Run `plan.mjs synthesize --run-dir <run-dir> --title <title> --goal <goal> --validation <command>`, with the title and the goal from the request (repeat `--validation` for each gate, `--files <a,b>` when known), then record `phase plan --status done`
 - **`generate`**: spawn the `planner` phase subagent (see Phase Subagents in SKILL.md) on `skills/sdlc/esp-plan/SKILL.md` with `--interactive off <request>`. With `escalated_from` in `ship.json`, add the escalation reason and the files already changed as extra context: the plan may reuse that work. The planner writes the plan into the run directory. Then record `phase plan --status done`
 

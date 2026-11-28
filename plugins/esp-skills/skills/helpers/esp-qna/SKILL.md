@@ -20,9 +20,11 @@ Answer a question about the code or a concept directly, leaving the codebase, th
 
 Arguments: $ARGUMENTS
 
+If the line above holds no arguments or an unreplaced placeholder, read them from the message that invoked this skill.
+
 ## Core Principles
 
-- Read-only: gather context with read-only tools (Read, Grep, Glob) and read-only commands. When the answer calls for an edit, a new file, or a command with side effects, describe it in the answer and leave it undone
+- Read-only: gather context by reading files, searching the code and running read-only commands. When the answer calls for an edit, a new file, or a command with side effects, describe it in the answer and leave it undone
 
 ## Instructions
 

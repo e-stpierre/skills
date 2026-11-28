@@ -47,7 +47,7 @@ Values are flat scalars (no lists or nested objects), checked by `runs.mjs check
 A parent run that shipped several units keeps every section above, written from `orchestrate.mjs outcome`, `decisions.jsonl` of the parent and the `summary.md` of each unit (`units/<id>/summary.md`), and adds a `Units` section right after Outcome:
 
 - **Status**: the outcome status: `merged` (every unit landed), `partial` (some units landed, others stopped or blocked), `awaiting-human`, `halted` or `failed`
-- **Outcome**: what landed in which repository, what is left, the dirty checkouts that housekeeping left alone, and the resume command when a unit is not done (`/esp-skills:esp-orchestrate --resume --run-dir <run-dir>`)
+- **Outcome**: what landed in which repository, what is left, the dirty checkouts that housekeeping left alone, and the resume command when a unit is not done (the esp-orchestrate skill with `--resume --run-dir <run-dir>`)
 - **Units**: one line per unit, in dependency order: ID, kind, repository, status, pull request and merge commit, or the stop reason (a blocked unit names the dependency that stopped)
 - **Decisions**, **Critical Findings**, **Review Comment Resolution**: the parent decisions (intake, sizing, merge policy, critical stops), then the items of each unit worth attention, prefixed with the unit ID
 - **Metrics**: units landed and stopped, unit mode (subagent or inline), waits and their polls, housekeeping results, duration

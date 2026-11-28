@@ -468,6 +468,26 @@ describe("cli get and show", () => {
     assert.deepEqual(result.json(), { model: "opus", effort: "high" });
   });
 
+  test("a role model is an alias or a harness model name", () => {
+    writeJson(join(project, ".esp-skills", "config.json"), {
+      defaults: {
+        models: {
+          builder: { high: { model: "gpt-5.5-codex", effort: "xhigh" } },
+          verifier: { model: "sonnet" }
+        }
+      }
+    });
+    const ok = cli("get", "defaults.models.builder.high");
+    assert.equal(ok.code, 0, ok.stderr);
+    assert.deepEqual(ok.json(), { model: "gpt-5.5-codex", effort: "xhigh" });
+    writeJson(join(project, ".esp-skills", "config.json"), {
+      defaults: { models: { verifier: { model: "sonet" } } }
+    });
+    const bad = cli("get", "defaults.models.verifier");
+    assert.equal(bad.code, 1);
+    assert.match(bad.stderr, /defaults\.models\.verifier\.model/);
+  });
+
   test("get of an unknown key exits 2", () => {
     const result = cli("get", "nope");
     assert.equal(result.code, 2);
@@ -587,7 +607,7 @@ describe("invalid config", () => {
     assert.equal(result.code, 1);
     assert.match(
       result.stderr,
-      /defaults\.models\.builder\.low\.model: expected one of/
+      /defaults\.models\.builder\.low\.model: expected a string matching .*got "gpt"/
     );
   });
 

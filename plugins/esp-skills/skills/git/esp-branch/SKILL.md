@@ -25,6 +25,8 @@ Read each option by its short or its long name (`-t fix`, `--type fix` or `--typ
 
 Arguments: $ARGUMENTS
 
+If the line above holds no arguments or an unreplaced placeholder, read them from the message that invoked this skill.
+
 ## Core Principles
 
 - Run without prompting: every missing value comes from the conversation or the defaults

@@ -32,17 +32,17 @@ Classify every item before acting on it. When an item fits several classes, take
 | `plan` | Plan approval only                                                                                                     | Autonomous      |
 | `all`  | Plan approval, review findings and pull request review items before each fix (A and B groups), fix-review recap, merge | Interactive     |
 
-- In standalone interactive mode, "Ask" uses the session's question tool (for example `AskUserQuestion`) with the recommended option listed first.
-- Headless sessions (`claude -p`) and subagents are always `off`, whatever the flag says. Subagents never ask: they return the question to their caller (see Asking Outside an Interactive Session).
+- In standalone interactive mode, "Ask" means: ask the user, with the session's question tool if it has one, otherwise in plain text, one question at a time with the recommended answer first.
+- A headless session is a non-interactive session (for example `claude -p`, `codex exec`): the harness tells the session that no user can answer. Headless sessions and subagents are always `off`, whatever the flag says. Subagents never ask: they return the question to their caller (see Asking Outside an Interactive Session).
 
 ## Asking Outside an Interactive Session
 
 Only the main interactive session asks the user. Everywhere else, "Ask" becomes one of two moves:
 
-- **Apply the autonomous column**: B-Decide applies the recommended option, B-Scope defers, Halt stops. This is the default for headless sessions (`claude -p`) and for every subagent.
+- **Apply the autonomous column**: B-Decide applies the recommended option, B-Scope defers, Halt stops. This is the default for headless sessions and for every subagent.
 - **Stop and hand the question back**: when no safe default exists (a Halt, or a B-Scope item that cannot be deferred), finish every item that does not depend on the answer, log those decisions, then reply with `Status: needs-decision` and a `Question:` line with the options, the recommended one first (see Replies). A script step ends with `status: awaiting-human` and the question in `blockers`.
 
-The main session then asks with `AskUserQuestion`, logs the answer with `source: operator`, and passes it to the next subagent, or to the same one when it continues.
+The main session then asks the user (with the session's question tool if it has one, otherwise in plain text, one question at a time with the recommended answer first), logs the answer with `source: operator`, and passes it to the next subagent, or to the same one when it continues.
 
 ## Stop Conditions
 
