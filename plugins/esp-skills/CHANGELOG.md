@@ -8,6 +8,10 @@
   - Agents take the plugin root from their caller and name plugin files as `<plugin-root>/...`; in Claude Code, an agent spawned without one still finds it in `${CLAUDE_PLUGIN_ROOT}`
   - esp-ralph-loop: every iteration prompt carries `Plugin root: <path>` when `plugin_root` is given
 - The skill and agent templates state the path convention and keep Claude variables to `In Claude Code,` notes
+- Harness-neutral skill content, so the skills read the same in Claude Code and Codex:
+  - Agent prompts and skills name actions instead of Claude tools, use bare skill names, and carry the argument fallback line; subagent, background and chaining steps have a sequential fallback
+  - `references/model-selection.md` holds a per-harness Tiers table; `ship.mjs --model` accepts a Claude alias, a tier (`low`, `medium`, `high`) or a harness model name, and `orchestrate.mjs` returns bare skill names
+  - esp-codex refuses to run inside Codex; esp-ralph declares a `compatibility` line and refuses outside Claude Code
 
 ## 0.12.2
 
