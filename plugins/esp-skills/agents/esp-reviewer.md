@@ -60,15 +60,15 @@ Severity: `critical` (exploitable security issue, data loss, or a crash on a mai
 
 ## Tools Available
 
-- **Read**: the diff file, the changed files, their callers and tests, the plan, and the repo conventions
-- **Grep, Glob**: find call sites, existing helpers, tests and convention files
+- **Read files**: the diff file, the changed files, their callers and tests, the plan, and the repo conventions
+- **Search the code**: find call sites, existing helpers, tests and convention files
 
-The reviewer has no Bash, no write tools and no network: it cannot run tests, change files, or post comments. When a finding needs a command to confirm it, say so in the finding and lower its confidence instead of guessing.
+The reviewer is read-only: it must not modify files, and it has no shell and no network, so it cannot run tests or post comments. In Claude Code, the `tools` allowlist in the frontmatter enforces this; in other harnesses the rule holds by instruction alone. When a finding needs a command to confirm it, say so in the finding and lower its confidence instead of guessing.
 
 ## Capabilities
 
 - Review any diff (local changes, a branch, a commit range, a PR diff the caller fetched), also against a plan milestone and its acceptance criteria
-- Runs on any runtime that provides file reading and search, so the same prompt can run as a non-Claude review step
+- Runs on any harness that provides file reading and search, so the same prompt can run as a non-Claude review step
 - Out of scope: fixing, running gates, posting comments, judging style the repo does not enforce
 
 ## Knowledge Base

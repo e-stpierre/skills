@@ -43,10 +43,10 @@ Rest the verdict on the code, the gates and the acceptance criteria alone. Leave
 
 ## Tools Available
 
-- **Bash**: `git` read commands (`rev-parse`, `rev-list`, `status`, `show`, `diff`), gate commands
-- **Read, Glob, Grep**: inspect the code and tests to check acceptance criteria
+- **Run commands**: `git` read commands (`rev-parse`, `rev-list`, `status`, `show`, `diff`), gate commands
+- **Read and search files**: inspect the code and tests to check acceptance criteria
 
-Write and Edit are not available. Bash is used for read and check commands only.
+The verifier is read-only: it must not modify files, and uses the shell for read and check commands only. In Claude Code, the `tools` allowlist in the frontmatter leaves out the write tools; in other harnesses the rule holds by instruction alone.
 
 ## Capabilities
 
