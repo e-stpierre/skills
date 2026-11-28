@@ -21,7 +21,7 @@ Read each option by its short or its long name (`-m 2`, `--max-rounds 2` or `--m
 - **`[-t|--timeout <minutes>]`** (optional): Time limit of each wait. Defaults to `fix-review.wait.timeout_minutes` (30).
 - **`[-m|--max-rounds <n>]`** (optional): Maximum number of fix rounds. With `--run-dir`, the count carries over from earlier invocations on the same run; without it, each invocation starts a new count. Defaults to one round in this invocation: fix, push, respond, then stop, without waiting for a re-review. With a value, rounds after the first start after the re-review wait.
 - **`[-r|--reviewers <name>...]`** (optional): Reviewer names from `fix-review.wait.reviewers` (`claude`, `codex`) or raw GitHub logins. Repeat the option (`-r claude -r codex`) or give a comma-separated list (`-r claude,codex`). Only their comments are handled, and only they are waited for. Without it, comments from every author except yourself are handled. The `--wait` wait targets `fix-review.wait.default_reviewers`, and the wait between rounds targets the default reviewers that commented on the pull request.
-- **`[-i|--interactive <mode>]`** (optional): `off`, `plan` or `all`. Only `all` stops to settle B-Decide and B-Scope items with the user and shows a recap before pushing; `plan` behaves like `off` in this skill. Defaults to `defaults.interactive` (`off`). Headless sessions always use `off`.
+- **`[-i|--interactive <mode>]`** (optional): `off`, `plan` or `all`. Only `all` stops to settle B-Decide and B-Scope items with the user and shows a recap before pushing; `plan` behaves like `off` in this skill. Defaults to `defaults.interactive` (`off`). Non-interactive sessions always use `off`.
 - **`[-p|--pr <pr>]`** (optional): Pull request number, `#<number>`, or URL. Defaults to the pull request of the current branch. Ignored with `--internal`.
 - **`[-e|--findings <path>]`** (optional): With `--internal`, the `esp-review` findings file (`review-<N>.json`). Defaults to the latest one in `--run-dir`; required with `--internal` when there is no `--run-dir`.
 - **`[-d|--run-dir <path>]`** (optional): Run directory owned by a parent skill (esp-ship). The state is `<run-dir>/fix-review.json`, every resolution is logged in `decisions.jsonl`, the wait keeps its progress in `<run-dir>/fix-review-wait.json`, and under esp-ship the outcome is recorded as step `fix-review` (`fix-review-<N>` in internal mode, after `review-<N>`) in `ship.json`. Without it, the state goes to a temporary directory and no run is created.
@@ -29,6 +29,8 @@ Read each option by its short or its long name (`-m 2`, `--max-rounds 2` or `--m
 ### Values
 
 Arguments: $ARGUMENTS
+
+If the line above holds no arguments or an unreplaced placeholder, read them from the message that invoked this skill.
 
 ## Additional Resources
 
@@ -46,7 +48,7 @@ Arguments: $ARGUMENTS
 - Commit (internal mode) or push (pull request mode) only code that passes the full gates (see Committing Fixes)
 - Review fixes are new commits on top of the branch, pushed with a plain `git push`: no amend of a milestone commit, no force-push, no rewrite of pushed history
 - Record every resolution with `fix-review.mjs record` when it is made. A handled item is never processed again, and the round limit is never exceeded
-- Run every script with Bash. Paths are relative to this skill's directory (a reference file's paths are relative to that file). Resolve a path to an absolute one before running a command with it: commands run from the user's repository. A bare script name (`fix-review.mjs`) or `scripts/<name>` is the plugin's script, `../../../scripts/<name>` from this directory. Replies, thread resolutions and the outcome always go through `fix-review.mjs`
+- Run every script as a shell command. Paths are relative to this skill's directory (a reference file's paths are relative to that file). Resolve a path to an absolute one before running a command with it: commands run from the user's repository. A bare script name (`fix-review.mjs`) or `scripts/<name>` is the plugin's script, `../../../scripts/<name>` from this directory. Replies, thread resolutions and the outcome always go through `fix-review.mjs`
 - In GitHub replies, name a finding `item 4` or `finding 4`: GitHub links `#<number>` to an issue
 
 ## Skill-Specific Guidelines
@@ -136,17 +138,18 @@ node "../../../scripts/wait-for-review.mjs" <pr> --reviewers <a,b> --checks [--t
 
 How a review counts, for each reviewer on the head commit, strongest first: a pull request review by its login on the head SHA; a comment by the login with a machine-readable review state for the head SHA marked completed (Codex posts only that summary when it has no findings); a comment by the login, created or edited after the head commit date, that is not a progress placeholder. Logins match case-insensitively, with or without the `[bot]` suffix.
 
-Pick the launch mode from the runtime, in this order:
+Pick the launch mode from the harness, in this order:
 
-1. **Background with exit notification** (for example the Bash tool's `run_in_background`, with a timeout above the wait timeout): start the command, tell the user what is being waited for, and end the turn. The next action is reading the exit notification.
-2. **Foreground** (no background execution): run the same command in the foreground with the longest shell timeout available. If the shell kills it first, run the same command again with the same `--state` file: an interrupted wait keeps its clock, so the total wait still honors the timeout.
+1. **Background with exit notification**, when the harness supports it (with a command timeout above the wait timeout): start the command in the background, tell the user what is being waited for, and end the turn. The next action is reading the exit notification.
+   - In Claude Code, run the command with the Bash tool's `run_in_background`.
+2. **Foreground** otherwise: run the same command in the foreground with the longest shell timeout available and wait for it. The outcome is the same either way. If the shell kills it first, run the same command again with the same `--state` file: an interrupted wait keeps its clock, so the total wait still honors the timeout.
 
 While it runs, the same command with `--once` checks once without waiting, and the state file shows the last poll.
 
 Outcomes:
 
 - **`done`**: run the round with the comments that arrived and the failing checks in `outputs.checks.failing`
-- **`awaiting-human`** (timeout): in an interactive session (not headless, not a subagent), ask whether to wait again or continue with what arrived, "wait again" first. On "wait again", run the same command with the same `--state` file. Headless or in a subagent, continue with the comments and checks that arrived. With `--run-dir`, log the choice with `runs.mjs decision` (`phase: fix-review`, `source: operator` for an answer, `policy` for the headless continue)
+- **`awaiting-human`** (timeout): in an interactive session (not a non-interactive session, not a subagent), ask whether to wait again or continue with what arrived, "wait again" first. On "wait again", run the same command with the same `--state` file. In a non-interactive session or a subagent, continue with the comments and checks that arrived. With `--run-dir`, log the choice with `runs.mjs decision` (`phase: fix-review`, `source: operator` for an answer, `policy` for the non-interactive continue)
 - **`failed`**: report the summary and go to the outcome with the items left as `--remaining`
 
 ### Classifying Items
@@ -183,7 +186,7 @@ A round is: fetch, classify, fix, commit, push, respond. Between rounds, the bot
 
 ### Interactive Fix-Review
 
-In `all` mode, standalone and not headless:
+In `all` mode, standalone and in an interactive session:
 
 1. After classifying a round, show the items grouped as A-Fix, B-Decide, B-Scope and Reject.
 2. For each B-Decide item, ask which option to apply, with the recommended one first. For each B-Scope item, ask whether to defer it, fix it now, or reject it.
@@ -193,7 +196,7 @@ Record each answer with `source: operator`. In every other mode, apply the Auton
 
 ## Instructions
 
-1. **Parse arguments**: read every option by its short or long name, and collect the reviewer names of every `-r|--reviewers` value. Resolve the interactive mode (`-i|--interactive`, else `defaults.interactive`, `off` when headless). `-l|--internal` with neither `-e|--findings` nor `-d|--run-dir` is a usage error: report it and stop.
+1. **Parse arguments**: read every option by its short or long name, and collect the reviewer names of every `-r|--reviewers` value. Resolve the interactive mode (`-i|--interactive`, else `defaults.interactive`, `off` in a non-interactive session). `-l|--internal` with neither `-e|--findings` nor `-d|--run-dir` is a usage error: report it and stop.
 2. **Load configuration** (see Configuration).
 3. **Check prerequisites**: in pull request mode, `gh auth status` must succeed and the pull request must exist and be open. The working tree must be clean and on the pull request branch (internal mode: on the branch that was reviewed). Otherwise report it and stop.
 4. **Prepare the state**: pick the state options of the mode (see Scripts), creating the temporary directory when there is no `--run-dir`. Every later `fix-review.mjs` call carries them.

@@ -23,13 +23,15 @@ Read each option by its short or its long name (`-t main`, `--target main` or `-
   - `<ref>` (`main`, `origin/main`): commits on HEAD that are not on `<ref>`, from the merge base
   - `<base>..<head>` or `<base>...<head>`: an explicit range
   - `PR <number>`, `#<number>`, or a pull request URL: a GitHub pull request, through `gh`
-- **`[-i|--interactive <mode>]`** (optional): `off`, `plan` or `all`. Only `all` stops after the review to settle B-Decide and B-Scope findings with the user; `plan` behaves like `off` in this skill. Defaults to `defaults.interactive` (`off`). Headless sessions always use `off`.
+- **`[-i|--interactive <mode>]`** (optional): `off`, `plan` or `all`. Only `all` stops after the review to settle B-Decide and B-Scope findings with the user; `plan` behaves like `off` in this skill. Defaults to `defaults.interactive` (`off`). Non-interactive sessions always use `off`.
 - **`[-s|--second-opinion <tool>]`** (optional): `none` or `codex`. `codex` also runs a read-only Codex review of the same target, whose findings the reviewer verifies with its own. Defaults to `review.second_opinion` (`none`).
 - **`[-d|--run-dir <path>]`** (optional): Run directory owned by a parent skill (esp-ship). The diff, the review and the findings are saved there, and the outcome is recorded as step `review-<N>` in `ship.json`. Without it, the skill writes them to a temporary directory and creates no run.
 
 ### Values
 
 Arguments: $ARGUMENTS
+
+If the line above holds no arguments or an unreplaced placeholder, read them from the message that invoked this skill.
 
 ## Additional Resources
 
@@ -42,7 +44,7 @@ Arguments: $ARGUMENTS
 
 - The reviewer owns the review: `esp-reviewer.md` defines the method, the scope (only the diff), the finding format and the severity scale. This skill resolves the diff, runs the reviewer, and parses its reply
 - Read-only and routes nothing: the skill writes only into the run or temporary directory, and the caller decides where the review goes (terminal, PR comment, file, CI log)
-- Run every script with Bash. Paths are relative to this skill's directory (a reference file's paths are relative to that file). Resolve a path to an absolute one before running a command with it: commands run from the user's repository. A bare script name (`review.mjs`) or `scripts/<name>` is the plugin's script, `../../../scripts/<name>` from this directory. Counts, the findings file and the outcome always come from `review.mjs`, never from a hand count
+- Run every script as a shell command. Paths are relative to this skill's directory (a reference file's paths are relative to that file). Resolve a path to an absolute one before running a command with it: commands run from the user's repository. A bare script name (`review.mjs`) or `scripts/<name>` is the plugin's script, `../../../scripts/<name>` from this directory. Counts, the findings file and the outcome always come from `review.mjs`, never from a hand count
 
 ## Skill-Specific Guidelines
 
@@ -67,7 +69,7 @@ If a command exits with code 1 (invalid config), report its error and stop. If i
 - `review.second_opinion` (default `none`): `codex` adds the Codex second opinion when `--second-opinion` is not given
 - `codex.model`, `codex.timeout_minutes` (default `null`, `30`): passed to the Codex review; a `null` model passes no `--model`
 - `defaults.interactive` (default `off`): interactive mode when `--interactive` is not given
-- `defaults.models.reviewer` (default `opus`, effort `high`): model and effort passed to the `esp-reviewer` subagent
+- `defaults.models.reviewer` (default the `high` tier): model and effort passed to the reviewer subagent (see model-selection.md)
 
 The available dimensions are `correctness`, `security`, `plan-conformance`, `tests`, `conventions`, `simplification` and `performance`.
 
@@ -78,7 +80,7 @@ The available dimensions are `correctness`, `security`, `plan-conformance`, `tes
 - **Resolve target**: `review.mjs target [<target>] --project-dir <repo-root> [--run-dir <path>]` (`<target>`: the `--target` value)
 - **Latest plan**: `runs.mjs plan` (`{ path, version }`, version 0 when there is none)
 - **Parse and filter**: `review.mjs parse <review_path> --min-severity <level> --verified <bool> --md-out <review_path> --out <findings_path> [--codex <codex_path>]`
-- **Codex review** (second opinion only): `codex.mjs review [<target>] --cwd <repo-root> --out <codex_out> --status-path <codex_path> --detach [--model <m>] [--timeout-minutes <n>] [--run-dir <path>]`, then `codex.mjs wait --status-path <codex_path> --max-minutes 9` with a Bash timeout of 600000 ms, repeated while it prints `status: running`
+- **Codex review** (second opinion only): `codex.mjs review [<target>] --cwd <repo-root> --out <codex_out> --status-path <codex_path> --detach [--model <m>] [--timeout-minutes <n>] [--run-dir <path>]`, then `codex.mjs wait --status-path <codex_path> --max-minutes 9` with a command timeout of 10 minutes (600000 ms), repeated while it prints `status: running`
 - **Record the step** (under esp-ship, whose run dir has `ship.json`): the same `parse` command piped into `ship.mjs record <step> --run-dir <path>`, which stores its `outcome`
 
 `target` prints `{ kind, base, head, files, untracked, pr, empty, step, diff_path, review_path, findings_path }`. With `--run-dir`, the paths are `<run-dir>/review-<N>.diff`, `.md` and `.json`, where N is the next review round. `parse` prints `{ file, valid, findings, rejected, dropped, outcome }`, where `outcome` is `{ status, summary, max_risk, outputs, discovered_items }`, and exits 1 with the list of malformed findings when the review does not follow the finding format. It strips the reviewer's `Status:` line and keeps its `Discovered:` lines. With `--codex`, it drops a `- Source: codex` finding that repeats a finding of the reviewer at the same file and start line, lists it under Rejected Candidates as a duplicate, and reports the pass in `outputs.second_opinion` (`{ tool, status, summary, candidates, kept, duplicates }`).
@@ -95,10 +97,11 @@ Build one self-contained prompt for the reviewer:
 - The convention files to honor: `AGENTS.md` and `CLAUDE.md` at the repo root and in every ancestor directory of a changed file
 - With a `done` Codex result: `codex_path` as the reviewer's **Second opinion** input (see Codex Second Opinion)
 
-Then run it in a fresh context. The choice depends only on the runtime, never on the size of the diff: a small diff still goes to the subagent, because the fresh context keeps the review from being anchored on this session.
+Then run it in a fresh context. The choice depends only on the harness, never on the size of the diff: a small diff still goes to the subagent, because the fresh context keeps the review from being anchored on this session.
 
-- **Subagent available** (the session has a subagent tool and is not itself a subagent): spawn `esp-skills:esp-reviewer` in the foreground with the `model` and `effort` from `defaults.models.reviewer`, and wait for its reply before the next step. With `--run-dir`, record the model with `runs.mjs update --model reviewer=<alias>[:<effort>]` before spawning.
-- **Otherwise** (a runtime without subagents, or already inside a subagent): read `../../../agents/esp-reviewer.md` and follow its Methodology and Output Guidance in this session, read-only, with the plugin root above standing in for `<plugin-root>`.
+- **Subagent available** (the session can delegate and is not itself a subagent): delegate to a subagent with a fresh context window, briefed with `../../../agents/esp-reviewer.md` and the prompt above, with the model and effort of the `reviewer` role (`defaults.models.reviewer`), and wait for its reply in the foreground before the next step. With `--run-dir`, record the model with `runs.mjs update --model reviewer=<model>[:<effort>]` before delegating.
+  - In Claude Code, use the `esp-skills:esp-reviewer` agent type.
+- **Otherwise** (a harness without subagents, or already inside a subagent): read `../../../agents/esp-reviewer.md` and follow its Methodology and Output Guidance in this session, read-only, with the plugin root above standing in for `<plugin-root>`.
 
 Keep only the reviewer's reply. Save it verbatim to `review_path`.
 
@@ -114,7 +117,7 @@ On with `--second-opinion codex` or `review.second_opinion: codex`. Codex runs b
 
 ### Interactive Review
 
-In `all` mode, standalone and not headless, after parsing:
+In `all` mode, standalone and in an interactive session, after parsing:
 
 1. Show the findings grouped as A, then B-Decide, then B-Scope.
 2. For each B-Decide finding, ask which option to apply, with the recommended option first. For each B-Scope finding, ask whether to defer it or keep it in scope.

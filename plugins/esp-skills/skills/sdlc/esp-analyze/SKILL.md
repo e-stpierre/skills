@@ -26,6 +26,8 @@ Analyze the codebase for one type of issue and save a markdown report: findings 
 
 Arguments: $ARGUMENTS
 
+If the line above holds no arguments or an unreplaced placeholder, read them from the message that invoked this skill.
+
 ## Additional Resources
 
 - For the method and report template of each type, see [bug.md](references/bug.md), [debt.md](references/debt.md), [doc.md](references/doc.md), [security.md](references/security.md) and [style.md](references/style.md): read only the one matching `--type`

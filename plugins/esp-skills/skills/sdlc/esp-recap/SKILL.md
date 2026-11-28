@@ -28,6 +28,8 @@ Tell the user what happened across their runs, what was risky, or why a decision
 
 Arguments: $ARGUMENTS
 
+If the line above holds no arguments or an unreplaced placeholder, read them from the message that invoked this skill.
+
 ## Additional Resources
 
 - For the run directory layout and the artifacts, see [run-directory.md](../../../references/run-directory.md): read it when a Q&A answer needs a file the script output does not cover
@@ -73,7 +75,9 @@ A digest's `workflow` comes from `summary.md`, and `run_workflow` keeps the `run
 
 ### Fan-Out
 
-When `collect` returns `fan_out: true`, spawn one subagent per entry of `batches`, in parallel, with the Agent tool (`general-purpose`). Each prompt gives the run paths of the batch, the user's question or "recap", and asks the subagent to run `node "<plugin root>/scripts/recap.mjs" show <path>` for each run, read only the files it lists, and return at most 5 lines per run: title, status, what was delivered, the decisions and findings worth attention with their sources. Replace `<plugin root>` with this skill's `../../..` resolved to an absolute path. Keep only the returned digests. Without a subagent tool, process the batches one after the other in this session.
+When `collect` returns `fan_out: true`, delegate each entry of `batches` to a subagent with a fresh context window, in parallel when the harness supports it, otherwise one after another. Each prompt gives the run paths of the batch, the user's question or "recap", and asks the subagent to run `node "<plugin root>/scripts/recap.mjs" show <path>` for each run, read only the files it lists, and return at most 5 lines per run: title, status, what was delivered, the decisions and findings worth attention with their sources. Replace `<plugin root>` with this skill's `../../..` resolved to an absolute path. Keep only the returned digests. Without subagents, process the batches one after the other in this session: the digests are the same either way.
+
+In Claude Code, use the built-in `general-purpose` agent type for each batch.
 
 ## Instructions
 
@@ -118,7 +122,7 @@ Answer in plain markdown for the user, short and scannable. Lead with the answer
 - **Fix login typo** (esp-ship, inline then orchestrated, halted): stopped on the wall-time budget (`.../2026-11-09-fix-typo/summary.md#Outcome`)
 - **Rename config keys** (esp-go-light, merged): an older run, the keys are renamed in one commit (`.../2026-11-05-rename-keys/summary.md#Outcome`)
 
-**Needs you**: Fix login typo is halted; resume with `/esp-skills:esp-ship --resume --run-dir <path>`.
+**Needs you**: Fix login typo is halted; resume it by invoking the esp-ship skill with `--resume --run-dir <path>`.
 ```
 
 ```markdown

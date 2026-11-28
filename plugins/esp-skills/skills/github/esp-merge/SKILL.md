@@ -19,13 +19,15 @@ Read each option by its short or its long name (`-m squash`, `--method squash` o
 - **`[-n|--dry-run]`** (optional): Check the conditions and resolve the method, rebase nothing, merge nothing. The outcome reports what would happen.
 - **`[-m|--method <method>]`** (optional): `repo`, `squash`, `rebase` or `merge`. Defaults to `merge.method` (`repo`: pick from what the repository allows). An explicit method the repository does not allow is an error, never a silent fallback.
 - **`[-c|--checks <mode>]`** (optional): `required` or `none-expected`. Defaults to `required`: a head with no checks yet counts as pending for a short grace period while checks register. `none-expected` is for a pull request that runs no checks (for example one opened with `GITHUB_TOKEN`): no grace period, and checks that do exist still block when failing or pending. Passed to every `merge-ready.mjs check` and `merge` call as `--checks <mode>`.
-- **`[-i|--interactive <mode>]`** (optional): `off`, `plan` or `all`. Only `all` stops for a confirmation before merging; `plan` behaves like `off` in this skill. Defaults to `defaults.interactive` (`off`). Headless sessions always use `off`.
+- **`[-i|--interactive <mode>]`** (optional): `off`, `plan` or `all`. Only `all` stops for a confirmation before merging; `plan` behaves like `off` in this skill. Defaults to `defaults.interactive` (`off`). Non-interactive sessions always use `off`.
 - **`[-p|--pr <pr>]`** (optional): Pull request number, `#<number>`, or URL. Defaults to the pull request of the current branch.
 - **`[-d|--run-dir <path>]`** (optional): Run directory owned by a parent skill (esp-ship). Halt decisions and the run status count as halt signals, the method decision goes to the run, and under esp-ship the outcome is recorded as step `merge` in `ship.json`. Without it, no run is created.
 
 ### Values
 
 Arguments: $ARGUMENTS
+
+If the line above holds no arguments or an unreplaced placeholder, read them from the message that invoked this skill.
 
 ## Additional Resources
 
@@ -39,8 +41,8 @@ Arguments: $ARGUMENTS
 - A halted task never merges. A Halt decision in the run blocks the merge until an operator decision references it
 - The only force-push is `git push --force-with-lease` of the pull request's own head branch, right after a rebase. The base branch is never pushed
 - Re-run the gates after every rebase, and push only a rebase whose gates pass
-- The script waits, the session sleeps: wait for checks with the script in the background, never with polling or `sleep` loops in the session
-- Run every script with Bash. Paths are relative to this skill's directory (a reference file's paths are relative to that file). Resolve a path to an absolute one before running a command with it: commands run from the user's repository. A bare script name (`merge-ready.mjs`) or `scripts/<name>` is the plugin's script, `../../../scripts/<name>` from this directory. The outcome always comes from the script
+- The script waits, the session sleeps: wait for checks with the script (in the background when the harness supports it, otherwise in the foreground), never with polling or `sleep` loops in the session
+- Run every script as a shell command. Paths are relative to this skill's directory (a reference file's paths are relative to that file). Resolve a path to an absolute one before running a command with it: commands run from the user's repository. A bare script name (`merge-ready.mjs`) or `scripts/<name>` is the plugin's script, `../../../scripts/<name>` from this directory. The outcome always comes from the script
 
 ## Skill-Specific Guidelines
 
@@ -106,11 +108,11 @@ Rebase at most 3 times per invocation: a base that keeps moving ends with the `b
 
 ### Waiting for Checks
 
-Run `merge-ready.mjs check [<pr>] --wait` in the background with an exit notification when the runtime has it (end the turn; the next action is reading the exit notification), else in the foreground with the longest shell timeout. It exits when the outcome is no longer `pending`, or with `timed_out: true`. With `merge.use_auto_merge`, skip the wait: `merge` enables auto-merge on pending checks.
+Run `merge-ready.mjs check [<pr>] --wait` in the background with an exit notification when the harness supports it (end the turn; the next action is reading the exit notification), otherwise in the foreground with the longest shell timeout, waiting for it; the outcome is the same either way. It exits when the outcome is no longer `pending`, or with `timed_out: true`. With `merge.use_auto_merge`, skip the wait: `merge` enables auto-merge on pending checks.
 
 ### Interactive Merge
 
-In `all` mode, standalone and not headless: before the merge, show the conditions and the method with its reason, and ask whether to merge. On "no", leave the pull request open: run `merge-ready.mjs merge --dry-run` for the outcome, and with `--run-dir` log the answer with `runs.mjs decision` (`source: operator`, `phase: merge`). In every other mode, merge without asking.
+In `all` mode, standalone and in an interactive session: before the merge, show the conditions and the method with its reason, and ask whether to merge. On "no", leave the pull request open: run `merge-ready.mjs merge --dry-run` for the outcome, and with `--run-dir` log the answer with `runs.mjs decision` (`source: operator`, `phase: merge`). In every other mode, merge without asking.
 
 ### Local Cleanup
 
@@ -121,7 +123,7 @@ After `outputs.merged` is `true`:
 
 ## Instructions
 
-1. **Parse arguments**: read every option by its short or long name. Resolve the interactive mode (`-i|--interactive`, else `defaults.interactive`, `off` when headless).
+1. **Parse arguments**: read every option by its short or long name. Resolve the interactive mode (`-i|--interactive`, else `defaults.interactive`, `off` in a non-interactive session).
 2. **Load configuration** (see Configuration). With `merge.enabled: false`, skip to step 8: `merge` reports it, with no confirmation.
 3. **Check prerequisites**: `gh auth status` must succeed, and the pull request must exist. Otherwise report it and stop.
 4. **Read user corrections**: with `--run-dir`, the operator lines of `runs.mjs notes --show --run-dir <path>` (marked `(operator)`). A line that says not to merge ends the skill with `merge --halt "<line>"`.
