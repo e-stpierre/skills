@@ -55,7 +55,7 @@ The precedence picks the builder model of every milestone, also when the esp-shi
 ## Rules
 
 - Pass the resolved model and effort on each subagent spawn, when the harness lets a spawn set them. Do not rely on the frontmatter. A harness that cannot set them runs the subagent on its own default.
-- In Claude Code, the Agent tool takes `model` and `effort` parameters and accepts aliases only (`opus`, `sonnet`, `haiku`, `fable`); agent frontmatter also accepts `inherit`. Never pass a full model ID: a harness model name of another harness (`gpt-5.5-codex`) has no alias, so the spawn passes no model and the subagent inherits the session model.
+- In Claude Code, the Agent tool takes `model` and `effort` parameters and accepts aliases only (`opus`, `sonnet`, `haiku`, `fable`); agent frontmatter also accepts `inherit`. Never pass a full model ID: a harness model name of another harness (`gpt-5.5-codex`) has no alias, so the spawn passes no model and the subagent inherits the session model. When that happens, log a low-risk `policy` decision (`Ran <role> on the session model: <model> is not a Claude Code alias`) and record `<role>=inherit` (see the last rule). An effort Claude Code lacks (`minimal`) is passed as `low`.
 - Worker skills invoked directly by a user (not spawned) run on the session model. A skill cannot switch the main session model.
 - A headless session is a non-interactive session (for example `claude -p`, `codex exec`), detected from the harness. It sets its own model with the harness's own option. The precedence above still applies to the subagents it spawns.
 - Record what was used: `runs.mjs update --run-dir <path> --model <role>=<model>[:<effort>]` keeps `run.json` `models` accurate for `esp-recap`.

@@ -25,7 +25,7 @@ In Claude Code, the saved workflow is `esp-skills:esp-ralph-loop`, launched with
 - **`[-P|--prompt <file>]`** (optional): Launch this prompt file as it is: no detection, no building, no review.
 - **`[-m|--max-iterations <n>]`** (optional): Most iterations of this launch. Defaults to `ralph.max_iterations` (`25`).
 - **`[-a|--model <model>]`** (optional): Model of every iteration, named as in [model-selection.md](../../../references/model-selection.md). Defaults to the session model.
-  - In Claude Code, the workflow passes it to each iteration agent as is, so it is an agent model alias (`opus`, `sonnet`, `haiku` or `fable`).
+  - In Claude Code, the workflow passes it to each iteration agent as is, so it is an agent model alias (`opus`, `sonnet`, `haiku` or `fable`): a tier (`low`, `medium`, `high`) maps to its alias and effort through the Tiers table of model-selection.md before the launch (an explicit `--effort` still wins), and any other value that is not an alias is a usage error: report it and stop in step 3.
 - **`[-e|--effort <level>]`** (optional): Reasoning effort of every iteration: `low`, `medium`, `high`, `xhigh` or `max`. Defaults to the agent's own.
 - **`[-d|--run-dir <path>]`** (optional): Reuse this run, for a relaunch after a stop: its `prompt.md` and `notes.md` carry over. Without it, the skill creates a run under `runs.root`.
 - **`[source]`** (required unless `--prompt` or `--run-dir`): A path to an esp-plan plan, a path to a document that tracks its own work (a progress checklist, a task list, a findings document), or a free-text task.
