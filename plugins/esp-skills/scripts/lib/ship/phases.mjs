@@ -33,7 +33,7 @@ import {
   git,
   INTERACTIVE_MODES,
   MERGE_POLICIES,
-  MODEL_ALIASES,
+  modelOption,
   PHASE_STATUSES,
   parseJsonOption,
   positiveInt,
@@ -213,17 +213,6 @@ export function applyTrack(state, track, config) {
 // ---------------------------------------------------------------------------
 // init and resume
 // ---------------------------------------------------------------------------
-
-/** The --model alias, or null; a value outside MODEL_ALIASES is a usage error. */
-function modelOption(value) {
-  const model = stringOption(value);
-  if (model !== null && !MODEL_ALIASES.has(model))
-    throw new ShipError(
-      `--model must be one of ${[...MODEL_ALIASES].join(", ")}`,
-      2
-    );
-  return model;
-}
 
 /** A pull request URL: https://<host>/<owner>/<repo>/pull/<n>. */
 const PR_URL = /^https?:\/\/[^/\s]+\/[^/\s]+\/[^/\s]+\/pull\/\d+\/?$/i;

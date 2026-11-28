@@ -601,12 +601,13 @@
       "required": ["model"],
       "properties": {
         "model": {
-          "description": "Model alias passed to the subagent spawn.",
-          "enum": ["opus", "sonnet", "haiku", "fable"]
+          "description": "Model passed to the subagent spawn: a Claude Code alias (opus, sonnet, haiku, fable) or a harness model name such as a Codex model id (gpt-5.5-codex): letters, digits and . - _ / :, with at least one digit (see references/model-selection.md).",
+          "type": "string",
+          "pattern": "^(?:opus|sonnet|haiku|fable|(?=[^0-9]*[0-9])[A-Za-z0-9][A-Za-z0-9._/:-]{0,127})$"
         },
         "effort": {
-          "description": "Reasoning effort passed to the subagent spawn.",
-          "enum": ["low", "medium", "high", "xhigh", "max"]
+          "description": "Reasoning effort passed to the subagent spawn. Claude Code takes low to max; Codex takes minimal to xhigh.",
+          "enum": ["minimal", "low", "medium", "high", "xhigh", "max"]
         }
       }
     },

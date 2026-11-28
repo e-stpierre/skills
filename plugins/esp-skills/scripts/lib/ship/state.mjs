@@ -81,8 +81,37 @@ export const HALT_KEYS = [
   "budget"
 ];
 export const INTERACTIVE_MODES = ["off", "plan", "all"];
-/** Builder model aliases of --model. */
+/** Claude Code model aliases of --model. */
 export const MODEL_ALIASES = new Set(["opus", "sonnet", "haiku", "fable"]);
+/** Model tiers of --model, resolved through defaults.models.builder.<tier>. */
+export const MODEL_TIERS = new Set(["low", "medium", "high"]);
+/**
+ * A harness model name (a Codex model id such as gpt-5.5-codex, or a full
+ * Claude model id): letters, digits, `.`, `-`, `_`, `/` and `:`, starting with
+ * a letter or digit and holding at least one digit, so a bare word that is
+ * neither an alias nor a tier (a typo) is rejected.
+ */
+const HARNESS_MODEL = /^(?=[^0-9]*[0-9])[A-Za-z0-9][A-Za-z0-9._/:-]{0,127}$/;
+
+/** True when `value` is a --model value: an alias, a tier or a harness model name. */
+export function isModelChoice(value) {
+  return (
+    MODEL_ALIASES.has(value) ||
+    MODEL_TIERS.has(value) ||
+    HARNESS_MODEL.test(value)
+  );
+}
+
+/** The --model value, or null; a value isModelChoice rejects is a usage error. */
+export function modelOption(value) {
+  const model = stringOption(value);
+  if (model !== null && !isModelChoice(model))
+    throw new ShipError(
+      `--model must be a model alias (${[...MODEL_ALIASES].join(", ")}), a tier (${[...MODEL_TIERS].join(", ")}) or a harness model name such as gpt-5.5-codex (letters, digits and . - _ / :, with a digit), got: ${model}`,
+      2
+    );
+  return model;
+}
 /** Who merges the pull request: esp-merge, a person, or nobody (ship.merge_policy). */
 export const MERGE_POLICIES = ["auto", "human", "none"];
 /** CI checks the pull request runs: required ones, or none at all (no grace period). */
